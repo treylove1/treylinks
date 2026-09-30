@@ -1,0 +1,467 @@
+PARCEL SNAP OWNER PROTOTYPE — EXACT LIVE SOURCE
+Snapshot generated 2026-09-30
+
+================================================================================
+FILE: parcel-snap-owner-preview/index.html
+================================================================================
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Parcel Snap Owner Test</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="loginScreen" class="screen">
+    <section class="loginCard">
+      <span class="eyebrow">PARCEL SNAP · OWNER TEST</span>
+      <h1>Sign in</h1>
+      <p>Use this owner test login to exercise the package intake workflow.</p>
+      <label>Owner email
+        <input id="loginEmail" type="email" value="owner@yourelectronicneeds.org" autocomplete="username">
+      </label>
+      <label>Test PIN
+        <input id="loginPin" type="password" inputmode="numeric" value="2468" autocomplete="current-password">
+      </label>
+      <button id="loginBtn" class="primary wide">Enter Parcel Snap</button>
+      <p class="tiny warn">Prototype test login only. Do not use real customer secrets here yet.</p>
+    </section>
+  </div>
+
+  <div id="app" class="hidden">
+    <header>
+      <div>
+        <span class="eyebrow">PARCEL SNAP · OWNER FULL ACCESS</span>
+        <h1>Warehouse Test Console</h1>
+        <p>Photo label → identify customer → Miami email → Nassau photo → warehouse location.</p>
+      </div>
+      <div class="headerActions">
+        <span class="pill">OWNER · $0 TEST MODE</span>
+        <button id="logoutBtn" class="ghost">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="grid metrics">
+        <article class="card"><span>Customers</span><strong id="customerCount">0</strong><small>Saved on this device</small></article>
+        <article class="card"><span>Total packages</span><strong id="totalPackages">0</strong><small>Package records</small></article>
+        <article class="card"><span>Miami received</span><strong id="miamiCount">0</strong><small>Arrival photo saved</small></article>
+        <article class="card"><span>Nassau received</span><strong id="nassauCount">0</strong><small>Arrival confirmed</small></article>
+      </section>
+
+      <nav class="tabs">
+        <button class="tab active" data-tab="miami">Miami Photo Intake</button>
+        <button class="tab" data-tab="nassau">Nassau Arrival</button>
+        <button class="tab" data-tab="warehouse">Warehouse</button>
+        <button class="tab" data-tab="customers">Customers</button>
+        <button class="tab" data-tab="search">Search</button>
+        <button class="tab" data-tab="owner">Owner</button>
+      </nav>
+
+      <section id="tab-miami" class="tabPanel">
+        <article class="card">
+          <span class="eyebrow">MIAMI RECEIVING</span>
+          <h2>Take Package Photo</h2>
+          <label class="cameraBox">
+            <span>📷 Take Package Photo</span>
+            <input id="miamiPhotos" type="file" accept="image/*" capture="environment" multiple>
+          </label>
+          <div id="miamiPreview" class="photoGrid"></div>
+
+          <div id="processingPanel" class="processingPanel hidden">
+            <div class="processingDot"></div>
+            <div>
+              <strong id="processingTitle">Processing package…</strong>
+              <div id="processingDetail"></div>
+            </div>
+          </div>
+
+          <div id="matchPanel" class="hidden">
+            <label>Customer
+              <select id="matchedCustomer"></select>
+            </label>
+
+            <div id="newCustomerFields" class="hidden">
+              <div class="formGrid">
+                <label>Customer name
+                  <input id="newCustomerName" placeholder="e.g. Trevon Humes">
+                </label>
+                <label>Customer email
+                  <input id="newCustomerEmail" type="email" placeholder="customer@example.com">
+                </label>
+              </div>
+              <button id="saveNewCustomer" class="ghost wide">Save customer</button>
+            </div>
+
+            <input id="trackingRef" type="hidden">
+            <input id="carrier" type="hidden">
+            <button id="saveMiami" class="primary wide">Save Miami Arrival</button>
+          </div>
+
+          <div id="emailResult" class="notice hidden"></div>
+        </article>
+      </section>
+
+      <section id="tab-nassau" class="tabPanel hidden">
+        <article class="card">
+          <span class="eyebrow">NASSAU RECEIVING</span>
+          <h2>Record Nassau arrival</h2>
+          <label>Select package
+            <select id="nassauPackage"></select>
+          </label>
+          <div class="formGrid">
+            <label>Nassau receiving area
+              <input id="nassauLocation" value="Nassau Receiving">
+            </label>
+            <label>Condition / note
+              <input id="nassauNote" placeholder="Box OK / damaged corner / inspection note">
+            </label>
+          </div>
+          <label class="cameraBox">
+            <span>📷 Take Nassau arrival photo(s)</span>
+            <input id="nassauPhotos" type="file" accept="image/*" capture="environment" multiple>
+            <small>These stay attached to the same package record.</small>
+          </label>
+          <div id="nassauPreview" class="photoGrid"></div>
+          <button id="saveNassau" class="primary wide">Save Nassau Arrival</button>
+        </article>
+      </section>
+
+      <section id="tab-warehouse" class="tabPanel hidden">
+        <article class="card">
+          <span class="eyebrow">WAREHOUSE ORGANIZATION</span>
+          <h2>Assign shelf / bin / area</h2>
+          <label>Select package
+            <select id="warehousePackage"></select>
+          </label>
+          <div class="formGrid">
+            <label>Shelf
+              <input id="shelf" placeholder="A">
+            </label>
+            <label>Bin
+              <input id="bin" placeholder="12">
+            </label>
+            <label>Area
+              <input id="area" placeholder="Small Parcels / TV Zone / Hold">
+            </label>
+            <label>Status
+              <select id="warehouseStatus">
+                <option value="WAREHOUSED">Warehoused</option>
+                <option value="READY_FOR_PICKUP">Ready for pickup</option>
+                <option value="OUT_FOR_DELIVERY">Out for delivery</option>
+                <option value="PICKED_UP">Picked up</option>
+                <option value="DELIVERED">Delivered</option>
+              </select>
+            </label>
+          </div>
+          <label>Warehouse note
+            <textarea id="warehouseNote" rows="3" placeholder="Optional note"></textarea>
+          </label>
+          <button id="saveWarehouse" class="primary wide">Save Warehouse Location</button>
+        </article>
+        <div id="warehouseList"></div>
+      </section>
+
+      <section id="tab-customers" class="tabPanel hidden">
+        <article class="card">
+          <span class="eyebrow">CUSTOMER DIRECTORY</span>
+          <h2>Customers Parcel Snap can recognize</h2>
+          <p>Add a customer once. Future package photos can match the printed name to this record.</p>
+          <div class="formGrid">
+            <label>Name
+              <input id="directoryName" placeholder="Trevon Humes">
+            </label>
+            <label>Email
+              <input id="directoryEmail" type="email" placeholder="customer@example.com">
+            </label>
+          </div>
+          <button id="addDirectoryCustomer" class="primary wide">Add Customer</button>
+        </article>
+        <div id="customerList"></div>
+      </section>
+
+      <section id="tab-search" class="tabPanel hidden">
+        <article class="card">
+          <span class="eyebrow">FIND PACKAGE FAST</span>
+          <h2>Search Parcel Snap</h2>
+          <input id="searchBox" class="searchBox" placeholder="Customer, tracking, shelf, bin, status...">
+        </article>
+        <div id="searchResults"></div>
+      </section>
+
+      <section id="tab-owner" class="tabPanel hidden">
+        <section class="card">
+          <span class="eyebrow">OWNER CONTROLS</span>
+          <h2>Full-access test mode</h2>
+          <div class="ownerRule">
+            <strong>OWNER = FULL_ACCESS</strong>
+            <span>No checkout · No trial countdown · Unlimited QA records</span>
+          </div>
+          <div class="notice">
+            <strong>Email delivery status:</strong>
+            <span>Browser test mode</span>
+            <p>Customer matching and notification creation work here. True automatic email sending still needs a secure server-side mail endpoint so a secret key is never exposed in the browser.</p>
+          </div>
+          <button id="resetData" class="danger">Reset all test data on this device</button>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="packageDialog">
+    <button id="closeDialog" class="dialogClose">×</button>
+    <div id="dialogContent"></div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
+================================================================================
+FILE: parcel-snap-owner-preview/app.js
+================================================================================
+
+const DB_NAME="parcel-snap-owner-test";
+const DB_VERSION=2;
+const STORE_PACKAGES="packages";
+const STORE_CUSTOMERS="customers";
+let db, stagedMiamiPhotos=[], stagedNassauPhotos=[], ocrRawText="", currentDetectedName="";
+
+function openDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,DB_VERSION);req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE_PACKAGES)){const s=d.createObjectStore(STORE_PACKAGES,{keyPath:"id"});s.createIndex("tracking","tracking");s.createIndex("customer","customer")}if(!d.objectStoreNames.contains(STORE_CUSTOMERS)){const s=d.createObjectStore(STORE_CUSTOMERS,{keyPath:"id"});s.createIndex("name","name");s.createIndex("email","email",{unique:false})}};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
+function store(name,mode="readonly"){return db.transaction(name,mode).objectStore(name)}
+function put(name,value){return new Promise((res,rej)=>{const r=store(name,"readwrite").put(value);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function get(name,id){return new Promise((res,rej)=>{const r=store(name).get(id);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function all(name){return new Promise((res,rej)=>{const r=store(name).getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)})}
+function clear(name){return new Promise((res,rej)=>{const r=store(name,"readwrite").clear();r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function del(name,id){return new Promise((res,rej)=>{const r=store(name,"readwrite").delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function uid(prefix){return prefix+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,7).toUpperCase()}
+function now(){return new Date().toISOString()}
+function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function norm(s=""){return s.toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
+function statusLabel(s){return ({MIAMI_RECEIVED:"Miami received",NASSAU_RECEIVED:"Nassau received",WAREHOUSED:"Warehoused",READY_FOR_PICKUP:"Ready for pickup",OUT_FOR_DELIVERY:"Out for delivery",PICKED_UP:"Picked up",DELIVERED:"Delivered"})[s]||s}
+async function filesToData(files){const out=[];for(const file of files){out.push(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,type:file.type,data:reader.result,at:now()});reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file)}))}return out}
+function previewPhotos(target,photos){target.innerHTML=photos.map(p=>`<img src="${p.data}" alt="Package photo">`).join("")}
+
+async function addCustomer(name,email){const cleanName=name.trim(),cleanEmail=email.trim().toLowerCase();if(!cleanName||!cleanEmail)throw new Error("Name and email required");const customers=await all(STORE_CUSTOMERS);const existing=customers.find(c=>norm(c.name)===norm(cleanName));const customer=existing?{...existing,name:cleanName,email:cleanEmail,updatedAt:now()}:{id:uid("CUST"),name:cleanName,email:cleanEmail,createdAt:now(),updatedAt:now()};await put(STORE_CUSTOMERS,customer);return customer}
+function editDistance(a,b){
+  a=norm(a);b=norm(b);
+  const m=a.length,n=b.length,dp=Array.from({length:m+1},()=>Array(n+1).fill(0));
+  for(let i=0;i<=m;i++)dp[i][0]=i;
+  for(let j=0;j<=n;j++)dp[0][j]=j;
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return dp[m][n];
+}
+function tokenSimilarity(a,b){
+  a=norm(a);b=norm(b);
+  if(!a||!b)return 0;
+  if(a===b)return 1;
+  if(a.length>=4&&b.includes(a)||b.length>=4&&a.includes(b))return .92;
+  const d=editDistance(a,b);
+  return 1-d/Math.max(a.length,b.length);
+}
+function scoreNameAgainstText(name,text){
+  const nameTokens=norm(name).split(" ").filter(t=>t.length>=2);
+  const textTokens=norm(text).split(" ").filter(t=>t.length>=2);
+  if(!nameTokens.length||!textTokens.length)return 0;
+  const scores=nameTokens.map(nt=>Math.max(...textTokens.map(tt=>tokenSimilarity(nt,tt))));
+  return scores.reduce((a,b)=>a+b,0)/scores.length;
+}
+async function bestCustomerMatch(text){
+  const customers=await all(STORE_CUSTOMERS);
+  const ranked=customers.map(customer=>({customer,score:scoreNameAgainstText(customer.name,text)})).sort((a,b)=>b.score-a.score);
+  if(!ranked.length)return null;
+  const best=ranked[0], second=ranked[1];
+  const clear=best.score>=.72 || (best.score>=.58 && (!second || best.score-second.score>=.16));
+  return clear?best:null;
+}
+function cleanNameCandidate(value){
+  let v=String(value||"").replace(/[^A-Za-z.' -]/g," ").replace(/\s+/g," ").trim();
+  const words=v.split(" ").filter(Boolean);
+  if(words.length<2||words.length>5)return "";
+  if(words.some(w=>w.length<2))return "";
+  const bad=/electronic|needs|package|tracking|address|street|road|avenue|lane|unit|miami|nassau|bahamas|florida|warehouse|ship|shipping|code|fedex|ups|usps|amazon/i;
+  if(bad.test(v))return "";
+  return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(" ");
+}
+function guessName(text){
+  const raw=String(text||"").split(/\r?\n/).flatMap(line=>line.split(/[\/|]/)).map(s=>s.trim()).filter(Boolean);
+  for(const part of raw){
+    const c=cleanNameCandidate(part);
+    if(c)return c;
+  }
+  return "";
+}
+function guessTracking(text){
+  const tokens=String(text||"").match(/[A-Z0-9][A-Z0-9-]{8,35}/gi)||[];
+  return tokens.find(t=>!/^(ADDRESS|PACKAGE|CUSTOMER|TRACKING|ELECTRONIC)$/i.test(t))||"";
+}
+async function loadImage(dataUrl){
+  return await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=dataUrl});
+}
+async function enhanceForReading(dataUrl){
+  const img=await loadImage(dataUrl);
+  const scale=Math.min(3,Math.max(1.5,1800/Math.max(img.width,img.height)));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data;
+  for(let i=0;i<d.length;i+=4){
+    const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+    const v=Math.max(0,Math.min(255,(g-128)*1.65+145));
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(im,0,0);
+  return canvas.toDataURL("image/jpeg",.94);
+}
+async function detectPackageCode(dataUrl){
+  if(!("BarcodeDetector" in window))return "";
+  try{
+    const img=await loadImage(dataUrl);
+    const detector=new BarcodeDetector({formats:["qr_code","code_128","code_39","ean_13","ean_8","upc_a","upc_e","itf","codabar"]});
+    const codes=await detector.detect(img);
+    const raw=(codes||[]).map(c=>String(c.rawValue||"").trim()).find(v=>v.length>=6&&v.length<=80);
+    return raw||"";
+  }catch{return ""}
+}
+async function runLabelReader(){
+  const panel=document.getElementById("processingPanel");
+  const title=document.getElementById("processingTitle");
+  const detail=document.getElementById("processingDetail");
+  panel.classList.remove("hidden");
+  title.textContent="Processing package…";
+  detail.textContent="";
+  document.getElementById("matchPanel").classList.add("hidden");
+  document.getElementById("emailResult").classList.add("hidden");
+  if(!stagedMiamiPhotos.length)return;
+  try{
+    const [enhanced,code]=await Promise.all([
+      enhanceForReading(stagedMiamiPhotos[0].data),
+      detectPackageCode(stagedMiamiPhotos[0].data)
+    ]);
+    let result=await Tesseract.recognize(enhanced,"eng");
+    ocrRawText=result.data.text||"";
+    if(norm(ocrRawText).length<12){
+      result=await Tesseract.recognize(stagedMiamiPhotos[0].data,"eng");
+      ocrRawText+="\n"+(result.data.text||"");
+    }
+    const match=await bestCustomerMatch(ocrRawText);
+    currentDetectedName=match?match.customer.name:guessName(ocrRawText);
+    const tracking=code||guessTracking(ocrRawText);
+    document.getElementById("trackingRef").value=tracking||"";
+    await populateCustomerMatch(match?.customer?.id||"",currentDetectedName);
+    if(match){
+      title.textContent=match.customer.name;
+      detail.textContent=tracking?"Package matched · tracking captured":"Package matched";
+    }else if(currentDetectedName){
+      title.textContent=currentDetectedName;
+      detail.textContent="New customer — add email once";
+    }else{
+      title.textContent="Select customer";
+      detail.textContent="Package photo saved";
+    }
+    document.getElementById("matchPanel").classList.remove("hidden");
+  }catch(err){
+    currentDetectedName="";
+    await populateCustomerMatch("","");
+    title.textContent="Select customer";
+    detail.textContent="Package photo saved";
+    document.getElementById("matchPanel").classList.remove("hidden");
+  }
+}
+async function populateCustomerMatch(selectedId="",suggestedName=""){const customers=await all(STORE_CUSTOMERS),sel=document.getElementById("matchedCustomer");sel.innerHTML='<option value="">New / unknown customer</option>'+customers.map(c=>`<option value="${c.id}" ${selectedId===c.id?"selected":""}>${esc(c.name)} — ${esc(c.email)}</option>`).join("");document.getElementById("newCustomerName").value=suggestedName||"";toggleNewCustomerFields()}
+function toggleNewCustomerFields(){document.getElementById("newCustomerFields").classList.toggle("hidden",!!document.getElementById("matchedCustomer").value)}
+document.getElementById("matchedCustomer").onchange=toggleNewCustomerFields;
+document.getElementById("saveNewCustomer").onclick=async()=>{try{const c=await addCustomer(document.getElementById("newCustomerName").value,document.getElementById("newCustomerEmail").value);await populateCustomerMatch(c.id,c.name);await renderAll();alert("Customer saved. Parcel Snap can match this name next time.")}catch(e){alert(e.message)}};
+
+async function buildNotification(customer,pkg){return{to:customer.email,subject:"Parcel Snap: Your package arrived in Miami",body:`Hello ${customer.name},\n\nYour package has arrived at our Miami location and has been logged in Parcel Snap.\n\nReference: ${pkg.tracking||"No tracking number required"}\n\nWe will update the package record as it moves to Nassau.\n\nYour Electronic Needs / Alpha Omega Shipping`}}
+async function showPreparedEmail(customer,pkg){const n=await buildNotification(customer,pkg),result=document.getElementById("emailResult");result.classList.remove("hidden");result.innerHTML=`<strong>Notification prepared for ${esc(n.to)}</strong><p>${esc(n.subject)}</p><p>Automatic server-side email is not connected in this static test build yet. Tap below to open the prepared message in your mail app.</p><a class="mailButton" href="mailto:${encodeURIComponent(n.to)}?subject=${encodeURIComponent(n.subject)}&body=${encodeURIComponent(n.body)}">Open prepared email</a>`;return n}
+
+document.getElementById("loginBtn").onclick=async()=>{const email=document.getElementById("loginEmail").value.trim().toLowerCase(),pin=document.getElementById("loginPin").value.trim();if(email!=="owner@yourelectronicneeds.org"||pin!=="2468"){alert("Use the owner test login shown on this page.");return}sessionStorage.setItem("parcelSnapOwnerLoggedIn","1");showApp()};
+document.getElementById("logoutBtn").onclick=()=>{sessionStorage.removeItem("parcelSnapOwnerLoggedIn");location.reload()};
+function showApp(){document.getElementById("loginScreen").classList.add("hidden");document.getElementById("app").classList.remove("hidden");renderAll()}
+document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));document.querySelectorAll(".tabPanel").forEach(p=>p.classList.add("hidden"));document.getElementById("tab-"+btn.dataset.tab).classList.remove("hidden");if(btn.dataset.tab==="warehouse")renderWarehouse();if(btn.dataset.tab==="customers")renderCustomers();if(btn.dataset.tab==="search")renderSearch()});
+document.getElementById("miamiPhotos").onchange=async e=>{stagedMiamiPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("miamiPreview"),stagedMiamiPhotos);if(stagedMiamiPhotos.length)await runLabelReader()};
+document.getElementById("nassauPhotos").onchange=async e=>{stagedNassauPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("nassauPreview"),stagedNassauPhotos)};
+
+document.getElementById("saveMiami").onclick=async()=>{if(!stagedMiamiPhotos.length){alert("Take at least one Miami package photo.");return}let customerId=document.getElementById("matchedCustomer").value,customer;if(!customerId){const name=document.getElementById("newCustomerName").value.trim(),email=document.getElementById("newCustomerEmail").value.trim();if(!name||!email){alert("Confirm the customer name and enter the email once.");return}customer=await addCustomer(name,email);customerId=customer.id}else customer=await get(STORE_CUSTOMERS,customerId);const pkg={id:uid("PS"),customerId:customer.id,customer:customer.name,customerEmail:customer.email,tracking:document.getElementById("trackingRef").value.trim(),carrier:document.getElementById("carrier").value.trim(),status:"MIAMI_RECEIVED",miami:{location:"Miami Receiving",photos:stagedMiamiPhotos,ocrText:ocrRawText,at:now()},nassau:null,warehouse:null,notifications:[],events:[{type:"MIAMI_RECEIVED",at:now(),note:"Package photographed and received in Miami"}],createdAt:now(),updatedAt:now()};const notice=await buildNotification(customer,pkg);pkg.notifications.push({...notice,status:"PREPARED",at:now()});await put(STORE_PACKAGES,pkg);await showPreparedEmail(customer,pkg);stagedMiamiPhotos=[];ocrRawText="";currentDetectedName="";document.getElementById("miamiPhotos").value="";document.getElementById("miamiPreview").innerHTML="";document.getElementById("processingPanel").classList.add("hidden");document.getElementById("matchPanel").classList.add("hidden");document.getElementById("trackingRef").value="";document.getElementById("carrier").value="";await renderAll()};
+
+document.getElementById("saveNassau").onclick=async()=>{const id=document.getElementById("nassauPackage").value;if(!id){alert("Select a package.");return}if(!stagedNassauPhotos.length){alert("Take at least one Nassau arrival photo.");return}const pkg=await get(STORE_PACKAGES,id);pkg.nassau={location:document.getElementById("nassauLocation").value.trim(),note:document.getElementById("nassauNote").value.trim(),photos:stagedNassauPhotos,at:now()};pkg.status="NASSAU_RECEIVED";pkg.events.push({type:"NASSAU_RECEIVED",at:now(),note:pkg.nassau.note||"Package arrived in Nassau"});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);stagedNassauPhotos=[];document.getElementById("nassauPhotos").value="";document.getElementById("nassauPreview").innerHTML="";document.getElementById("nassauNote").value="";alert("Nassau arrival saved.");await renderAll()};
+document.getElementById("saveWarehouse").onclick=async()=>{const id=document.getElementById("warehousePackage").value;if(!id){alert("Select a package.");return}const pkg=await get(STORE_PACKAGES,id),status=document.getElementById("warehouseStatus").value;pkg.warehouse={shelf:document.getElementById("shelf").value.trim(),bin:document.getElementById("bin").value.trim(),area:document.getElementById("area").value.trim(),note:document.getElementById("warehouseNote").value.trim(),at:now()};pkg.status=status;pkg.events.push({type:status,at:now(),note:`Warehouse: ${pkg.warehouse.area||"-"} / Shelf ${pkg.warehouse.shelf||"-"} / Bin ${pkg.warehouse.bin||"-"}`});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);alert("Warehouse location/status saved.");await renderAll()};
+document.getElementById("addDirectoryCustomer").onclick=async()=>{try{await addCustomer(document.getElementById("directoryName").value,document.getElementById("directoryEmail").value);document.getElementById("directoryName").value="";document.getElementById("directoryEmail").value="";await renderAll()}catch(e){alert(e.message)}};
+document.getElementById("searchBox").oninput=renderSearch;
+
+function packageCard(p){const wh=p.warehouse||{};return `<article class="packageCard"><div class="packageTop"><div><strong>${esc(p.customer)}</strong><br><small>${esc(p.tracking||"No tracking number")}</small></div><span class="status">${esc(statusLabel(p.status))}</span></div><div class="meta"><div><small>Email</small><strong>${esc(p.customerEmail||"-")}</strong></div><div><small>Area</small><strong>${esc(wh.area||p.nassau?.location||p.miami?.location||"-")}</strong></div><div><small>Shelf / Bin</small><strong>${esc((wh.shelf||"-")+" / "+(wh.bin||"-"))}</strong></div></div><div class="packageActions"><button data-open="${p.id}">Open package</button></div></article>`}
+async function bindOpenButtons(root){root.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openPackage(b.dataset.open))}
+async function renderAll(){const [pkgs,customers]=await Promise.all([all(STORE_PACKAGES),all(STORE_CUSTOMERS)]);document.getElementById("customerCount").textContent=customers.length;document.getElementById("totalPackages").textContent=pkgs.length;document.getElementById("miamiCount").textContent=pkgs.filter(p=>p.miami).length;document.getElementById("nassauCount").textContent=pkgs.filter(p=>p.nassau).length;populatePackageSelects(pkgs);await populateCustomerMatch(document.getElementById("matchedCustomer")?.value||"",currentDetectedName);await renderWarehouse();await renderCustomers();await renderSearch()}
+function populatePackageSelects(pkgs){const opts='<option value="">Select package</option>'+pkgs.map(p=>`<option value="${p.id}">${esc(p.customer)} — ${esc(p.tracking||"No tracking")}</option>`).join("");document.getElementById("nassauPackage").innerHTML=opts;document.getElementById("warehousePackage").innerHTML=opts}
+async function renderWarehouse(){const pkgs=(await all(STORE_PACKAGES)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)),root=document.getElementById("warehouseList");root.innerHTML=pkgs.length?pkgs.map(packageCard).join(""):'<article class="card"><p>No packages yet.</p></article>';await bindOpenButtons(root)}
+async function renderCustomers(){const customers=(await all(STORE_CUSTOMERS)).sort((a,b)=>a.name.localeCompare(b.name)),root=document.getElementById("customerList");root.innerHTML=customers.length?customers.map(c=>`<article class="packageCard"><div class="packageTop"><div><strong>${esc(c.name)}</strong><br><small>${esc(c.email)}</small></div><button class="danger" data-delcustomer="${c.id}">Delete</button></div></article>`).join(""):'<article class="card"><p>No customers yet. Add Trevon Humes or another test customer once, then photograph a label with that name.</p></article>';root.querySelectorAll("[data-delcustomer]").forEach(b=>b.onclick=async()=>{if(confirm("Delete this test customer?")){await del(STORE_CUSTOMERS,b.dataset.delcustomer);await renderAll()}})}
+async function renderSearch(){const q=document.getElementById("searchBox").value.trim().toLowerCase();let pkgs=await all(STORE_PACKAGES);if(q)pkgs=pkgs.filter(p=>{const wh=p.warehouse||{};return[p.customer,p.customerEmail,p.tracking,p.carrier,p.status,statusLabel(p.status),wh.shelf,wh.bin,wh.area,p.miami?.location,p.nassau?.location].filter(Boolean).join(" ").toLowerCase().includes(q)});pkgs.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));const root=document.getElementById("searchResults");root.innerHTML=pkgs.length?pkgs.map(packageCard).join(""):'<article class="card"><p>No matching packages.</p></article>';await bindOpenButtons(root)}
+async function openPackage(id){const p=await get(STORE_PACKAGES,id),wh=p.warehouse||{},photos=[...(p.miami?.photos||[]),...(p.nassau?.photos||[])],notifications=p.notifications||[];document.getElementById("dialogContent").innerHTML=`<span class="eyebrow">PACKAGE RECORD</span><h2>${esc(p.customer)}</h2><p>${esc(p.tracking||"No tracking number required")} · ${esc(statusLabel(p.status))}</p><div class="meta"><div><small>Email</small><strong>${esc(p.customerEmail||"-")}</strong></div><div><small>Nassau</small><strong>${esc(p.nassau?.location||"-")}</strong></div><div><small>Warehouse</small><strong>${esc((wh.area||"-")+" · "+(wh.shelf||"-")+"/"+(wh.bin||"-"))}</strong></div></div><h3>Photos</h3><div class="packagePhotos">${photos.map(ph=>`<img src="${ph.data}" alt="Package photo">`).join("")||"<p>No photos.</p>"}</div><h3>Notifications</h3><div class="timeline">${notifications.map(n=>`<div class="timelineItem"><strong>${esc(n.status)}</strong><br><small>${new Date(n.at).toLocaleString()}</small><div>${esc(n.to)} — ${esc(n.subject)}</div></div>`).join("")||"<p>No notifications.</p>"}</div><h3>History</h3><div class="timeline">${p.events.map(e=>`<div class="timelineItem"><strong>${esc(statusLabel(e.type))}</strong><br><small>${new Date(e.at).toLocaleString()}</small><div>${esc(e.note||"")}</div></div>`).join("")}</div>`;document.getElementById("packageDialog").showModal()}
+document.getElementById("closeDialog").onclick=()=>document.getElementById("packageDialog").close();
+document.getElementById("resetData").onclick=async()=>{if(confirm("Delete all Parcel Snap test customers and package records saved in this browser/device?")){await clear(STORE_PACKAGES);await clear(STORE_CUSTOMERS);await renderAll()}};
+(async()=>{db=await openDb();if(sessionStorage.getItem("parcelSnapOwnerLoggedIn")==="1")showApp()})();
+
+================================================================================
+FILE: parcel-snap-owner-preview/styles.css
+================================================================================
+
+*{box-sizing:border-box}
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark}
+body{margin:0;background:#08111f;color:#eef4ff;min-height:100vh;padding:18px}
+.hidden{display:none!important}
+.screen{min-height:94vh;display:grid;place-items:center}
+.loginCard{width:min(430px,100%);background:#0f1d33;border:1px solid #243f64;border-radius:20px;padding:24px;box-shadow:0 20px 60px #0006}
+header,main{max-width:1120px;margin:auto}
+header{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}
+h1,h2,h3{margin:.3rem 0 .7rem}
+p{color:#a8b6cd}
+.eyebrow{font-size:.72rem;letter-spacing:.12em;font-weight:900;color:#7f95b9}
+.headerActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{padding:9px 12px;border-radius:999px;background:#12392e;color:#80e7bd;border:1px solid #205b49;font-size:.75rem;font-weight:900}
+.card{background:#0f1d33;border:1px solid #223b60;border-radius:17px;padding:18px;margin-bottom:14px;box-shadow:0 12px 34px #0002}
+.grid{display:grid;gap:12px}.metrics{grid-template-columns:repeat(4,1fr)}
+.metrics span,.metrics small{color:#93a5c1}.metrics strong{display:block;font-size:1.7rem;margin:.2rem 0}
+.tabs{max-width:1120px;margin:0 auto 14px;display:flex;gap:8px;overflow:auto;padding-bottom:3px}
+.tab{white-space:nowrap;background:#10213b;border:1px solid #29486f;color:#d8e4f6;padding:10px 14px;border-radius:11px;font-weight:800}
+.tab.active{background:#2864e6;border-color:#2864e6}
+label{display:block;font-weight:750;margin:12px 0 4px;color:#c7d3e6}
+input,select,textarea{width:100%;background:#0a1628;color:#eef4ff;border:1px solid #304d72;border-radius:10px;padding:11px 12px;font:inherit;margin-top:6px}
+.formGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+button{border:0;border-radius:10px;padding:11px 14px;font-weight:850;cursor:pointer}
+.primary{background:#2864e6;color:white}.wide{width:100%;margin-top:14px}
+.ghost{background:#13243d;color:#dce7f7;border:1px solid #304c70}
+.danger{background:#4a2028;color:#ffb2bd}
+.warn{color:#ffd17a}.tiny{font-size:.78rem}
+.cameraBox{border:1px dashed #476a9a;border-radius:14px;padding:16px;background:#0b1729;cursor:pointer}
+.cameraBox span{display:block;font-size:1rem;color:#dfe9f8}.cameraBox input{margin:10px 0 0}.cameraBox small{color:#91a2bd}
+.photoGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.photoGrid img,.packagePhotos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1px solid #314f75}
+.packageCard{background:#0f1d33;border:1px solid #223b60;border-radius:16px;padding:16px;margin-bottom:12px}
+.packageTop{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.status{font-size:.72rem;padding:5px 8px;border-radius:999px;background:#173e31;color:#80e7bd;font-weight:900}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.meta div{background:#0a1628;border-radius:10px;padding:10px}.meta small{display:block;color:#8094b4}.meta strong{font-size:.9rem}
+.packageActions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.packageActions button{background:#173150;color:#dce9f9}
+.searchBox{font-size:1.05rem}
+.ownerRule{background:#0a1628;border:1px solid #29496f;border-radius:12px;padding:14px;margin:14px 0}.ownerRule strong,.ownerRule span{display:block}.ownerRule span{color:#9fb0c9;margin-top:5px}
+dialog{width:min(760px,94vw);border:1px solid #29476d;background:#0d1a2e;color:#eef4ff;border-radius:18px;padding:22px}dialog::backdrop{background:#000a}.dialogClose{float:right;background:#172c49;color:white;font-size:1.4rem}
+.timeline{border-left:2px solid #365780;margin:16px 0;padding-left:16px}.timelineItem{margin:0 0 14px}.timelineItem small{color:#89a0c1}
+.packagePhotos{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(max-width:780px){body{padding:12px}header{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:repeat(2,1fr)}.formGrid{grid-template-columns:1fr}.photoGrid,.packagePhotos{grid-template-columns:repeat(2,1fr)}.meta{grid-template-columns:1fr 1fr}}
+
+.ocrPanel{margin-top:14px;border:1px solid #345477;background:#0a1628;border-radius:14px;padding:14px}
+.sectionHead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#173150;color:#a9c8f5;font-size:.72rem;font-weight:900}
+.notice{border:1px solid #345477;background:#0a1628;border-radius:12px;padding:14px;margin-top:14px}
+.notice p{margin:.5rem 0;color:#9fb0c9}
+.mailButton{display:inline-block;text-decoration:none;background:#2864e6;color:white;padding:10px 13px;border-radius:10px;font-weight:850}
+
+.processingPanel{margin-top:14px;display:flex;align-items:center;gap:12px;border:1px solid #345477;background:#0a1628;border-radius:14px;padding:14px}
+.processingDot{width:12px;height:12px;border-radius:50%;background:#6ea1ff;box-shadow:0 0 0 6px #6ea1ff22}
+#processingDetail{color:#9fb0c9;margin-top:4px}
+
