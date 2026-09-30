@@ -1,0 +1,75 @@
+name: Parcel Snap Cloud OCR Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "parcel-snap-owner-preview/tests/**"
+      - ".github/workflows/parcel-snap-cloud-ocr-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ocr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OCR tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr poppler-utils imagemagick
+
+      - name: Download official USPS sample
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://www.usps.com/business/web-tools-apis/archive/2022-web-tools-release-notes-1-31.pdf" \
+            -o /tmp/usps.pdf
+
+      - name: Render USPS sample label page
+        run: |
+          mkdir -p parcel-snap-owner-preview/tests/artifacts
+          pdftoppm -f 54 -singlefile -png -r 300 /tmp/usps.pdf parcel-snap-owner-preview/tests/artifacts/usps-page54
+          tesseract parcel-snap-owner-preview/tests/artifacts/usps-page54.png \
+            parcel-snap-owner-preview/tests/artifacts/usps-page54 \
+            --psm 6
+
+      - name: Evaluate USPS OCR against known fields
+        run: |
+          node parcel-snap-owner-preview/tests/cloud-ocr-eval.mjs \
+            parcel-snap-owner-preview/tests/artifacts/usps-page54.txt \
+            "TOM COLLINS" \
+            "9205590106507600261220" \
+            "USPS official eVS sample"
+
+      - name: Download official FedEx sample
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://developer.fedex.com/api/content/dam/fedex-com/irc/SV_labels/USE_SCHEDULED_PICKUP_FEDEX_GROUND_YOUR_PACKAGING_SENDER_URL_ONLY_PAPER_85X11_TOP_HALF_LABEL.pdf" \
+            -o /tmp/fedex.pdf
+
+      - name: Render FedEx sample
+        run: |
+          pdftoppm -f 1 -singlefile -png -r 300 /tmp/fedex.pdf parcel-snap-owner-preview/tests/artifacts/fedex-page1
+          tesseract parcel-snap-owner-preview/tests/artifacts/fedex-page1.png \
+            parcel-snap-owner-preview/tests/artifacts/fedex-page1 \
+            --psm 6
+
+      - name: Evaluate FedEx OCR recipient
+        run: |
+          node parcel-snap-owner-preview/tests/cloud-ocr-eval.mjs \
+            parcel-snap-owner-preview/tests/artifacts/fedex-page1.txt \
+            "RECIPIENT NAME" \
+            "000000000000" \
+            "FedEx official sample"
+
+      - name: Upload OCR evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parcel-snap-cloud-ocr-evidence
+          path: parcel-snap-owner-preview/tests/artifacts
+          retention-days: 14
