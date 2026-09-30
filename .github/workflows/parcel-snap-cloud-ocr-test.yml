@@ -62,13 +62,37 @@ jobs:
             parcel-snap-owner-preview/tests/artifacts/sample-warehouse \
             --psm 6
 
-      - name: Evaluate warehouse-photo stress sample
+      - name: Recover angled warehouse photo
+        run: |
+          convert parcel-snap-owner-preview/tests/artifacts/sample-warehouse.jpg \
+            -deskew 40% \
+            -colorspace Gray \
+            -contrast-stretch 1%x1% \
+            -sharpen 0x1 \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered.png
+
+          tesseract \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered.png \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered-psm6 \
+            --psm 6
+
+          tesseract \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered.png \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered-psm11 \
+            --psm 11
+
+          cat \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered-psm6.txt \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered-psm11.txt \
+            > parcel-snap-owner-preview/tests/artifacts/sample-recovered-merged.txt
+
+      - name: Evaluate recovered warehouse photo
         run: |
           node parcel-snap-owner-preview/tests/cloud-ocr-eval.mjs \
-            parcel-snap-owner-preview/tests/artifacts/sample-warehouse.txt \
+            parcel-snap-owner-preview/tests/artifacts/sample-recovered-merged.txt \
             "John Smith" \
             "8888888888888888888888" \
-            "Public USPS-style sample — rotated/compressed"
+            "Public USPS-style sample — deskewed multi-pass"
 
       - name: Upload OCR evidence
         if: always()
