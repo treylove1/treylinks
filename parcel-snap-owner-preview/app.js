@@ -20,12 +20,132 @@ async function filesToData(files){const out=[];for(const file of files){out.push
 function previewPhotos(target,photos){target.innerHTML=photos.map(p=>`<img src="${p.data}" alt="Package photo">`).join("")}
 
 async function addCustomer(name,email){const cleanName=name.trim(),cleanEmail=email.trim().toLowerCase();if(!cleanName||!cleanEmail)throw new Error("Name and email required");const customers=await all(STORE_CUSTOMERS);const existing=customers.find(c=>norm(c.name)===norm(cleanName));const customer=existing?{...existing,name:cleanName,email:cleanEmail,updatedAt:now()}:{id:uid("CUST"),name:cleanName,email:cleanEmail,createdAt:now(),updatedAt:now()};await put(STORE_CUSTOMERS,customer);return customer}
-function scoreNameAgainstText(name,text){const n=norm(name),t=norm(text);if(!n||!t)return 0;if(t.includes(n))return 1;const parts=n.split(" ").filter(x=>x.length>1),hit=parts.filter(p=>t.includes(p)).length;return parts.length?hit/parts.length:0}
-async function bestCustomerMatch(text){const customers=await all(STORE_CUSTOMERS);let best=null;for(const c of customers){const score=scoreNameAgainstText(c.name,text);if(!best||score>best.score)best={customer:c,score}}return best&&best.score>=0.66?best:null}
-function guessName(text){const lines=String(text||"").split(/\r?\n/).map(x=>x.trim()).filter(x=>x.length>=4&&x.length<=60);const bad=/tracking|ship|address|street|road|lane|avenue|miami|nassau|bahamas|ups|fedex|usps|amazon|package|weight|lb|lbs|tel|phone|from|to:/i;const c=lines.filter(l=>/[a-z]/i.test(l)&&!bad.test(l)&&!/[0-9]{5,}/.test(l));return c.find(l=>{const n=l.split(/\s+/).length;return n>=2&&n<=5})||c[0]||""}
-function guessTracking(text){const t=String(text||"").match(/[A-Z0-9][A-Z0-9-]{8,30}/gi)||[];return t.filter(x=>!/^(ADDRESS|PACKAGE|CUSTOMER|TRACKING)$/i.test(x))[0]||""}
-
-async function runLabelReader(){const panel=document.getElementById("ocrPanel"),status=document.getElementById("ocrStatus"),badge=document.getElementById("ocrBadge");panel.classList.remove("hidden");status.textContent="Reading package label…";badge.textContent="WORKING";document.getElementById("matchPanel").classList.add("hidden");document.getElementById("emailResult").classList.add("hidden");if(!stagedMiamiPhotos.length)return;try{if(!window.Tesseract)throw new Error("OCR library did not load");const result=await Tesseract.recognize(stagedMiamiPhotos[0].data,"eng",{logger:m=>{if(m.status==="recognizing text")status.textContent=`Reading label… ${Math.round((m.progress||0)*100)}%`}});ocrRawText=result.data.text||"";document.getElementById("ocrText").value=ocrRawText;const match=await bestCustomerMatch(ocrRawText);currentDetectedName=match?match.customer.name:guessName(ocrRawText);const tracking=guessTracking(ocrRawText);if(tracking)document.getElementById("trackingRef").value=tracking;status.textContent=match?`Matched customer: ${match.customer.name}`:(currentDetectedName?`Possible name: ${currentDetectedName}`:"Customer not recognized");badge.textContent=match?"MATCHED":"CONFIRM";await populateCustomerMatch(match?.customer?.id||"",currentDetectedName);document.getElementById("matchPanel").classList.remove("hidden")}catch(err){status.textContent="Could not read label automatically";badge.textContent="MANUAL";document.getElementById("ocrText").value=String(err?.message||err);currentDetectedName="";await populateCustomerMatch("","");document.getElementById("matchPanel").classList.remove("hidden")}}
+function editDistance(a,b){
+  a=norm(a);b=norm(b);
+  const m=a.length,n=b.length,dp=Array.from({length:m+1},()=>Array(n+1).fill(0));
+  for(let i=0;i<=m;i++)dp[i][0]=i;
+  for(let j=0;j<=n;j++)dp[0][j]=j;
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return dp[m][n];
+}
+function tokenSimilarity(a,b){
+  a=norm(a);b=norm(b);
+  if(!a||!b)return 0;
+  if(a===b)return 1;
+  if(a.length>=4&&b.includes(a)||b.length>=4&&a.includes(b))return .92;
+  const d=editDistance(a,b);
+  return 1-d/Math.max(a.length,b.length);
+}
+function scoreNameAgainstText(name,text){
+  const nameTokens=norm(name).split(" ").filter(t=>t.length>=2);
+  const textTokens=norm(text).split(" ").filter(t=>t.length>=2);
+  if(!nameTokens.length||!textTokens.length)return 0;
+  const scores=nameTokens.map(nt=>Math.max(...textTokens.map(tt=>tokenSimilarity(nt,tt))));
+  return scores.reduce((a,b)=>a+b,0)/scores.length;
+}
+async function bestCustomerMatch(text){
+  const customers=await all(STORE_CUSTOMERS);
+  const ranked=customers.map(customer=>({customer,score:scoreNameAgainstText(customer.name,text)})).sort((a,b)=>b.score-a.score);
+  if(!ranked.length)return null;
+  const best=ranked[0], second=ranked[1];
+  const clear=best.score>=.72 || (best.score>=.58 && (!second || best.score-second.score>=.16));
+  return clear?best:null;
+}
+function cleanNameCandidate(value){
+  let v=String(value||"").replace(/[^A-Za-z.' -]/g," ").replace(/\s+/g," ").trim();
+  const words=v.split(" ").filter(Boolean);
+  if(words.length<2||words.length>5)return "";
+  if(words.some(w=>w.length<2))return "";
+  const bad=/electronic|needs|package|tracking|address|street|road|avenue|lane|unit|miami|nassau|bahamas|florida|warehouse|ship|shipping|code|fedex|ups|usps|amazon/i;
+  if(bad.test(v))return "";
+  return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(" ");
+}
+function guessName(text){
+  const raw=String(text||"").split(/\r?\n/).flatMap(line=>line.split(/[\/|]/)).map(s=>s.trim()).filter(Boolean);
+  for(const part of raw){
+    const c=cleanNameCandidate(part);
+    if(c)return c;
+  }
+  return "";
+}
+function guessTracking(text){
+  const tokens=String(text||"").match(/[A-Z0-9][A-Z0-9-]{8,35}/gi)||[];
+  return tokens.find(t=>!/^(ADDRESS|PACKAGE|CUSTOMER|TRACKING|ELECTRONIC)$/i.test(t))||"";
+}
+async function loadImage(dataUrl){
+  return await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=dataUrl});
+}
+async function enhanceForReading(dataUrl){
+  const img=await loadImage(dataUrl);
+  const scale=Math.min(3,Math.max(1.5,1800/Math.max(img.width,img.height)));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data;
+  for(let i=0;i<d.length;i+=4){
+    const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+    const v=Math.max(0,Math.min(255,(g-128)*1.65+145));
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(im,0,0);
+  return canvas.toDataURL("image/jpeg",.94);
+}
+async function detectPackageCode(dataUrl){
+  if(!("BarcodeDetector" in window))return "";
+  try{
+    const img=await loadImage(dataUrl);
+    const detector=new BarcodeDetector({formats:["qr_code","code_128","code_39","ean_13","ean_8","upc_a","upc_e","itf","codabar"]});
+    const codes=await detector.detect(img);
+    const raw=(codes||[]).map(c=>String(c.rawValue||"").trim()).find(v=>v.length>=6&&v.length<=80);
+    return raw||"";
+  }catch{return ""}
+}
+async function runLabelReader(){
+  const panel=document.getElementById("processingPanel");
+  const title=document.getElementById("processingTitle");
+  const detail=document.getElementById("processingDetail");
+  panel.classList.remove("hidden");
+  title.textContent="Processing package…";
+  detail.textContent="";
+  document.getElementById("matchPanel").classList.add("hidden");
+  document.getElementById("emailResult").classList.add("hidden");
+  if(!stagedMiamiPhotos.length)return;
+  try{
+    const [enhanced,code]=await Promise.all([
+      enhanceForReading(stagedMiamiPhotos[0].data),
+      detectPackageCode(stagedMiamiPhotos[0].data)
+    ]);
+    let result=await Tesseract.recognize(enhanced,"eng");
+    ocrRawText=result.data.text||"";
+    if(norm(ocrRawText).length<12){
+      result=await Tesseract.recognize(stagedMiamiPhotos[0].data,"eng");
+      ocrRawText+="\n"+(result.data.text||"");
+    }
+    const match=await bestCustomerMatch(ocrRawText);
+    currentDetectedName=match?match.customer.name:guessName(ocrRawText);
+    const tracking=code||guessTracking(ocrRawText);
+    document.getElementById("trackingRef").value=tracking||"";
+    await populateCustomerMatch(match?.customer?.id||"",currentDetectedName);
+    if(match){
+      title.textContent=match.customer.name;
+      detail.textContent=tracking?"Package matched · tracking captured":"Package matched";
+    }else if(currentDetectedName){
+      title.textContent=currentDetectedName;
+      detail.textContent="New customer — add email once";
+    }else{
+      title.textContent="Select customer";
+      detail.textContent="Package photo saved";
+    }
+    document.getElementById("matchPanel").classList.remove("hidden");
+  }catch(err){
+    currentDetectedName="";
+    await populateCustomerMatch("","");
+    title.textContent="Select customer";
+    detail.textContent="Package photo saved";
+    document.getElementById("matchPanel").classList.remove("hidden");
+  }
+}
 async function populateCustomerMatch(selectedId="",suggestedName=""){const customers=await all(STORE_CUSTOMERS),sel=document.getElementById("matchedCustomer");sel.innerHTML='<option value="">New / unknown customer</option>'+customers.map(c=>`<option value="${c.id}" ${selectedId===c.id?"selected":""}>${esc(c.name)} — ${esc(c.email)}</option>`).join("");document.getElementById("newCustomerName").value=suggestedName||"";toggleNewCustomerFields()}
 function toggleNewCustomerFields(){document.getElementById("newCustomerFields").classList.toggle("hidden",!!document.getElementById("matchedCustomer").value)}
 document.getElementById("matchedCustomer").onchange=toggleNewCustomerFields;
@@ -41,7 +161,7 @@ document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{document.querySe
 document.getElementById("miamiPhotos").onchange=async e=>{stagedMiamiPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("miamiPreview"),stagedMiamiPhotos);if(stagedMiamiPhotos.length)await runLabelReader()};
 document.getElementById("nassauPhotos").onchange=async e=>{stagedNassauPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("nassauPreview"),stagedNassauPhotos)};
 
-document.getElementById("saveMiami").onclick=async()=>{if(!stagedMiamiPhotos.length){alert("Take at least one Miami package photo.");return}let customerId=document.getElementById("matchedCustomer").value,customer;if(!customerId){const name=document.getElementById("newCustomerName").value.trim(),email=document.getElementById("newCustomerEmail").value.trim();if(!name||!email){alert("Confirm the customer name and enter the email once.");return}customer=await addCustomer(name,email);customerId=customer.id}else customer=await get(STORE_CUSTOMERS,customerId);const pkg={id:uid("PS"),customerId:customer.id,customer:customer.name,customerEmail:customer.email,tracking:document.getElementById("trackingRef").value.trim(),carrier:document.getElementById("carrier").value.trim(),status:"MIAMI_RECEIVED",miami:{location:"Miami Receiving",photos:stagedMiamiPhotos,ocrText:ocrRawText,at:now()},nassau:null,warehouse:null,notifications:[],events:[{type:"MIAMI_RECEIVED",at:now(),note:"Package photographed and received in Miami"}],createdAt:now(),updatedAt:now()};const notice=await buildNotification(customer,pkg);pkg.notifications.push({...notice,status:"PREPARED",at:now()});await put(STORE_PACKAGES,pkg);await showPreparedEmail(customer,pkg);stagedMiamiPhotos=[];ocrRawText="";currentDetectedName="";document.getElementById("miamiPhotos").value="";document.getElementById("miamiPreview").innerHTML="";document.getElementById("ocrPanel").classList.add("hidden");document.getElementById("matchPanel").classList.add("hidden");document.getElementById("trackingRef").value="";document.getElementById("carrier").value="";await renderAll()};
+document.getElementById("saveMiami").onclick=async()=>{if(!stagedMiamiPhotos.length){alert("Take at least one Miami package photo.");return}let customerId=document.getElementById("matchedCustomer").value,customer;if(!customerId){const name=document.getElementById("newCustomerName").value.trim(),email=document.getElementById("newCustomerEmail").value.trim();if(!name||!email){alert("Confirm the customer name and enter the email once.");return}customer=await addCustomer(name,email);customerId=customer.id}else customer=await get(STORE_CUSTOMERS,customerId);const pkg={id:uid("PS"),customerId:customer.id,customer:customer.name,customerEmail:customer.email,tracking:document.getElementById("trackingRef").value.trim(),carrier:document.getElementById("carrier").value.trim(),status:"MIAMI_RECEIVED",miami:{location:"Miami Receiving",photos:stagedMiamiPhotos,ocrText:ocrRawText,at:now()},nassau:null,warehouse:null,notifications:[],events:[{type:"MIAMI_RECEIVED",at:now(),note:"Package photographed and received in Miami"}],createdAt:now(),updatedAt:now()};const notice=await buildNotification(customer,pkg);pkg.notifications.push({...notice,status:"PREPARED",at:now()});await put(STORE_PACKAGES,pkg);await showPreparedEmail(customer,pkg);stagedMiamiPhotos=[];ocrRawText="";currentDetectedName="";document.getElementById("miamiPhotos").value="";document.getElementById("miamiPreview").innerHTML="";document.getElementById("processingPanel").classList.add("hidden");document.getElementById("matchPanel").classList.add("hidden");document.getElementById("trackingRef").value="";document.getElementById("carrier").value="";await renderAll()};
 
 document.getElementById("saveNassau").onclick=async()=>{const id=document.getElementById("nassauPackage").value;if(!id){alert("Select a package.");return}if(!stagedNassauPhotos.length){alert("Take at least one Nassau arrival photo.");return}const pkg=await get(STORE_PACKAGES,id);pkg.nassau={location:document.getElementById("nassauLocation").value.trim(),note:document.getElementById("nassauNote").value.trim(),photos:stagedNassauPhotos,at:now()};pkg.status="NASSAU_RECEIVED";pkg.events.push({type:"NASSAU_RECEIVED",at:now(),note:pkg.nassau.note||"Package arrived in Nassau"});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);stagedNassauPhotos=[];document.getElementById("nassauPhotos").value="";document.getElementById("nassauPreview").innerHTML="";document.getElementById("nassauNote").value="";alert("Nassau arrival saved.");await renderAll()};
 document.getElementById("saveWarehouse").onclick=async()=>{const id=document.getElementById("warehousePackage").value;if(!id){alert("Select a package.");return}const pkg=await get(STORE_PACKAGES,id),status=document.getElementById("warehouseStatus").value;pkg.warehouse={shelf:document.getElementById("shelf").value.trim(),bin:document.getElementById("bin").value.trim(),area:document.getElementById("area").value.trim(),note:document.getElementById("warehouseNote").value.trim(),at:now()};pkg.status=status;pkg.events.push({type:status,at:now(),note:`Warehouse: ${pkg.warehouse.area||"-"} / Shelf ${pkg.warehouse.shelf||"-"} / Bin ${pkg.warehouse.bin||"-"}`});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);alert("Warehouse location/status saved.");await renderAll()};
