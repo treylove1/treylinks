@@ -56,13 +56,10 @@
       <section id="tab-miami" class="tabPanel">
         <article class="card">
           <span class="eyebrow">MIAMI RECEIVING</span>
-          <h2>Take a picture of the package label</h2>
-          <p>Parcel Snap reads the label and tries to match the printed name to a customer already saved in your directory. Tracking is optional.</p>
-
+          <h2>Take Package Photo</h2>
           <label class="cameraBox">
-            <span>📷 Take Miami package photo</span>
+            <span>📷 Take Package Photo</span>
             <input id="miamiPhotos" type="file" accept="image/*" capture="environment" multiple>
-            <small>Use your phone camera. The first photo is used to read the label.</small>
           </label>
           <div id="miamiPreview" class="photoGrid"></div>
 
@@ -78,7 +75,7 @@
           </div>
 
           <div id="matchPanel" class="hidden">
-            <label>Detected / confirmed customer
+            <label>Customer
               <select id="matchedCustomer"></select>
             </label>
 
@@ -94,16 +91,9 @@
               <button id="saveNewCustomer" class="ghost wide">Save customer</button>
             </div>
 
-            <div class="formGrid">
-              <label>Tracking / reference <small>(optional)</small>
-                <input id="trackingRef" placeholder="Optional">
-              </label>
-              <label>Carrier <small>(optional)</small>
-                <input id="carrier" placeholder="UPS / FedEx / USPS / Amazon">
-              </label>
-            </div>
-
-            <button id="saveMiami" class="primary wide">Confirm Miami Arrival + Prepare Customer Email</button>
+            <input id="trackingRef" type="hidden">
+            <input id="carrier" type="hidden">
+            <button id="saveMiami" class="primary wide">Save Miami Arrival</button>
           </div>
 
           <div id="emailResult" class="notice hidden"></div>
