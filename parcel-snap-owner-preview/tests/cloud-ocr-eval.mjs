@@ -36,7 +36,7 @@ function bestCustomerMatch(customers,text){
     .sort((a,b)=>b.score-a.score);
   if(!ranked.length) return null;
   const best=ranked[0], second=ranked[1];
-  const clear=best.score>=.72 || (best.score>=.58 && (!second || best.score-second.score>=.16));
+  const clear=best.score>=.78 && (!second || best.score-second.score>=.08);
   return clear?best:null;
 }
 function digitsOnly(s=""){ return String(s).replace(/\D/g,""); }
