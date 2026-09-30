@@ -48,7 +48,7 @@ async function bestCustomerMatch(text){
   const ranked=customers.map(customer=>({customer,score:scoreNameAgainstText(customer.name,text)})).sort((a,b)=>b.score-a.score);
   if(!ranked.length)return null;
   const best=ranked[0], second=ranked[1];
-  const clear=best.score>=.72 || (best.score>=.58 && (!second || best.score-second.score>=.16));
+  const clear=best.score>=.78 && (!second || best.score-second.score>=.08);
   return clear?best:null;
 }
 function cleanNameCandidate(value){
@@ -74,6 +74,19 @@ function guessTracking(text){
 }
 async function loadImage(dataUrl){
   return await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=dataUrl});
+}
+async function rotateDataUrl(dataUrl,degrees){
+  const img=await loadImage(dataUrl);
+  const rad=degrees*Math.PI/180;
+  const sin=Math.abs(Math.sin(rad)),cos=Math.abs(Math.cos(rad));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.ceil(img.width*cos+img.height*sin);
+  canvas.height=Math.ceil(img.width*sin+img.height*cos);
+  const ctx=canvas.getContext("2d");
+  ctx.translate(canvas.width/2,canvas.height/2);
+  ctx.rotate(rad);
+  ctx.drawImage(img,-img.width/2,-img.height/2);
+  return canvas.toDataURL("image/jpeg",.94);
 }
 async function enhanceForReading(dataUrl){
   const img=await loadImage(dataUrl);
@@ -111,25 +124,49 @@ async function runLabelReader(){
   document.getElementById("matchPanel").classList.add("hidden");
   document.getElementById("emailResult").classList.add("hidden");
   if(!stagedMiamiPhotos.length)return;
+
   try{
-    const [enhanced,code]=await Promise.all([
-      enhanceForReading(stagedMiamiPhotos[0].data),
-      detectPackageCode(stagedMiamiPhotos[0].data)
-    ]);
-    let result=await Tesseract.recognize(enhanced,"eng");
-    ocrRawText=result.data.text||"";
-    if(norm(ocrRawText).length<12){
-      result=await Tesseract.recognize(stagedMiamiPhotos[0].data,"eng");
-      ocrRawText+="\n"+(result.data.text||"");
+    const original=stagedMiamiPhotos[0].data;
+    let tracking=await detectPackageCode(original);
+    const enhanced=await enhanceForReading(original);
+
+    let mergedText="";
+    let match=null;
+
+    const readPass=async(source,label)=>{
+      title.textContent=label;
+      const result=await Tesseract.recognize(source,"eng");
+      const text=result.data.text||"";
+      mergedText+="\n"+text;
+      const found=await bestCustomerMatch(mergedText);
+      return found;
+    };
+
+    match=await readPass(enhanced,"Processing package…");
+
+    if(!match){
+      for(const angle of [-6,6,-10,10]){
+        const rotated=await rotateDataUrl(enhanced,angle);
+        match=await readPass(rotated,"Processing package…");
+        if(!tracking) tracking=await detectPackageCode(rotated);
+        if(match) break;
+      }
     }
-    const match=await bestCustomerMatch(ocrRawText);
-    currentDetectedName=match?match.customer.name:guessName(ocrRawText);
-    const tracking=code||guessTracking(ocrRawText);
+
+    if(!match && norm(mergedText).length<20){
+      match=await readPass(original,"Processing package…");
+    }
+
+    ocrRawText=mergedText;
+    currentDetectedName=match?match.customer.name:guessName(mergedText);
+    if(!tracking) tracking=guessTracking(mergedText);
     document.getElementById("trackingRef").value=tracking||"";
+
     await populateCustomerMatch(match?.customer?.id||"",currentDetectedName);
+
     if(match){
       title.textContent=match.customer.name;
-      detail.textContent=tracking?"Package matched · tracking captured":"Package matched";
+      detail.textContent=tracking?"Package received · tracking captured":"Package received";
     }else if(currentDetectedName){
       title.textContent=currentDetectedName;
       detail.textContent="New customer — add email once";
@@ -137,6 +174,7 @@ async function runLabelReader(){
       title.textContent="Select customer";
       detail.textContent="Package photo saved";
     }
+
     document.getElementById("matchPanel").classList.remove("hidden");
   }catch(err){
     currentDetectedName="";
