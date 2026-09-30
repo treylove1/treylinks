@@ -5,6 +5,7 @@ on:
   push:
     branches: ["main"]
     paths:
+      - "parcel-snap-owner-preview/app.js"
       - "parcel-snap-owner-preview/tests/**"
       - ".github/workflows/parcel-snap-cloud-ocr-test.yml"
 
