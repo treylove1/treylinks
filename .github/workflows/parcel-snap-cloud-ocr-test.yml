@@ -23,48 +23,52 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr poppler-utils imagemagick
 
-      - name: Download official USPS sample
+      - name: Download public shipping label sample
         run: |
           curl -fL --retry 3 --retry-delay 2 \
-            "https://www.usps.com/business/web-tools-apis/archive/2022-web-tools-release-notes-1-25.pdf" \
-            -o /tmp/usps.pdf
+            "https://doc.phomemo.com/Labels-Sample.pdf" \
+            -o /tmp/sample-label.pdf
 
-      - name: Render USPS sample label page
+      - name: Render clean label
         run: |
           mkdir -p parcel-snap-owner-preview/tests/artifacts
-          pdftoppm -f 48 -singlefile -png -r 300 /tmp/usps.pdf parcel-snap-owner-preview/tests/artifacts/usps-page48
-          tesseract parcel-snap-owner-preview/tests/artifacts/usps-page54.png \
-            parcel-snap-owner-preview/tests/artifacts/usps-page54 \
+          pdftoppm -f 1 -singlefile -png -r 300 \
+            /tmp/sample-label.pdf \
+            parcel-snap-owner-preview/tests/artifacts/sample-clean
+          tesseract \
+            parcel-snap-owner-preview/tests/artifacts/sample-clean.png \
+            parcel-snap-owner-preview/tests/artifacts/sample-clean \
             --psm 6
 
-      - name: Evaluate USPS OCR against known fields
+      - name: Evaluate clean label
         run: |
           node parcel-snap-owner-preview/tests/cloud-ocr-eval.mjs \
-            parcel-snap-owner-preview/tests/artifacts/usps-page48.txt \
-            "TOM COLLINS" \
-            "9205590106507600261220" \
-            "USPS official eVS sample"
+            parcel-snap-owner-preview/tests/artifacts/sample-clean.txt \
+            "John Smith" \
+            "8888888888888888888888" \
+            "Public USPS-style sample — clean"
 
-      - name: Download official FedEx sample
+      - name: Create warehouse-photo stress sample
         run: |
-          curl -fL --retry 3 --retry-delay 2 \
-            "https://developer.fedex.com/api/content/dam/fedex-com/irc/SV_labels/USE_SCHEDULED_PICKUP_FEDEX_GROUND_YOUR_PACKAGING_SENDER_URL_ONLY_PAPER_85X11_TOP_HALF_LABEL.pdf" \
-            -o /tmp/fedex.pdf
-
-      - name: Render FedEx sample
-        run: |
-          pdftoppm -f 1 -singlefile -png -r 300 /tmp/fedex.pdf parcel-snap-owner-preview/tests/artifacts/fedex-page1
-          tesseract parcel-snap-owner-preview/tests/artifacts/fedex-page1.png \
-            parcel-snap-owner-preview/tests/artifacts/fedex-page1 \
+          convert parcel-snap-owner-preview/tests/artifacts/sample-clean.png \
+            -background "#8b6f47" \
+            -rotate 6 \
+            -resize 68% \
+            -blur 0x0.7 \
+            -quality 68 \
+            parcel-snap-owner-preview/tests/artifacts/sample-warehouse.jpg
+          tesseract \
+            parcel-snap-owner-preview/tests/artifacts/sample-warehouse.jpg \
+            parcel-snap-owner-preview/tests/artifacts/sample-warehouse \
             --psm 6
 
-      - name: Evaluate FedEx OCR recipient
+      - name: Evaluate warehouse-photo stress sample
         run: |
           node parcel-snap-owner-preview/tests/cloud-ocr-eval.mjs \
-            parcel-snap-owner-preview/tests/artifacts/fedex-page1.txt \
-            "RECIPIENT NAME" \
-            "000000000000" \
-            "FedEx official sample"
+            parcel-snap-owner-preview/tests/artifacts/sample-warehouse.txt \
+            "John Smith" \
+            "8888888888888888888888" \
+            "Public USPS-style sample — rotated/compressed"
 
       - name: Upload OCR evidence
         if: always()
