@@ -41,3 +41,10 @@ dialog{width:min(760px,94vw);border:1px solid #29476d;background:#0d1a2e;color:#
 .timeline{border-left:2px solid #365780;margin:16px 0;padding-left:16px}.timelineItem{margin:0 0 14px}.timelineItem small{color:#89a0c1}
 .packagePhotos{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 @media(max-width:780px){body{padding:12px}header{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:repeat(2,1fr)}.formGrid{grid-template-columns:1fr}.photoGrid,.packagePhotos{grid-template-columns:repeat(2,1fr)}.meta{grid-template-columns:1fr 1fr}}
+
+.ocrPanel{margin-top:14px;border:1px solid #345477;background:#0a1628;border-radius:14px;padding:14px}
+.sectionHead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#173150;color:#a9c8f5;font-size:.72rem;font-weight:900}
+.notice{border:1px solid #345477;background:#0a1628;border-radius:12px;padding:14px;margin-top:14px}
+.notice p{margin:.5rem 0;color:#9fb0c9}
+.mailButton{display:inline-block;text-decoration:none;background:#2864e6;color:white;padding:10px 13px;border-radius:10px;font-weight:850}
