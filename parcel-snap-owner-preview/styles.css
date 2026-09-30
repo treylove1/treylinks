@@ -1,1 +1,43 @@
-*{box-sizing:border-box}body{margin:0;background:#09111f;color:#edf3ff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}header,main{max-width:1100px;margin:auto}header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:20px}h1{margin:.2rem 0}.eyebrow{font-size:.72rem;letter-spacing:.12em;color:#8496b6;font-weight:800}.pill{border:1px solid #31507f;background:#10203d;border-radius:999px;padding:10px 14px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:#0f1b31;border:1px solid #223a5d;border-radius:16px;padding:18px;margin-bottom:14px}.metrics strong{display:block;font-size:1.8rem;margin:.25rem 0}.metrics small,.card span{color:#98a8c3}.sectionHead{display:flex;justify-content:space-between;gap:18px;align-items:center}.sectionHead h2{margin:.2rem 0}button,select{background:#245bd7;color:white;border:0;border-radius:10px;padding:11px 14px;font-weight:800}select{background:#132846;border:1px solid #345477}.company{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px 0;border-top:1px solid #203756}.company:first-child{margin-top:14px}.companyActions{display:flex;gap:8px;flex-wrap:wrap}.companyActions button{background:#183454}.companyActions button.view{background:#245bd7}.customerPanel{margin-top:16px;border:1px solid #29466f;border-radius:14px;padding:18px;background:#0b1729}.customerPanel.empty{color:#8fa0ba}.testBanner{background:#4b3919;color:#ffd479;border:1px solid #785b27;padding:9px 12px;border-radius:10px;font-weight:900;margin-bottom:14px}.package{padding:12px;border:1px solid #284364;border-radius:12px;margin-top:10px}.status{display:inline-block;padding:4px 8px;border-radius:999px;background:#173e31;color:#80e8bd;font-size:.75rem;font-weight:800}pre{white-space:pre-wrap;background:#08101e;border-radius:12px;padding:14px;color:#c9d5e8;overflow:auto}@media(max-width:760px){body{padding:14px}header,.sectionHead{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:1fr}.company{align-items:flex-start;flex-direction:column}}
+*{box-sizing:border-box}
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark}
+body{margin:0;background:#08111f;color:#eef4ff;min-height:100vh;padding:18px}
+.hidden{display:none!important}
+.screen{min-height:94vh;display:grid;place-items:center}
+.loginCard{width:min(430px,100%);background:#0f1d33;border:1px solid #243f64;border-radius:20px;padding:24px;box-shadow:0 20px 60px #0006}
+header,main{max-width:1120px;margin:auto}
+header{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}
+h1,h2,h3{margin:.3rem 0 .7rem}
+p{color:#a8b6cd}
+.eyebrow{font-size:.72rem;letter-spacing:.12em;font-weight:900;color:#7f95b9}
+.headerActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{padding:9px 12px;border-radius:999px;background:#12392e;color:#80e7bd;border:1px solid #205b49;font-size:.75rem;font-weight:900}
+.card{background:#0f1d33;border:1px solid #223b60;border-radius:17px;padding:18px;margin-bottom:14px;box-shadow:0 12px 34px #0002}
+.grid{display:grid;gap:12px}.metrics{grid-template-columns:repeat(4,1fr)}
+.metrics span,.metrics small{color:#93a5c1}.metrics strong{display:block;font-size:1.7rem;margin:.2rem 0}
+.tabs{max-width:1120px;margin:0 auto 14px;display:flex;gap:8px;overflow:auto;padding-bottom:3px}
+.tab{white-space:nowrap;background:#10213b;border:1px solid #29486f;color:#d8e4f6;padding:10px 14px;border-radius:11px;font-weight:800}
+.tab.active{background:#2864e6;border-color:#2864e6}
+label{display:block;font-weight:750;margin:12px 0 4px;color:#c7d3e6}
+input,select,textarea{width:100%;background:#0a1628;color:#eef4ff;border:1px solid #304d72;border-radius:10px;padding:11px 12px;font:inherit;margin-top:6px}
+.formGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+button{border:0;border-radius:10px;padding:11px 14px;font-weight:850;cursor:pointer}
+.primary{background:#2864e6;color:white}.wide{width:100%;margin-top:14px}
+.ghost{background:#13243d;color:#dce7f7;border:1px solid #304c70}
+.danger{background:#4a2028;color:#ffb2bd}
+.warn{color:#ffd17a}.tiny{font-size:.78rem}
+.cameraBox{border:1px dashed #476a9a;border-radius:14px;padding:16px;background:#0b1729;cursor:pointer}
+.cameraBox span{display:block;font-size:1rem;color:#dfe9f8}.cameraBox input{margin:10px 0 0}.cameraBox small{color:#91a2bd}
+.photoGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.photoGrid img,.packagePhotos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1px solid #314f75}
+.packageCard{background:#0f1d33;border:1px solid #223b60;border-radius:16px;padding:16px;margin-bottom:12px}
+.packageTop{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.status{font-size:.72rem;padding:5px 8px;border-radius:999px;background:#173e31;color:#80e7bd;font-weight:900}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.meta div{background:#0a1628;border-radius:10px;padding:10px}.meta small{display:block;color:#8094b4}.meta strong{font-size:.9rem}
+.packageActions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.packageActions button{background:#173150;color:#dce9f9}
+.searchBox{font-size:1.05rem}
+.ownerRule{background:#0a1628;border:1px solid #29496f;border-radius:12px;padding:14px;margin:14px 0}.ownerRule strong,.ownerRule span{display:block}.ownerRule span{color:#9fb0c9;margin-top:5px}
+dialog{width:min(760px,94vw);border:1px solid #29476d;background:#0d1a2e;color:#eef4ff;border-radius:18px;padding:22px}dialog::backdrop{background:#000a}.dialogClose{float:right;background:#172c49;color:white;font-size:1.4rem}
+.timeline{border-left:2px solid #365780;margin:16px 0;padding-left:16px}.timelineItem{margin:0 0 14px}.timelineItem small{color:#89a0c1}
+.packagePhotos{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(max-width:780px){body{padding:12px}header{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:repeat(2,1fr)}.formGrid{grid-template-columns:1fr}.photoGrid,.packagePhotos{grid-template-columns:repeat(2,1fr)}.meta{grid-template-columns:1fr 1fr}}
