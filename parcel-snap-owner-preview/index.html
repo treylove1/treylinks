@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Parcel Snap Owner Portal Prototype</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <span class="eyebrow">PARCEL SNAP · OWNER TEST MODE</span>
+      <h1>Owner Portal</h1>
+      <p>Full-access testing without charging the owner account.</p>
+    </div>
+    <div class="pill">OWNER · FULL_ACCESS</div>
+  </header>
+
+  <main>
+    <section class="grid metrics">
+      <article class="card"><span>Owner billing</span><strong>$0</strong><small>Permanent owner entitlement</small></article>
+      <article class="card"><span>Test companies</span><strong id="companyCount">0</strong><small>Unlimited QA companies</small></article>
+      <article class="card"><span>View mode</span><strong id="viewMode">Owner</strong><small>Switch to customer experience</small></article>
+    </section>
+
+    <section class="card">
+      <div class="sectionHead">
+        <div>
+          <span class="eyebrow">OWNER CONTROLS</span>
+          <h2>Create QA Company</h2>
+        </div>
+        <button id="createCompany">Create free test company</button>
+      </div>
+      <div id="companies"></div>
+    </section>
+
+    <section class="card">
+      <div class="sectionHead">
+        <div>
+          <span class="eyebrow">CUSTOMER EXPERIENCE</span>
+          <h2>View as Customer</h2>
+        </div>
+        <select id="customerSelect"></select>
+      </div>
+      <div id="customerPanel" class="customerPanel empty">
+        Create a QA company, then select “View as Customer.”
+      </div>
+    </section>
+
+    <section class="card">
+      <span class="eyebrow">OWNER ENTITLEMENT RULE</span>
+      <pre>role = OWNER
+billing_exempt = true
+plan = FULL_ACCESS
+max_test_companies = unlimited
+max_test_users = unlimited
+payment_required_for_owner = false
+real_customer_data_access = false
+view_as_customer = QA/test accounts only</pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
