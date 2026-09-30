@@ -26,13 +26,13 @@ jobs:
       - name: Download official USPS sample
         run: |
           curl -fL --retry 3 --retry-delay 2 \
-            "https://www.usps.com/business/web-tools-apis/archive/2022-web-tools-release-notes-1-31.pdf" \
+            "https://www.usps.com/business/web-tools-apis/archive/2022-web-tools-release-notes-1-25.pdf" \
             -o /tmp/usps.pdf
 
       - name: Render USPS sample label page
         run: |
           mkdir -p parcel-snap-owner-preview/tests/artifacts
-          pdftoppm -f 54 -singlefile -png -r 300 /tmp/usps.pdf parcel-snap-owner-preview/tests/artifacts/usps-page54
+          pdftoppm -f 48 -singlefile -png -r 300 /tmp/usps.pdf parcel-snap-owner-preview/tests/artifacts/usps-page48
           tesseract parcel-snap-owner-preview/tests/artifacts/usps-page54.png \
             parcel-snap-owner-preview/tests/artifacts/usps-page54 \
             --psm 6
@@ -40,7 +40,7 @@ jobs:
       - name: Evaluate USPS OCR against known fields
         run: |
           node parcel-snap-owner-preview/tests/cloud-ocr-eval.mjs \
-            parcel-snap-owner-preview/tests/artifacts/usps-page54.txt \
+            parcel-snap-owner-preview/tests/artifacts/usps-page48.txt \
             "TOM COLLINS" \
             "9205590106507600261220" \
             "USPS official eVS sample"
