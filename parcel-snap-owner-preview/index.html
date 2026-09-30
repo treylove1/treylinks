@@ -2,63 +2,176 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Parcel Snap Owner Portal Prototype</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Parcel Snap Owner Test</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header>
-    <div>
-      <span class="eyebrow">PARCEL SNAP · OWNER TEST MODE</span>
-      <h1>Owner Portal</h1>
-      <p>Full-access testing without charging the owner account.</p>
-    </div>
-    <div class="pill">OWNER · FULL_ACCESS</div>
-  </header>
-
-  <main>
-    <section class="grid metrics">
-      <article class="card"><span>Owner billing</span><strong>$0</strong><small>Permanent owner entitlement</small></article>
-      <article class="card"><span>Test companies</span><strong id="companyCount">0</strong><small>Unlimited QA companies</small></article>
-      <article class="card"><span>View mode</span><strong id="viewMode">Owner</strong><small>Switch to customer experience</small></article>
+  <div id="loginScreen" class="screen">
+    <section class="loginCard">
+      <span class="eyebrow">PARCEL SNAP · OWNER TEST</span>
+      <h1>Sign in</h1>
+      <p>Use this owner test login to exercise the complete warehouse workflow.</p>
+      <label>Owner email
+        <input id="loginEmail" type="email" value="owner@yourelectronicneeds.org" autocomplete="username">
+      </label>
+      <label>Test PIN
+        <input id="loginPin" type="password" inputmode="numeric" value="2468" autocomplete="current-password">
+      </label>
+      <button id="loginBtn" class="primary wide">Enter Parcel Snap</button>
+      <p class="tiny warn">Prototype test login only. Do not use real customer secrets here yet.</p>
     </section>
+  </div>
 
-    <section class="card">
-      <div class="sectionHead">
-        <div>
+  <div id="app" class="hidden">
+    <header>
+      <div>
+        <span class="eyebrow">PARCEL SNAP · OWNER FULL ACCESS</span>
+        <h1>Warehouse Test Console</h1>
+        <p>Miami intake → Nassau intake → warehouse organization → pickup/delivery.</p>
+      </div>
+      <div class="headerActions">
+        <span class="pill">OWNER · $0 TEST MODE</span>
+        <button id="logoutBtn" class="ghost">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="grid metrics">
+        <article class="card"><span>Total packages</span><strong id="totalPackages">0</strong><small>Saved on this device</small></article>
+        <article class="card"><span>Miami received</span><strong id="miamiCount">0</strong><small>Photo intake recorded</small></article>
+        <article class="card"><span>Nassau received</span><strong id="nassauCount">0</strong><small>Arrival confirmed</small></article>
+        <article class="card"><span>Ready / stored</span><strong id="readyCount">0</strong><small>Warehouse location assigned</small></article>
+      </section>
+
+      <nav class="tabs">
+        <button class="tab active" data-tab="intake">New Package</button>
+        <button class="tab" data-tab="warehouse">Warehouse</button>
+        <button class="tab" data-tab="search">Search</button>
+        <button class="tab" data-tab="owner">Owner</button>
+      </nav>
+
+      <section id="tab-intake" class="tabPanel">
+        <article class="card">
+          <span class="eyebrow">STEP 1 · MIAMI RECEIVING</span>
+          <h2>Create package + Miami photos</h2>
+
+          <div class="formGrid">
+            <label>Customer name
+              <input id="customerName" placeholder="e.g. Test Customer 001">
+            </label>
+            <label>Tracking / reference
+              <input id="trackingRef" placeholder="e.g. 1Z... or TEST-00001">
+            </label>
+            <label>Carrier
+              <input id="carrier" placeholder="Amazon / UPS / FedEx / USPS">
+            </label>
+            <label>Miami location
+              <input id="miamiLocation" value="Miami Receiving">
+            </label>
+          </div>
+
+          <label class="cameraBox">
+            <span>📷 Take Miami arrival photo(s)</span>
+            <input id="miamiPhotos" type="file" accept="image/*" capture="environment" multiple>
+            <small>Use your phone camera or choose existing photos.</small>
+          </label>
+          <div id="miamiPreview" class="photoGrid"></div>
+
+          <button id="saveMiami" class="primary wide">Save Miami Intake</button>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">STEP 2 · NASSAU RECEIVING</span>
+          <h2>Record Nassau arrival</h2>
+          <label>Select package
+            <select id="nassauPackage"></select>
+          </label>
+
+          <div class="formGrid">
+            <label>Nassau receiving area
+              <input id="nassauLocation" value="Nassau Receiving">
+            </label>
+            <label>Condition / note
+              <input id="nassauNote" placeholder="Box OK / damaged corner / opened for inspection">
+            </label>
+          </div>
+
+          <label class="cameraBox">
+            <span>📷 Take Nassau arrival photo(s)</span>
+            <input id="nassauPhotos" type="file" accept="image/*" capture="environment" multiple>
+            <small>These remain attached to the same package record.</small>
+          </label>
+          <div id="nassauPreview" class="photoGrid"></div>
+
+          <button id="saveNassau" class="primary wide">Save Nassau Arrival</button>
+        </article>
+      </section>
+
+      <section id="tab-warehouse" class="tabPanel hidden">
+        <article class="card">
+          <span class="eyebrow">STEP 3 · WAREHOUSE ORGANIZATION</span>
+          <h2>Assign shelf / bin / area</h2>
+          <label>Select package
+            <select id="warehousePackage"></select>
+          </label>
+          <div class="formGrid">
+            <label>Shelf
+              <input id="shelf" placeholder="A">
+            </label>
+            <label>Bin
+              <input id="bin" placeholder="12">
+            </label>
+            <label>Area
+              <input id="area" placeholder="Small Parcels / TV Zone / Hold">
+            </label>
+            <label>Status
+              <select id="warehouseStatus">
+                <option value="WAREHOUSED">Warehoused</option>
+                <option value="READY_FOR_PICKUP">Ready for pickup</option>
+                <option value="OUT_FOR_DELIVERY">Out for delivery</option>
+                <option value="PICKED_UP">Picked up</option>
+                <option value="DELIVERED">Delivered</option>
+              </select>
+            </label>
+          </div>
+          <label>Warehouse note
+            <textarea id="warehouseNote" rows="3" placeholder="Optional note"></textarea>
+          </label>
+          <button id="saveWarehouse" class="primary wide">Save Warehouse Location</button>
+        </article>
+
+        <div id="warehouseList"></div>
+      </section>
+
+      <section id="tab-search" class="tabPanel hidden">
+        <article class="card">
+          <span class="eyebrow">FIND PACKAGE FAST</span>
+          <h2>Search Parcel Snap</h2>
+          <input id="searchBox" class="searchBox" placeholder="Customer, tracking, shelf, bin, status...">
+        </article>
+        <div id="searchResults"></div>
+      </section>
+
+      <section id="tab-owner" class="tabPanel hidden">
+        <section class="card">
           <span class="eyebrow">OWNER CONTROLS</span>
-          <h2>Create QA Company</h2>
-        </div>
-        <button id="createCompany">Create free test company</button>
-      </div>
-      <div id="companies"></div>
-    </section>
+          <h2>Full-access test mode</h2>
+          <p>Your owner test account bypasses payment for this prototype so you can exercise all workflows.</p>
+          <div class="ownerRule">
+            <strong>OWNER = FULL_ACCESS</strong>
+            <span>No checkout · No trial countdown · Unlimited QA records</span>
+          </div>
+          <button id="resetData" class="danger">Reset all test data on this device</button>
+        </section>
+      </section>
+    </main>
+  </div>
 
-    <section class="card">
-      <div class="sectionHead">
-        <div>
-          <span class="eyebrow">CUSTOMER EXPERIENCE</span>
-          <h2>View as Customer</h2>
-        </div>
-        <select id="customerSelect"></select>
-      </div>
-      <div id="customerPanel" class="customerPanel empty">
-        Create a QA company, then select “View as Customer.”
-      </div>
-    </section>
-
-    <section class="card">
-      <span class="eyebrow">OWNER ENTITLEMENT RULE</span>
-      <pre>role = OWNER
-billing_exempt = true
-plan = FULL_ACCESS
-max_test_companies = unlimited
-max_test_users = unlimited
-payment_required_for_owner = false
-real_customer_data_access = false
-view_as_customer = QA/test accounts only</pre>
-    </section>
-  </main>
+  <dialog id="packageDialog">
+    <button id="closeDialog" class="dialogClose">×</button>
+    <div id="dialogContent"></div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>
