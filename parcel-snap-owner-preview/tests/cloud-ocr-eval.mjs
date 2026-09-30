@@ -85,7 +85,7 @@ const decoys=[
   {name:"John Smith",email:"john@example.test"},
   {name:"Trevon Humes",email:"trevon@example.test"},
   {name:expectedName,email:"expected@example.test"}
-];
+].filter((item,index,arr)=>arr.findIndex(x=>norm(x.name)===norm(item.name))===index);
 const match=bestCustomerMatch(decoys,text);
 const tracking=expectedTracking?bestTracking(expectedTracking,text):{candidate:"",score:1,candidates:[]};
 
