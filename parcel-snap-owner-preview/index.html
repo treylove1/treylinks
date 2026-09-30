@@ -63,15 +63,12 @@
           </label>
           <div id="miamiPreview" class="photoGrid"></div>
 
-          <div id="ocrPanel" class="ocrPanel hidden">
-            <div class="sectionHead">
-              <div>
-                <span class="eyebrow">LABEL READER</span>
-                <h3 id="ocrStatus">Waiting</h3>
-              </div>
-              <span id="ocrBadge" class="badge">OCR</span>
+          <div id="processingPanel" class="processingPanel hidden">
+            <div class="processingDot"></div>
+            <div>
+              <strong id="processingTitle">Processing package…</strong>
+              <div id="processingDetail"></div>
             </div>
-            <textarea id="ocrText" rows="5" readonly></textarea>
           </div>
 
           <div id="matchPanel" class="hidden">
