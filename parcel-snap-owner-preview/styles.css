@@ -48,3 +48,7 @@ dialog{width:min(760px,94vw);border:1px solid #29476d;background:#0d1a2e;color:#
 .notice{border:1px solid #345477;background:#0a1628;border-radius:12px;padding:14px;margin-top:14px}
 .notice p{margin:.5rem 0;color:#9fb0c9}
 .mailButton{display:inline-block;text-decoration:none;background:#2864e6;color:white;padding:10px 13px;border-radius:10px;font-weight:850}
+
+.processingPanel{margin-top:14px;display:flex;align-items:center;gap:12px;border:1px solid #345477;background:#0a1628;border-radius:14px;padding:14px}
+.processingDot{width:12px;height:12px;border-radius:50%;background:#6ea1ff;box-shadow:0 0 0 6px #6ea1ff22}
+#processingDetail{color:#9fb0c9;margin-top:4px}
