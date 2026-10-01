@@ -1,65 +1,70 @@
-PARCEL SNAP — OCR / KNOWN-CUSTOMER / VISION INDEPENDENT REVIEW BUNDLE
-Generated: 2026-10-01
+PARCEL SNAP — INDEPENDENT RECOGNITION ENGINE REVIEW
+Updated: 2026-10-01
 
-PURPOSE
-Parcel Snap is warehouse software. A worker photographs a package label. The software must:
-1. identify a known customer/person/business if possible,
-2. capture tracking/carrier/address,
-3. save the package/photo,
-4. notify the correct customer,
-5. NEVER invent a customer identity from OCR noise.
+THE PROBLEM
+A warehouse worker photographs a shipping label. Parcel Snap must find the correct known
+customer/business, capture package data, save the photo, and notify the right customer.
+A wrong customer match is worse than asking the worker to review the package.
 
-CURRENT DESIGN
-A. KNOWN-CUSTOMER MATCHER (primary truth check)
-- The company's directory is the list of identities Parcel Snap is allowed to auto-match.
-- Each customer can be PERSON or BUSINESS.
-- Each customer can have aliases: PERSON_NAME, BUSINESS_NAME, LABEL, CUSTOMER_CODE.
-- OCR/vision output is searched for those known identities.
-- Exact, compact, partial, and fuzzy evidence are scored.
-- Return-address context is penalized.
-- Destination/business+person context is boosted.
-- Business alias alone is not enough to turn a PERSON account into a match.
-- Low confidence => REVIEW or NO_MATCH, not invented identity.
+IMPORTANT CHANGE
+The system no longer asks OCR: "What name do you think this is?"
+It asks: "Which identity from our known customer directory is actually supported by this label?"
 
-B. VISION LAYER
-- Server-side multimodal endpoint is designed to inspect the whole image.
-- It must distinguish carrier, sender/return address, recipient, destination, tracking.
-- It must return structured JSON and needs_review.
-- It must not invent a full person name when text is incomplete.
-- Vision endpoint currently requires external model credentials before real inference can run.
+KNOWN DIRECTORY MODEL
+- Customer can be PERSON or BUSINESS.
+- Customer has canonical name and optional aliases.
+- Alias types:
+  PERSON_NAME
+  BUSINESS_NAME
+  LABEL
+  CUSTOMER_CODE
+- PERSON example:
+  canonical: Trevon Humes
+  supporting business alias: Your Electronic Needs
+  label alias: Your Electronic Needs / Trevon Humes
+- A business alias alone is NOT enough to turn a PERSON account into an automatic match.
+- A BUSINESS customer may be matched by its business name.
+- Return-address evidence is down-weighted.
+- Destination-context evidence is up-weighted.
+- Match requires threshold plus separation from the second-best customer.
+- No strong known identity => manual review; do not invent a new name.
 
-C. OCR FALLBACK
-- Browser Tesseract remains supporting evidence / fallback.
-- Real Roadie package OCR was poor:
-  "Your electconic needs Trevor"
-  "16600 Ni S4TH AVE UNIT 9"
-  "HIALEAH FL 33014-6110"
-- Directory-first matching still resolves that to known customer "Trevon Humes"
-  because the same line contains a strong fuzzy business anchor "Your Electronic Needs"
-  plus a fuzzy known first-name match "Trevor" ~= "Trevon".
-- This exact case is now a regression test.
+REAL IMAGE TEST
+The actual Roadie package image was OCR'd privately during development.
+The OCR was imperfect and produced approximately:
+  Your electconic needs Trevor
+  [destination street OCR]
+  HIALEAH FL ...
 
-D. SAFETY / FAILURE RULE
-When no known identity is sufficiently supported:
-- do not auto-select a customer,
-- show manual Name + Email + Phone/WhatsApp fields,
-- worker confirms/creates the customer,
-- that customer becomes available for future matching.
+The directory matcher still resolved the known target Trevon Humes because:
+1. "Your electconic needs" strongly resembles known business alias "Your Electronic Needs".
+2. "Trevor" strongly resembles known first name "Trevon".
+3. Both clues occur together outside the return-address block.
+4. No competing known customer scored close enough.
 
-IMPORTANT QUESTIONS FOR INDEPENDENT REVIEW
-1. Can the matcher false-match two customers who share the same business prefix?
-2. Are the 0.90 auto-match / 0.72 review / 0.08 margin thresholds appropriate?
-3. Is business+known-first-name enough for automatic selection, or should it be REVIEW?
-4. How should suite/unit/customer codes be weighted versus names?
-5. Should destination-address evidence be used more strongly?
-6. How should labels with no human name but only business name be handled?
-7. How should multilingual names / accents / OCR confusions be normalized safely?
-8. Is browser-side Tesseract too slow for a 100-package warehouse line?
-9. Should the multimodal model be given the entire known-customer directory, or only likely candidates?
-10. What adversarial label cases could cause one customer's package to be assigned to another?
+Public tests use anonymized addresses.
+
+FALSE-POSITIVE TESTS
+- exact known name in Return Address => must NOT auto-match recipient.
+- business prefix alone => must NOT auto-match a person.
+- random OCR "A Aaa Freded Was" => NO_MATCH.
+- real business customer by business name => MATCHED.
+
+WHAT TO REVIEW
+1. Thresholds: auto 0.90, review 0.72, margin 0.08.
+2. Whether business+fuzzy-first-name should auto-match or only REVIEW.
+3. Shared business aliases across multiple people.
+4. Customer-code / suite-number weighting.
+5. Labels where recipient is business only.
+6. Multilingual names and OCR substitutions.
+7. Scalability with hundreds/thousands of known recipients.
+8. False matches caused by text elsewhere on the box.
+9. Whether server-side multimodal vision should narrow candidates before this matcher.
+10. Whether every auto-match should store evidence + score for audit.
 
 ================================================================================
-FILE: parcel-snap-customer/known-customer-matcher.js
+KNOWN CUSTOMER MATCHER
+parcel-snap-customer/known-customer-matcher.js
 ================================================================================
 (function(g){
 "use strict";
@@ -81,7 +86,8 @@ g.ParcelSnapKnownMatcher={matchDirectory,normalize:N,compact:C};
 
 
 ================================================================================
-FILE: parcel-snap-customer/tests/known-customer-matcher-test.mjs
+REGRESSION TESTS
+parcel-snap-customer/tests/known-customer-matcher-test.mjs
 ================================================================================
 await import("../known-customer-matcher.js");
 const M=globalThis.ParcelSnapKnownMatcher;
@@ -120,10 +126,10 @@ const roadie=[
   "ROADIE",
   "Return Address",
   "BBY-1502",
-  "10760 NW 17th St",
+  "10000 NW 10th St",
   "Sweetwater FL 33172",
   "Your electronic needs/TrevonHu",
-  "16600 NW 54TH AVE UNIT 9",
+  "20000 NW 20TH AVE UNIT 1",
   "HIALEAH FL 33014-6110",
   "PACKAGE TRACKING CODE"
 ].join("\n");
@@ -131,10 +137,10 @@ const roadie=[
 let r=M.matchDirectory(customers,roadie);
 expect("partial known recipient",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
 
-r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10760 NW 17th St\nSweetwater FL 33172\nPACKAGE TRACKING CODE");
+r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10000 NW 10th St\nSweetwater FL 33172\nPACKAGE TRACKING CODE");
 expect("return address does not identify recipient",r.status!=="MATCHED",r);
 
-r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110");
+r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n20000 NW 20TH AVE UNIT 1\nHIALEAH FL 33014-6110");
 expect("business prefix alone does not become person",r.status!=="MATCHED",r);
 
 r=M.matchDirectory(customers,"ROADIE\nA Aaa Freded Was\nPACKAGE TRACKING CODE\n998877665544");
@@ -146,7 +152,7 @@ expect("business customer recognized",r.status==="MATCHED"&&r.customer?.id==="ab
 const realRoadieOcr=[
   "Sweetwater FL 33172",
   "Your electconic needs Trevor",
-  "16600 Ni S4TH AVE UNIT 9",
+  "20000 Ni 20TH AVE UNIT 1",
   "HIALEAH FL 33014-6110"
 ].join("\n");
 
@@ -157,7 +163,8 @@ console.log("known customer matcher regression tests passed");
 
 
 ================================================================================
-FILE: parcel-snap-customer/vision-client.js
+VISION CLIENT
+parcel-snap-customer/vision-client.js
 ================================================================================
 (() => {
   const VISION_API = SUPABASE_URL + "/functions/v1/parcel-snap-vision";
@@ -313,7 +320,8 @@ FILE: parcel-snap-customer/vision-client.js
 })();
 
 ================================================================================
-SERVER FUNCTION: parcel-snap-vision
+SERVER-SIDE VISION FUNCTION
+parcel-snap-vision
 ================================================================================
 import postgres from "npm:postgres@3.4.7";
 
