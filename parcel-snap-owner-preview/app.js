@@ -279,7 +279,7 @@ async function showPreparedEmail(customer,pkg){const n=await buildNotification(c
 document.getElementById("loginBtn").onclick=async()=>{const email=document.getElementById("loginEmail").value.trim().toLowerCase(),pin=document.getElementById("loginPin").value.trim();if(email!=="owner@yourelectronicneeds.org"||pin!=="2468"){alert("Use the owner test login shown on this page.");return}sessionStorage.setItem("parcelSnapOwnerLoggedIn","1");showApp()};
 document.getElementById("logoutBtn").onclick=()=>{sessionStorage.removeItem("parcelSnapOwnerLoggedIn");location.reload()};
 function showApp(){document.getElementById("loginScreen").classList.add("hidden");document.getElementById("app").classList.remove("hidden");renderAll()}
-document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));document.querySelectorAll(".tabPanel").forEach(p=>p.classList.add("hidden"));document.getElementById("tab-"+btn.dataset.tab).classList.remove("hidden");if(btn.dataset.tab==="warehouse")renderWarehouse();if(btn.dataset.tab==="customers")renderCustomers();if(btn.dataset.tab==="search")renderSearch()});
+document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));document.querySelectorAll(".tabPanel").forEach(p=>p.classList.add("hidden"));document.getElementById("tab-"+btn.dataset.tab).classList.remove("hidden");if(btn.dataset.tab==="warehouse")renderWarehouse();if(btn.dataset.tab==="facilities")renderFacilities();if(btn.dataset.tab==="customers")renderCustomers();if(btn.dataset.tab==="search")renderSearch()});
 document.getElementById("miamiPhotos").onchange=async e=>{stagedMiamiPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("miamiPreview"),stagedMiamiPhotos);if(stagedMiamiPhotos.length)await runLabelReader()};
 document.getElementById("nassauPhotos").onchange=async e=>{stagedNassauPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("nassauPreview"),stagedNassauPhotos)};
 
@@ -375,7 +375,7 @@ document.getElementById("searchBox").oninput=renderSearch;
 
 function packageCard(p){const wh=p.warehouse||{};return `<article class="packageCard"><div class="packageTop"><div><strong>${esc(p.customer)}</strong><br><small>${esc(p.tracking||"No tracking number")}</small></div><span class="status">${esc(statusLabel(p.status))}</span></div><div class="meta"><div><small>Email</small><strong>${esc(p.customerEmail||"-")}</strong></div><div><small>Area</small><strong>${esc(wh.area||p.nassau?.location||p.miami?.location||"-")}</strong></div><div><small>Shelf / Bin</small><strong>${esc((wh.shelf||"-")+" / "+(wh.bin||"-"))}</strong></div></div><div class="packageActions"><button data-open="${p.id}">Open package</button></div></article>`}
 async function bindOpenButtons(root){root.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openPackage(b.dataset.open))}
-async function renderAll(){const [pkgs,customers]=await Promise.all([all(STORE_PACKAGES),all(STORE_CUSTOMERS)]);document.getElementById("customerCount").textContent=customers.length;document.getElementById("totalPackages").textContent=pkgs.length;document.getElementById("miamiCount").textContent=pkgs.filter(p=>p.miami).length;document.getElementById("nassauCount").textContent=pkgs.filter(p=>p.nassau).length;populatePackageSelects(pkgs);await populateCustomerMatch(document.getElementById("matchedCustomer")?.value||"",currentDetectedName);await renderWarehouse();await renderCustomers();await renderSearch()}
+async function renderAll(){const [pkgs,customers]=await Promise.all([all(STORE_PACKAGES),all(STORE_CUSTOMERS)]);document.getElementById("customerCount").textContent=customers.length;document.getElementById("totalPackages").textContent=pkgs.length;document.getElementById("miamiCount").textContent=pkgs.filter(p=>p.miami).length;document.getElementById("nassauCount").textContent=pkgs.filter(p=>p.nassau).length;renderFacilitySelectors();renderFacilities();populatePackageSelects(pkgs);await populateCustomerMatch(document.getElementById("matchedCustomer")?.value||"",currentDetectedName);await renderWarehouse();await renderCustomers();await renderSearch()}
 function populatePackageSelects(pkgs){const opts='<option value="">Select package</option>'+pkgs.map(p=>`<option value="${p.id}">${esc(p.customer)} — ${esc(p.tracking||"No tracking")}</option>`).join("");document.getElementById("nassauPackage").innerHTML=opts;document.getElementById("warehousePackage").innerHTML=opts}
 async function renderWarehouse(){const pkgs=(await all(STORE_PACKAGES)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)),root=document.getElementById("warehouseList");root.innerHTML=pkgs.length?pkgs.map(packageCard).join(""):'<article class="card"><p>No packages yet.</p></article>';await bindOpenButtons(root)}
 async function renderCustomers(){const customers=(await all(STORE_CUSTOMERS)).sort((a,b)=>a.name.localeCompare(b.name)),root=document.getElementById("customerList");root.innerHTML=customers.length?customers.map(c=>`<article class="packageCard"><div class="packageTop"><div><strong>${esc(c.name)}</strong><br><small>${esc(c.email)}</small></div><button class="danger" data-delcustomer="${c.id}">Delete</button></div></article>`).join(""):'<article class="card"><p>No customers yet. Add Trevon Humes or another test customer once, then photograph a label with that name.</p></article>';root.querySelectorAll("[data-delcustomer]").forEach(b=>b.onclick=async()=>{if(confirm("Delete this test customer?")){await del(STORE_CUSTOMERS,b.dataset.delcustomer);await renderAll()}})}
@@ -383,4 +383,31 @@ async function renderSearch(){const q=document.getElementById("searchBox").value
 async function openPackage(id){const p=await get(STORE_PACKAGES,id),wh=p.warehouse||{},photos=[...(p.miami?.photos||[]),...(p.nassau?.photos||[])],notifications=p.notifications||[];document.getElementById("dialogContent").innerHTML=`<span class="eyebrow">PACKAGE RECORD</span><h2>${esc(p.customer)}</h2><p>${esc(p.tracking||"No tracking number required")} · ${esc(statusLabel(p.status))}</p><div class="meta"><div><small>Email</small><strong>${esc(p.customerEmail||"-")}</strong></div><div><small>Nassau</small><strong>${esc(p.nassau?.location||"-")}</strong></div><div><small>Warehouse</small><strong>${esc((wh.area||"-")+" · "+(wh.shelf||"-")+"/"+(wh.bin||"-"))}</strong></div></div><h3>Photos</h3><div class="packagePhotos">${photos.map(ph=>`<img src="${ph.data}" alt="Package photo">`).join("")||"<p>No photos.</p>"}</div><h3>Notifications</h3><div class="timeline">${notifications.map(n=>`<div class="timelineItem"><strong>${esc(n.status)}</strong><br><small>${new Date(n.at).toLocaleString()}</small><div>${esc(n.to)} — ${esc(n.subject)}</div></div>`).join("")||"<p>No notifications.</p>"}</div><h3>History</h3><div class="timeline">${p.events.map(e=>`<div class="timelineItem"><strong>${esc(statusLabel(e.type))}</strong><br><small>${new Date(e.at).toLocaleString()}</small><div>${esc(e.note||"")}</div></div>`).join("")}</div>`;document.getElementById("packageDialog").showModal()}
 document.getElementById("closeDialog").onclick=()=>document.getElementById("packageDialog").close();
 document.getElementById("resetData").onclick=async()=>{if(confirm("Delete all Parcel Snap test customers and package records saved in this browser/device?")){await clear(STORE_PACKAGES);await clear(STORE_CUSTOMERS);await renderAll()}};
-(async()=>{db=await openDb();if(sessionStorage.getItem("parcelSnapOwnerLoggedIn")==="1")showApp()})();
+document.getElementById("activeOriginWarehouse").onchange=e=>{
+  localStorage.setItem(ACTIVE_ORIGIN_KEY,e.target.value);
+  renderFacilitySelectors();
+};
+document.getElementById("activeDestinationWarehouse").onchange=e=>{
+  localStorage.setItem(ACTIVE_DESTINATION_KEY,e.target.value);
+  renderFacilitySelectors();
+};
+document.getElementById("addFacility").onclick=()=>{
+  const name=document.getElementById("facilityName").value.trim();
+  const type=document.getElementById("facilityType").value;
+  const city=document.getElementById("facilityCity").value.trim();
+  const address=document.getElementById("facilityAddress").value.trim();
+  const region=document.getElementById("facilityRegion").value.trim();
+  const country=document.getElementById("facilityCountry").value.trim();
+  if(!name||!city){alert("Enter the warehouse name and city.");return}
+  const items=getFacilities();
+  const facility={id:uid("FAC"),name,type,city,address,region,country,active:true};
+  items.push(facility);
+  saveFacilities(items);
+  if(type==="ORIGIN")localStorage.setItem(ACTIVE_ORIGIN_KEY,facility.id);
+  if(type==="DESTINATION")localStorage.setItem(ACTIVE_DESTINATION_KEY,facility.id);
+  ["facilityName","facilityCity","facilityAddress","facilityRegion","facilityCountry"].forEach(id=>document.getElementById(id).value="");
+  renderFacilitySelectors();
+  renderFacilities();
+};
+
+(async()=>{db=await openDb();getFacilities();if(sessionStorage.getItem("parcelSnapOwnerLoggedIn")==="1")showApp()})();
