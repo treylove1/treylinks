@@ -1,171 +1,1217 @@
-PARCEL SNAP — INDEPENDENT RECOGNITION ENGINE REVIEW
-Updated: 2026-10-01
+PARCEL SNAP — OCR / VISION / PERFORMANCE REVIEW BUNDLE
+Updated after warehouse speed refactor.
 
-THE PROBLEM
-A warehouse worker photographs a shipping label. Parcel Snap must find the correct known
-customer/business, capture package data, save the photo, and notify the right customer.
-A wrong customer match is worse than asking the worker to review the package.
+CURRENT PERFORMANCE RULES
+- Reuse one Tesseract worker instead of recreating OCR work for every pass.
+- Prewarm the worker after login.
+- First package read: one OCR recognition.
+- Second OCR recognition only when the first pass does not confidently match a known customer/business.
+- Barcode/QR detection runs alongside the first OCR pass.
+- No 4-angle package OCR loop.
+- Transfer/destination intake follows the same max-two-pass rule.
+- Unknown identity must remain unknown; do not invent a customer name.
+- Known-customer directory and aliases are the primary identification targets.
+- Tesseract.js browser runtime upgraded from v5 to v6.
 
-IMPORTANT CHANGE
-The system no longer asks OCR: "What name do you think this is?"
-It asks: "Which identity from our known customer directory is actually supported by this label?"
+INDEPENDENT REVIEW QUESTIONS
+1. Can the first-pass recognition be reduced further on Android without damaging label accuracy?
+2. Should the label region be detected/cropped before OCR?
+3. Is a Web Worker / scheduler useful for barcode + OCR concurrency on low-memory phones?
+4. Are the known-customer thresholds safe for 250+ customers and similar names?
+5. What is the best latency budget before falling back to manual review?
+6. How should a server-side multimodal vision result race/refine the local OCR result?
+7. Are there memory leaks or worker lifecycle problems in repeated 100-package intake sessions?
 
-KNOWN DIRECTORY MODEL
-- Customer can be PERSON or BUSINESS.
-- Customer has canonical name and optional aliases.
-- Alias types:
-  PERSON_NAME
-  BUSINESS_NAME
-  LABEL
-  CUSTOMER_CODE
-- PERSON example:
-  canonical: Trevon Humes
-  supporting business alias: Your Electronic Needs
-  label alias: Your Electronic Needs / Trevon Humes
-- A business alias alone is NOT enough to turn a PERSON account into an automatic match.
-- A BUSINESS customer may be matched by its business name.
-- Return-address evidence is down-weighted.
-- Destination-context evidence is up-weighted.
-- Match requires threshold plus separation from the second-best customer.
-- No strong known identity => manual review; do not invent a new name.
+==========================================================================================
+FILE: parcel-snap-customer/app.js
+==========================================================================================
 
-REAL IMAGE TEST
-The actual Roadie package image was OCR'd privately during development.
-The OCR was imperfect and produced approximately:
-  Your electconic needs Trevor
-  [destination street OCR]
-  HIALEAH FL ...
+const SUPABASE_URL="https://evjoitqnogmpedrulepv.supabase.co";
+const SUPABASE_KEY="sb_publishable_wv2cDeErfEorwoGCLl9rMA_yo01I01X";
+const PORTAL_API=SUPABASE_URL+"/functions/v1/parcel-snap-portal";
 
-The directory matcher still resolved the known target Trevon Humes because:
-1. "Your electconic needs" strongly resembles known business alias "Your Electronic Needs".
-2. "Trevor" strongly resembles known first name "Trevon".
-3. Both clues occur together outside the return-address block.
-4. No competing known customer scored close enough.
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let authMode="signin";
+let workspace=null;
+let intakePhotoDataUrl=null;
+let intakeOcrText="";
+let intakeOcrName="";
+let intakeOcrAddress="";
+let transferPhotoDataUrl=null;
+let businessSetupStep=1;
+let businessSetupLocations=[];
+let businessSetupPreviewMode=false;
+let parcelSnapOcrWorkerPromise=null;
 
-Public tests use anonymized addresses.
-
-FALSE-POSITIVE TESTS
-- exact known name in Return Address => must NOT auto-match recipient.
-- business prefix alone => must NOT auto-match a person.
-- random OCR "A Aaa Freded Was" => NO_MATCH.
-- real business customer by business name => MATCHED.
-
-WHAT TO REVIEW
-1. Thresholds: auto 0.90, review 0.72, margin 0.08.
-2. Whether business+fuzzy-first-name should auto-match or only REVIEW.
-3. Shared business aliases across multiple people.
-4. Customer-code / suite-number weighting.
-5. Labels where recipient is business only.
-6. Multilingual names and OCR substitutions.
-7. Scalability with hundreds/thousands of known recipients.
-8. False matches caused by text elsewhere on the box.
-9. Whether server-side multimodal vision should narrow candidates before this matcher.
-10. Whether every auto-match should store evidence + score for audit.
-
-================================================================================
-KNOWN CUSTOMER MATCHER
-parcel-snap-customer/known-customer-matcher.js
-================================================================================
-(function(g){
-"use strict";
-const N=s=>String(s||"").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
-const C=s=>N(s).replace(/ /g,"");
-function lev(a,b){a=String(a||"");b=String(b||"");const d=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));for(let i=0;i<=a.length;i++)d[i][0]=i;for(let j=0;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length];}
-function sim(a,b){a=C(a);b=C(b);return !a||!b?0:1-lev(a,b)/Math.max(a.length,b.length);}
-function prefixScore(alias,text,minCoverage=.58){alias=C(alias);text=C(text);let best=0;for(let i=0;i<text.length;i++){let k=0;while(k<alias.length&&i+k<text.length&&alias[k]===text[i+k])k++;best=Math.max(best,k);}if(best<7||best/alias.length<minCoverage)return 0;return Math.min(.96,.72+(best/alias.length)*.25);}
-function aliases(customer){const primaryType=(customer.customer_type||"PERSON")==="BUSINESS"?"BUSINESS_NAME":"PERSON_NAME";const out=[{alias:customer.name,alias_type:primaryType}];for(const x of (customer.aliases||[])){if(x?.alias&&!out.some(y=>N(y.alias)===N(x.alias)))out.push(x);}return out;}
-function typeWeight(customer,type){type=String(type||"LABEL");const ct=customer.customer_type||"PERSON";if(type==="CUSTOMER_CODE"||type==="LABEL")return 1.05;if(type==="PERSON_NAME")return ct==="PERSON"?1.03:.85;if(type==="BUSINESS_NAME")return ct==="BUSINESS"?1.03:.68;return 1;}
-function lineContext(lines,index){const senderStart=lines.findIndex(x=>/return\s+address/i.test(x));let senderEnd=-1;if(senderStart>=0){senderEnd=Math.min(lines.length-1,senderStart+4);for(let i=senderStart+1;i<Math.min(lines.length,senderStart+6);i++){if(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i.test(lines[i])){senderEnd=i;break;}}}if(senderStart>=0&&index>=senderStart&&index<=senderEnd)return .45;const line=lines[index]||"";if(/electr.*needs|\byen\b/i.test(line)&&/[\/|:-]/.test(line))return 1.08;const next=lines[index+1]||"";if(/^\d{3,6}\s+/.test(next)&&/\b(ave|avenue|st|street|rd|road|blvd|dr|lane|ln)\b/i.test(next))return 1.08;return 1;}
-function tokenSim(a,b){return sim(a,b);}
-function phraseCoverage(alias,line){const at=N(alias).split(" ").filter(Boolean),lt=N(line).split(" ").filter(Boolean);if(!at.length||!lt.length)return 0;let total=0;for(const a of at){let best=0;for(const t of lt)best=Math.max(best,tokenSim(a,t));total+=best;}return total/at.length;}
-function compoundPersonHit(customer,lines){if((customer.customer_type||"PERSON")!=="PERSON")return null;const nameTokens=N(customer.name).split(" ").filter(Boolean);if(!nameTokens.length)return null;const first=nameTokens[0],last=nameTokens[nameTokens.length-1];const business=(customer.aliases||[]).filter(x=>x.alias_type==="BUSINESS_NAME"&&x.alias);if(!business.length)return null;let best=null;for(let i=0;i<lines.length;i++){const line=lines[i]+" "+(lines[i+1]||"");for(const b of business){const bs=phraseCoverage(b.alias,line);if(bs<.82)continue;const lt=N(line).split(" ").filter(Boolean);let fs=0,ls=0;for(const t of lt){fs=Math.max(fs,tokenSim(first,t));ls=Math.max(ls,tokenSim(last,t));}if(fs<.80)continue;let score=.90+Math.min(.05,(fs-.80)*.25)+Math.min(.03,Math.max(0,ls-.72)*.12);score=Math.min(.98,score*lineContext(lines,i));const hit={score,evidence:line.trim(),reason:"business-plus-known-person",alias:b.alias+" + "+customer.name,alias_type:"COMPOUND"};if(!best||score>best.score)best=hit;}}return best;}
-function scoreAlias(customer,a,lines){const ac=C(a.alias);if(!ac)return null;let best={score:0,evidence:"",reason:""};for(let i=0;i<lines.length;i++){const windows=[lines[i],lines[i]+" "+(lines[i+1]||"")];for(const w of windows){const wc=C(w);let s=0,reason="";if(N(w)===N(a.alias)){s=1;reason="exact-line";}else if(N(w).includes(N(a.alias))){s=.995;reason="exact-phrase";}else if(wc.includes(ac)){s=.98;reason="compact-exact";}else{const type=String(a.alias_type||"LABEL");const ct=customer.customer_type||"PERSON";let minCoverage=1.1;if(type==="PERSON_NAME")minCoverage=.58;else if(type==="LABEL")minCoverage=.82;else if(type==="BUSINESS_NAME"&&ct==="BUSINESS")minCoverage=.75;s=minCoverage<=1?prefixScore(a.alias,w,minCoverage):0;reason=s?"known-target-partial":"";if(!s&&type==="PERSON_NAME"&&Math.abs(wc.length-ac.length)<=8){const f=sim(a.alias,w);if(f>=.82){s=Math.min(.94,f);reason="fuzzy-window";}}}if(!s)continue;s=Math.min(1,s*typeWeight(customer,a.alias_type)*lineContext(lines,i));if(s>best.score)best={score:s,evidence:w.trim(),reason};}}return best.score?{...best,alias:a.alias,alias_type:a.alias_type}:null;}
-function matchDirectory(customers,rawText){const lines=String(rawText||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);const ranked=[];for(const customer of (customers||[])){const hits=aliases(customer).map(a=>scoreAlias(customer,a,lines)).filter(Boolean);const compound=compoundPersonHit(customer,lines);if(compound)hits.push(compound);hits.sort((a,b)=>b.score-a.score);if(!hits.length)continue;const strong=hits.find(h=>h.alias_type!=="BUSINESS_NAME"||(customer.customer_type||"PERSON")==="BUSINESS");const score=strong?Math.max(hits[0].score,strong.score):Math.min(hits[0].score,.69);ranked.push({customer,score,evidence:hits[0],hits:hits.slice(0,4)});}ranked.sort((a,b)=>b.score-a.score);const best=ranked[0],second=ranked[1];if(!best)return {status:"NO_MATCH",customer:null,score:0,ranked:[]};const margin=best.score-(second?.score||0);let status="NO_MATCH";if(best.score>=.90&&margin>=.08)status="MATCHED";else if(best.score>=.72)status=margin<.08?"AMBIGUOUS":"REVIEW";return {status,customer:status==="MATCHED"?best.customer:null,candidate:best.customer,score:best.score,margin,evidence:best.evidence,ranked:ranked.slice(0,5)};}
-g.ParcelSnapKnownMatcher={matchDirectory,normalize:N,compact:C};
-})(typeof window!=="undefined"?window:globalThis);
-
-
-================================================================================
-REGRESSION TESTS
-parcel-snap-customer/tests/known-customer-matcher-test.mjs
-================================================================================
-await import("../known-customer-matcher.js");
-const M=globalThis.ParcelSnapKnownMatcher;
-if(!M)throw new Error("Matcher failed to load");
-
-const customers=[
-  {
-    id:"trevon",
-    name:"Trevon Humes",
-    customer_type:"PERSON",
-    aliases:[
-      {alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"},
-      {alias:"Your Electronic Needs / Trevon Humes",alias_type:"LABEL"}
-    ]
-  },
-  {
-    id:"jane",
-    name:"Jane Doe",
-    customer_type:"PERSON",
-    aliases:[]
-  },
-  {
-    id:"abc",
-    name:"ABC Hardware",
-    customer_type:"BUSINESS",
-    aliases:[{alias:"ABC Hardware Ltd",alias_type:"BUSINESS_NAME"}]
+async function getParcelSnapOcrWorker(){
+  if(!parcelSnapOcrWorkerPromise){
+    parcelSnapOcrWorkerPromise=Tesseract.createWorker("eng").catch(err=>{
+      parcelSnapOcrWorkerPromise=null;
+      throw err;
+    });
   }
-];
-
-function expect(label,condition,detail){
-  if(!condition)throw new Error(label+" FAILED: "+JSON.stringify(detail));
-  console.log(label,"PASS",detail||"");
+  return await parcelSnapOcrWorkerPromise;
 }
 
-const roadie=[
-  "ROADIE",
-  "Return Address",
-  "BBY-1502",
-  "10000 NW 10th St",
-  "Sweetwater FL 33172",
-  "Your electronic needs/TrevonHu",
-  "20000 NW 20TH AVE UNIT 1",
-  "HIALEAH FL 33014-6110",
-  "PACKAGE TRACKING CODE"
-].join("\n");
+function warmParcelSnapOcr(){
+  if(typeof Tesseract==="undefined")return;
+  getParcelSnapOcrWorker().catch(err=>console.warn("OCR warmup failed",err));
+}
 
-let r=M.matchDirectory(customers,roadie);
-expect("partial known recipient",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+async function fastOcrRecognize(image){
+  const worker=await getParcelSnapOcrWorker();
+  const result=await worker.recognize(image);
+  return result?.data?.text||"";
+}
 
-r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10000 NW 10th St\nSweetwater FL 33172\nPACKAGE TRACKING CODE");
-expect("return address does not identify recipient",r.status!=="MATCHED",r);
+const $=id=>document.getElementById(id);
+function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 
-r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n20000 NW 20TH AVE UNIT 1\nHIALEAH FL 33014-6110");
-expect("business prefix alone does not become person",r.status!=="MATCHED",r);
+function normText(s=""){return String(s).toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
+function editDistance(a,b){a=normText(a);b=normText(b);const m=a.length,n=b.length,dp=Array.from({length:m+1},()=>Array(n+1).fill(0));for(let i=0;i<=m;i++)dp[i][0]=i;for(let j=0;j<=n;j++)dp[0][j]=j;for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return dp[m][n]}
+function tokenSimilarity(a,b){a=normText(a);b=normText(b);if(!a||!b)return 0;if(a===b)return 1;if((a.length>=4&&b.includes(a))||(b.length>=4&&a.includes(b)))return .92;return 1-editDistance(a,b)/Math.max(a.length,b.length)}
+function cleanRecipientCandidate(value){
+  let v=String(value||"")
+    .replace(/[\\|]+/g," ")
+    .replace(/[^A-Za-z.' -]/g," ")
+    .replace(/\s+/g," ")
+    .trim();
 
-r=M.matchDirectory(customers,"ROADIE\nA Aaa Freded Was\nPACKAGE TRACKING CODE\n998877665544");
-expect("OCR garbage rejected",r.status==="NO_MATCH",r);
+  v=v.replace(/^(customer|recipient|consignee)\s*[:\-]?\s*/i,"");
+  if(!v)return "";
 
-r=M.matchDirectory(customers,"ABC Hardware Ltd\n55 MARKET STREET\nNASSAU BAHAMAS");
-expect("business customer recognized",r.status==="MATCHED"&&r.customer?.id==="abc",r);
+  const words=v.split(" ").filter(Boolean);
+  if(words.length>5)return "";
+  if(words.some(w=>w.length===1))return "";
+  if(/return address|tracking|package|order reference|partner order|in hand date|street|road|avenue|lane|unit|warehouse|hialeah|sweetwater|florida|bahamas|roadie|fedex|usps|amazon/i.test(v))return "";
 
-const realRoadieOcr=[
-  "Sweetwater FL 33172",
-  "Your electconic needs Trevor",
-  "20000 Ni 20TH AVE UNIT 1",
-  "HIALEAH FL 33014-6110"
-].join("\n");
+  if(words.length===1 && words[0].length<6)return "";
+  if(words.length>=2 && !words.some(w=>w.length>=4))return "";
 
-r=M.matchDirectory(customers,realRoadieOcr);
-expect("real Roadie image OCR",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+  return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(" ");
+}
 
-console.log("known customer matcher regression tests passed");
+function recipientAnalysis(text){
+  const raw=String(text||"").replace(/\r/g,"");
+  const lines=raw.split("\n").map(x=>x.trim()).filter(Boolean);
+
+  const streetRegex=/^\s*\d{3,6}\s+.*\b(?:NW|NE|SW|SE)?\s*(?:AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|DRIVE|LANE|LN|HWY|HIGHWAY)\b/i;
+  const cityZipRegex=/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i;
+
+  for(const line of lines){
+    const explicit=line.match(/(?:your\s+)?electr[\W_]*[o0]nic\s+needs\s*[\\/|:\-]+\s*(.+)$/i)
+      || line.match(/\byen\s*[\\/|:\-]+\s*(.+)$/i);
+    if(explicit){
+      const name=cleanRecipientCandidate(explicit[1]);
+      if(name)return {name,confidence:.97,reason:"business-slash-recipient"};
+    }
+  }
+
+  for(let i=0;i<lines.length;i++){
+    if(streetRegex.test(lines[i])){
+      const previous=lines[i-1]||"";
+      const previous2=lines[i-2]||"";
+
+      const slashSource=[previous,previous2].find(x=>/[\\/|]/.test(x)&&/needs|yen|electr/i.test(x));
+      if(slashSource){
+        const tail=slashSource.replace(/^.*?[\\/|]\s*/,"");
+        const name=cleanRecipientCandidate(tail);
+        if(name)return {name,confidence:.95,reason:"recipient-line-before-destination-address"};
+      }
+
+      const name=cleanRecipientCandidate(previous);
+      const hasCityAfter=Boolean(lines[i+1]&&cityZipRegex.test(lines[i+1]));
+      if(name&&hasCityAfter){
+        return {name,confidence:.82,reason:"name-directly-above-destination-address"};
+      }
+    }
+  }
+
+  return {name:"",confidence:0,reason:"unresolved"};
+}
+
+function extractNameCandidate(text){
+  const result=recipientAnalysis(text);
+  return result.confidence>=.82?result.name:"";
+}
+
+function candidateScore(name,candidate){
+  const nameCompact=normText(name).replace(/ /g,"");
+  const candidateCompact=normText(candidate).replace(/ /g,"");
+  if(!nameCompact||!candidateCompact)return 0;
+  if(nameCompact===candidateCompact)return 1;
+  if(candidateCompact.length>=6&&(nameCompact.startsWith(candidateCompact)||candidateCompact.startsWith(nameCompact)))return .96;
+  if(candidateCompact.length>=6&&nameCompact.includes(candidateCompact))return .94;
+  return 1-editDistance(nameCompact,candidateCompact)/Math.max(nameCompact.length,candidateCompact.length);
+}
+
+function scoreName(name,text){
+  const analysis=recipientAnalysis(text);
+  if(!analysis.name||analysis.confidence<.82)return 0;
+  return candidateScore(name,analysis.name)*analysis.confidence;
+}
+
+function bestCustomerFromText(text){
+  if(!workspace?.customers?.length)return null;
+
+  if(window.ParcelSnapKnownMatcher){
+    const result=window.ParcelSnapKnownMatcher.matchDirectory(workspace.customers,text);
+    if(result.status==="MATCHED"&&result.customer){
+      return {customer:result.customer,score:result.score,knownMatch:result};
+    }
+    return null;
+  }
+
+  const ranked=workspace.customers
+    .map(customer=>({customer,score:scoreName(customer.name,text)}))
+    .sort((a,b)=>b.score-a.score);
+  const best=ranked[0],second=ranked[1];
+  if(!best)return null;
+  const clear=best.score>=.78&&(!second||best.score-second.score>=.06);
+  return clear?best:null;
+}
+
+function guessTracking(text){
+  const raw=String(text||"");
+  const anchored=raw.match(/PACKAGE\s+TRACKING\s+CODE[\s\S]{0,120}?([A-Z0-9][A-Z0-9-]{7,40})/i);
+  if(anchored?.[1])return anchored[1];
+  const tokens=raw.match(/[A-Z0-9][A-Z0-9-]{8,35}/gi)||[];
+  return tokens.find(t=>!/^(ADDRESS|PACKAGE|CUSTOMER|TRACKING|ELECTRONIC|REFERENCE)$/i.test(t))||"";
+}
+
+function guessCarrier(text){
+  const t=String(text||"").toUpperCase();
+  if(t.includes("ROADIE"))return "Roadie";
+  if(t.includes("FEDEX"))return "FedEx";
+  if(t.includes("USPS")||t.includes("UNITED STATES POSTAL"))return "USPS";
+  if(/\bUPS\b/.test(t))return "UPS";
+  if(t.includes("AMAZON"))return "Amazon";
+  return "";
+}
+
+function guessRecipientAddress(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const nameCandidate=extractNameCandidate(text);
+  let start=-1;
+
+  if(nameCandidate){
+    const target=normText(nameCandidate).replace(/ /g,"");
+    for(let i=0;i<lines.length;i++){
+      const compact=normText(lines[i]).replace(/ /g,"");
+      if(compact.includes(target.slice(0,Math.min(target.length,7)))){start=i+1;break}
+    }
+  }
+
+  if(start<0){
+    for(let i=0;i<lines.length;i++){
+      if(/^\d{3,6}\s+/.test(lines[i])&&/\b(?:AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|LANE|LN|HWY)\b/i.test(lines[i])){
+        start=i;
+        break;
+      }
+    }
+  }
+
+  if(start<0)return "";
+  const collected=[];
+  for(let i=start;i<Math.min(lines.length,start+3);i++){
+    if(/order reference|partner order|in hand date|tracking code/i.test(lines[i]))break;
+    collected.push(lines[i]);
+  }
+  return collected.join(", ");
+}
+
+async function loadImage(dataUrl){
+  return await new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=reject;
+    img.src=dataUrl;
+  });
+}
+
+async function readFileDataUrl(file){
+  return await new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(String(r.result));
+    r.onerror=()=>reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function resizeDataUrl(original,maxDimension,quality){
+  const img=await loadImage(original);
+  const scale=Math.min(1,maxDimension/Math.max(img.width,img.height));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(img.width*scale));
+  canvas.height=Math.max(1,Math.round(img.height*scale));
+  const ctx=canvas.getContext("2d");
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  return canvas.toDataURL("image/jpeg",quality);
+}
+
+async function compressImage(file){
+  const original=await readFileDataUrl(file);
+  return await resizeDataUrl(original,1600,.82);
+}
+
+async function prepareOcrImage(file){
+  const original=await readFileDataUrl(file);
+  return await resizeDataUrl(original,1900,.92);
+}
+
+async function rotateDataUrl(dataUrl,degrees){
+  const img=await loadImage(dataUrl);
+  const rad=degrees*Math.PI/180;
+  const sin=Math.abs(Math.sin(rad)),cos=Math.abs(Math.cos(rad));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.ceil(img.width*cos+img.height*sin);
+  canvas.height=Math.ceil(img.width*sin+img.height*cos);
+  const ctx=canvas.getContext("2d");
+  ctx.translate(canvas.width/2,canvas.height/2);
+  ctx.rotate(rad);
+  ctx.drawImage(img,-img.width/2,-img.height/2);
+  return canvas.toDataURL("image/jpeg",.94);
+}
+
+async function enhanceForReading(dataUrl){
+  const img=await loadImage(dataUrl);
+  const scale=Math.min(2,Math.max(1,2200/Math.max(img.width,img.height)));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(img.width*scale);
+  canvas.height=Math.round(img.height*scale);
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data;
+  for(let i=0;i<d.length;i+=4){
+    const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+    const v=Math.max(0,Math.min(255,(g-128)*1.7+150));
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(im,0,0);
+  return canvas.toDataURL("image/jpeg",.95);
+}
+
+async function detectBarcode(dataUrl){
+  if(!("BarcodeDetector" in window))return "";
+  try{
+    const img=await loadImage(dataUrl);
+    const detector=new BarcodeDetector({formats:["qr_code","code_128","code_39","ean_13","ean_8","upc_a","upc_e","itf","codabar"]});
+    const codes=await detector.detect(img);
+    return (codes||[]).map(x=>String(x.rawValue||"").trim()).find(v=>v.length>=6&&v.length<=80)||"";
+  }catch{return ""}
+}
+
+function showInlineCustomer(candidate=""){
+  $("receiveNewCustomer").classList.remove("hidden");
+  if(candidate&&!$("receiveNewCustomerName").value)$("receiveNewCustomerName").value=candidate;
+}
+
+function hideInlineCustomer(){
+  $("receiveNewCustomer").classList.add("hidden");
+}
+
+async function readPackagePhoto(dataUrl){
+  const processing=$("processingBox");
+  $("processingText").textContent="Reading package…";
+  $("processingDetail").textContent="";
+  processing.classList.remove("hidden");
+
+  const started=performance.now();
+  const barcodePromise=detectBarcode(dataUrl);
+  let merged="",match=null;
+
+  // PASS 1: one high-resolution read. This is the normal warehouse path.
+  const firstText=await fastOcrRecognize(dataUrl);
+  merged=firstText||"";
+  match=bestCustomerFromText(merged);
+
+  let tracking=await barcodePromise;
+  if(!tracking)tracking=guessTracking(merged);
+
+  // PASS 2: only when the fast pass did not identify a known customer/business.
+  // No rotation loop. One enhanced recovery pass, then stop and ask the worker.
+  if(!match){
+    const enhanced=await enhanceForReading(dataUrl);
+    const recoveryText=await fastOcrRecognize(enhanced);
+    if(recoveryText)merged+="\n"+recoveryText;
+    match=bestCustomerFromText(merged);
+    if(!tracking)tracking=guessTracking(merged);
+  }
+
+  intakeOcrText=merged;
+
+  const knownResult=window.ParcelSnapKnownMatcher
+    ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
+    : null;
+
+  const candidate=knownResult?.status==="MATCHED"
+    ? knownResult.customer?.name||""
+    : "";
+
+  intakeOcrName=match?.customer?.name||candidate||"";
+
+  $("receiveTracking").value=tracking||"";
+
+  const carrier=guessCarrier(merged);
+  if(carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=carrier;
+
+  const elapsed=Math.max(0,(performance.now()-started)/1000).toFixed(1);
+
+  if(match){
+    $("receiveCustomer").value=match.customer.id;
+    hideInlineCustomer();
+    $("processingText").textContent=match.customer.name;
+    $("processingDetail").textContent=tracking
+      ? "Customer matched · tracking captured · "+elapsed+"s"
+      : "Customer matched · "+elapsed+"s";
+  }else{
+    $("receiveCustomer").value="";
+    showInlineCustomer("");
+    $("receiveNewCustomerName").value="";
+    $("processingText").textContent="No known customer matched";
+    $("processingDetail").textContent=tracking
+      ? "Enter customer name/email · tracking captured · "+elapsed+"s"
+      : "Enter customer name and email · "+elapsed+"s";
+  }
+
+  return {
+    match,
+    tracking,
+    candidate:intakeOcrName,
+    carrier,
+    address:guessRecipientAddress(merged),
+    elapsed_seconds:Number(elapsed)
+  };
+}
+
+function setMode(mode){
+  authMode=mode;
+  $("signInMode").classList.toggle("active",mode==="signin");
+  $("signUpMode").classList.toggle("active",mode==="signup");
+  $("joinStaffMode").classList.toggle("active",mode==="join");
+  $("signupCompanyWrap").classList.toggle("hidden",mode!=="signup");
+  $("staffInviteWrap").classList.toggle("hidden",mode!=="join");
+  $("authButton").textContent=mode==="signin"?"Sign in":mode==="signup"?"Create company account":"Create staff account";
+  $("password").autocomplete=mode==="signin"?"current-password":"new-password";
+  $("authMessage").textContent="";
+}
+$("signInMode").onclick=()=>setMode("signin");
+$("signUpMode").onclick=()=>setMode("signup");
+$("joinStaffMode").onclick=()=>setMode("join");
+
+async function api(body){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session)throw new Error("Please sign in again.");
+  const r=await fetch(PORTAL_API,{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":"Bearer "+session.access_token,
+      "apikey":SUPABASE_KEY
+    },
+    body:JSON.stringify(body)
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(data.error||"Portal request failed.");
+  return data;
+}
+
+$("authButton").onclick=async()=>{
+  const email=$("email").value.trim();
+  const password=$("password").value;
+  $("authMessage").textContent="";
+  try{
+    if(authMode==="signin"){
+      const {error}=await sb.auth.signInWithPassword({email,password});
+      if(error)throw error;
+    }else if(authMode==="signup"){
+      const company_name=$("signupCompany").value.trim();
+      if(!company_name)throw new Error("Enter your company name.");
+      const {data,error}=await sb.auth.signUp({email,password});
+      if(error)throw error;
+      if(!data.session){
+        $("authMessage").textContent="Account created. Check your email to confirm it, then sign in.";
+        return;
+      }
+      await api({action:"onboard",company_name});
+    }else{
+      const inviteCode=$("staffInviteCode").value.trim().toUpperCase();
+      if(!inviteCode)throw new Error("Enter the staff invite code.");
+      localStorage.setItem("parcel-snap-pending-invite",inviteCode);
+      const {data,error}=await sb.auth.signUp({email,password});
+      if(error)throw error;
+      if(!data.session){
+        $("authMessage").textContent="Account created. Confirm your email, then sign in. Your staff code is saved on this device.";
+        return;
+      }
+      await api({action:"claim_staff_invite",code:inviteCode});
+      localStorage.removeItem("parcel-snap-pending-invite");
+    }
+    await boot();
+  }catch(e){
+    $("authMessage").textContent=e.message||String(e);
+  }
+};
+
+$("signOut").onclick=async()=>{await sb.auth.signOut();location.reload()};
+
+async function boot(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){
+    $("authView").classList.remove("hidden");
+    $("appView").classList.add("hidden");
+    return;
+  }
+  $("authView").classList.add("hidden");
+  $("appView").classList.remove("hidden");
+
+  const pendingInvite=localStorage.getItem("parcel-snap-pending-invite");
+  if(pendingInvite){
+    try{
+      await api({action:"claim_staff_invite",code:pendingInvite});
+      localStorage.removeItem("parcel-snap-pending-invite");
+    }catch(e){
+      console.warn("Pending staff invite could not be claimed:",e);
+    }
+  }
+
+  await loadWorkspace();
+}
+
+function showOnly(id){
+  ["loadingState","onboardingState","billingState","businessSetupState","activeWorkspace"].forEach(x=>$(x).classList.add("hidden"));
+  $(id).classList.remove("hidden");
+}
+
+async function loadWorkspace(){
+  showOnly("loadingState");
+  try{
+    workspace=await api({action:"workspace"});
+    if(workspace.state==="NO_COMPANY"){
+      showOnly("onboardingState");
+      if(workspace.onboarding?.company_name)$("onboardingCompany").value=workspace.onboarding.company_name;
+      return;
+    }
+    if(workspace.state==="PAYMENT_REQUIRED"){
+      showOnly("billingState");
+      $("companyTitle").textContent=workspace.company?.name||"Parcel Snap";
+      $("companyMeta").textContent=workspace.company?.role?"Role: "+workspace.company.role:"";
+      $("billingStatus").textContent="Status: "+(workspace.subscription?.status||"Payment required");
+      $("payLink").href=workspace.payment_link;
+      return;
+    }
+    if(workspace.state==="BUSINESS_SETUP_REQUIRED"){
+      prepareBusinessSetup(workspace);
+      showOnly("businessSetupState");
+      return;
+    }
+    if(workspace.state==="ACTIVE"){
+      renderWorkspace();
+      showOnly("activeWorkspace");
+      return;
+    }
+    throw new Error("Unknown workspace state.");
+  }catch(e){
+    $("loadingState").innerHTML="<h2>Workspace unavailable</h2><p>"+esc(e.message||String(e))+"</p>";
+  }
+}
+
+$("saveOnboarding").onclick=async()=>{
+  const company_name=$("onboardingCompany").value.trim();
+  if(!company_name)return;
+  try{
+    const r=await api({action:"onboard",company_name});
+    workspace=r;
+    showOnly("billingState");
+    $("companyTitle").textContent=r.company_name||company_name;
+    $("billingStatus").textContent="Payment required";
+    $("payLink").href=r.payment_link;
+  }catch(e){alert(e.message)}
+};
+$("recheckAccess").onclick=loadWorkspace;
+
+function setBusinessSetupStep(step){
+  businessSetupStep=Number(step)||1;
+  [1,2,3,4].forEach(n=>{
+    const panel=$("businessSetupStep"+n);
+    if(panel)panel.classList.toggle("hidden",n!==businessSetupStep);
+    const dot=document.querySelector('[data-setup-dot="'+n+'"]');
+    if(dot)dot.classList.toggle("active",n===businessSetupStep);
+  });
+}
+
+function prepareBusinessSetup(data){
+  const profile=data.profile||{};
+  businessSetupLocations=Array.isArray(data.locations)?data.locations.map(x=>({...x})):[];
+  $("businessSetupPreviewResult").classList.add("hidden");
+  $("businessSetupPreviewResult").innerHTML="";
+  $("businessSetupMessage").textContent="";
+  $("exitBusinessSetupPreview").classList.toggle("hidden",!businessSetupPreviewMode);
+  $("profileBusinessType").value=profile.business_type||"";
+  $("profileBusinessName").value=profile.primary_business_name||data.company?.name||"";
+  $("profileEmployees").value=profile.employee_count??"";
+  $("profileCustomers").value=profile.estimated_customers??"";
+  $("profilePackagesPerDay").value=profile.packages_per_day??"";
+  $("profileWebsite").value=profile.website||"";
+  $("profilePallets").checked=Boolean(profile.handles_pallets);
+  $("profileOversize").checked=Boolean(profile.handles_oversize);
+  $("profileAppliances").checked=Boolean(profile.handles_appliances);
+  $("profileTVs").checked=Boolean(profile.handles_tvs);
+  $("profileStorage").checked=Boolean(profile.needs_storage);
+  $("profileReturns").checked=Boolean(profile.needs_returns);
+  $("profileInspection").checked=Boolean(profile.needs_inspection);
+  $("profileDelivery").checked=Boolean(profile.needs_delivery);
+  $("profileNotifications").checked=profile.needs_customer_notifications!==false;
+  $("profileEmail").checked=(profile.notification_channels||["EMAIL"]).includes("EMAIL");
+  $("profileWhatsApp").checked=(profile.notification_channels||[]).includes("WHATSAPP");
+  $("profileWorkerLogins").checked=profile.needs_worker_sublogins!==false;
+  $("profileDrivers").checked=Boolean(profile.needs_driver_access);
+  $("profileNotes").value=profile.notes||"";
+  renderBusinessSetupLocations();
+  setBusinessSetupStep(1);
+}
+
+function renderBusinessSetupLocations(){
+  const root=$("setupLocationList");
+  if(!root)return;
+  if(!businessSetupLocations.length){
+    root.innerHTML='<div class="empty">No locations added yet.</div>';
+    return;
+  }
+  root.innerHTML=businessSetupLocations.map((loc,index)=>{
+    const roleLabels={
+      RECEIVE:"Receives packages",
+      DESTINATION:"Destination / storage",
+      BOTH:"Receives and sends/moves packages",
+      NON_WAREHOUSE:"No package handling"
+    };
+    return '<div class="setupLocationCard"><div class="itemTop"><div><strong>'+
+      esc(loc.label||loc.city||("Location "+(index+1)))+
+      '</strong><br><small>'+
+      esc([loc.city,loc.region,loc.country].filter(Boolean).join(", "))+
+      ' · '+esc(roleLabels[loc.operation_role]||loc.operation_role||"BOTH")+
+      '</small></div><button class="ghost" data-remove-setup-location="'+index+'">Remove</button></div></div>';
+  }).join("");
+  root.querySelectorAll("[data-remove-setup-location]").forEach(btn=>{
+    btn.onclick=()=>{
+      businessSetupLocations.splice(Number(btn.dataset.removeSetupLocation),1);
+      renderBusinessSetupLocations();
+    };
+  });
+}
+
+function addBusinessSetupLocation(){
+  const city=$("setupLocationCity").value.trim();
+  if(!city){alert("Enter the city for this location.");return}
+  const location={
+    label:$("setupLocationLabel").value.trim()||city+" Location",
+    city,
+    region:$("setupLocationRegion").value.trim()||null,
+    country:$("setupLocationCountry").value.trim()||null,
+    address_line1:$("setupLocationAddress").value.trim()||null,
+    use_type:$("setupLocationUseType").value,
+    operation_role:$("setupLocationRole").value,
+    employee_count:$("setupLocationEmployees").value||null,
+    handles_customer_pickup:$("setupLocationPickup").checked,
+    handles_delivery_dispatch:$("setupLocationDispatch").checked,
+    handles_returns:$("setupLocationReturns").checked,
+    handles_inspection:$("setupLocationInspection").checked
+  };
+  businessSetupLocations.push(location);
+  ["setupLocationLabel","setupLocationCity","setupLocationRegion","setupLocationCountry","setupLocationEmployees","setupLocationAddress"].forEach(id=>$(id).value="");
+  ["setupLocationPickup","setupLocationDispatch","setupLocationReturns","setupLocationInspection"].forEach(id=>$(id).checked=false);
+  renderBusinessSetupLocations();
+}
+
+document.querySelectorAll("[data-setup-next]").forEach(btn=>btn.onclick=()=>{
+  const next=Number(btn.dataset.setupNext);
+  if(businessSetupStep===1){
+    if(!$("profileBusinessType").value.trim()){alert("Tell us what kind of business you operate.");return}
+    if(!$("profileBusinessName").value.trim()){alert("Enter the business name.");return}
+  }
+  if(businessSetupStep===2&&!businessSetupLocations.length){
+    alert("Add at least one business location.");
+    return;
+  }
+  setBusinessSetupStep(next);
+});
+document.querySelectorAll("[data-setup-back]").forEach(btn=>btn.onclick=()=>setBusinessSetupStep(Number(btn.dataset.setupBack)));
+$("addSetupLocation").onclick=addBusinessSetupLocation;
+
+$("saveBusinessSetup").onclick=async()=>{
+  if(!businessSetupLocations.length){alert("Add at least one business location.");return}
+  const channels=[];
+  if($("profileEmail").checked)channels.push("EMAIL");
+  if($("profileWhatsApp").checked)channels.push("WHATSAPP");
+
+  const profile={
+    business_type:$("profileBusinessType").value.trim(),
+    primary_business_name:$("profileBusinessName").value.trim(),
+    employee_count:$("profileEmployees").value||null,
+    estimated_customers:$("profileCustomers").value||null,
+    packages_per_day:$("profilePackagesPerDay").value||null,
+    website:$("profileWebsite").value.trim()||null,
+    handles_pallets:$("profilePallets").checked,
+    handles_oversize:$("profileOversize").checked,
+    handles_appliances:$("profileAppliances").checked,
+    handles_tvs:$("profileTVs").checked,
+    needs_storage:$("profileStorage").checked,
+    needs_returns:$("profileReturns").checked,
+    needs_inspection:$("profileInspection").checked,
+    needs_delivery:$("profileDelivery").checked,
+    needs_customer_notifications:$("profileNotifications").checked,
+    notification_channels:channels.length?channels:["EMAIL"],
+    needs_worker_sublogins:$("profileWorkerLogins").checked,
+    needs_driver_access:$("profileDrivers").checked,
+    notes:$("profileNotes").value.trim()||null
+  };
+
+  $("saveBusinessSetup").disabled=true;
+  $("businessSetupMessage").textContent="Building your Parcel Snap workspace…";
+  try{
+    if(businessSetupPreviewMode){
+      const result=await api({action:"preview_business_profile",profile,locations:businessSetupLocations});
+      const t=result.tailored||{};
+      const facilities=(t.facilities||[]).map(f=>"<li>"+esc(f.name)+" — "+esc(f.facility_type)+"</li>").join("");
+      const recommendations=(t.recommendations||[]).map(x=>"<li>"+esc(x)+"</li>").join("");
+      $("businessSetupPreviewResult").innerHTML=
+        "<article class='card'><span class='eyebrow'>OWNER PREVIEW — NOTHING SAVED</span>"+
+        "<h3>Parcel Snap would build this workspace</h3>"+
+        "<p><strong>"+esc(String(t.employee_count??""))+"</strong> employees · "+
+        "<strong>"+esc(String(t.estimated_customers??""))+"</strong> customers · "+
+        "<strong>"+esc(String(t.packages_per_day??""))+"</strong> packages/day</p>"+
+        "<h4>Facilities</h4><ul>"+facilities+"</ul>"+
+        "<h4>Recommended setup</h4><ul>"+recommendations+"</ul></article>";
+      $("businessSetupPreviewResult").classList.remove("hidden");
+      $("businessSetupMessage").textContent="Preview complete. Your real workspace was not changed.";
+    }else{
+      await api({action:"save_business_profile",profile,locations:businessSetupLocations});
+      $("businessSetupMessage").textContent="Workspace created.";
+      await loadWorkspace();
+    }
+  }catch(e){
+    $("businessSetupMessage").textContent=e.message||String(e);
+  }finally{
+    $("saveBusinessSetup").disabled=false;
+  }
+};
+
+$("testBusinessSetup").onclick=()=>{
+  businessSetupPreviewMode=true;
+  prepareBusinessSetup({
+    company:workspace.company,
+    profile:{
+      primary_business_name:"",
+      notification_channels:["EMAIL"],
+      needs_customer_notifications:true,
+      needs_worker_sublogins:true
+    },
+    locations:[]
+  });
+  showOnly("businessSetupState");
+};
+
+$("exitBusinessSetupPreview").onclick=async()=>{
+  businessSetupPreviewMode=false;
+  await loadWorkspace();
+};
+
+function renderWorkspace(){
+  $("companyTitle").textContent=workspace.company.name;
+  $("companyMeta").textContent=workspace.company.role+" · "+workspace.subscription.status;
+  $("packageCount").textContent=workspace.packages.length;
+  $("customerCount").textContent=workspace.customers.length;
+  $("facilityCount").textContent=workspace.facilities.length;
+  $("attentionCount").textContent=workspace.attention.length;
+  renderAttention();
+  renderPackages("");
+  renderCustomers();
+  renderAliasControls();
+  renderFacilities();
+  renderReceiveControls();
+  renderTransferControls();
+  renderStaffControls();
+  setTimeout(warmParcelSnapOcr,0);
+  $("testBusinessSetup").classList.toggle("hidden",workspace.company.role!=="OWNER");
+  $("subscriptionCard").innerHTML="<div class='billingBox'><strong>ParcelSnap Business Subscription</strong><span>"+esc(workspace.subscription.status)+"</span><small>"+(workspace.subscription.current_period_end?"Current period ends "+new Date(workspace.subscription.current_period_end).toLocaleDateString():"Active access")+"</small></div>";
+}
+
+function renderAttention(){
+  const root=$("attentionList");
+  if(!workspace.attention.length){root.innerHTML="<div class='empty'>Nothing needs attention right now.</div>";return}
+  root.innerHTML=workspace.attention.map(x=>"<div class='item'><div class='itemTop'><div><strong>"+esc(x.customer_name||x.tracking_number||"Package")+"</strong><br><small>"+esc(x.tracking_number||"No tracking")+"</small></div><span class='status warn'>"+esc(x.action_needed)+"</span></div><div class='meta'><div><small>Status</small><strong>"+esc(x.stage)+"</strong></div><div><small>Suggested location</small><strong>"+esc(x.suggested_location_code||"-")+"</strong></div><div><small>Storage fee</small><strong>$"+Number(x.storage_fee||0).toFixed(2)+"</strong></div></div></div>").join("");
+}
+
+function renderPackages(q){
+  q=String(q||"").toLowerCase();
+  const rows=workspace.packages.filter(p=>[p.customer_name,p.tracking_number,p.location_code,p.stage].filter(Boolean).join(" ").toLowerCase().includes(q));
+  $("packageList").innerHTML=rows.length?rows.map(p=>"<div class='item'><div class='itemTop'><div><strong>"+esc(p.customer_name||"Unmatched customer")+"</strong><br><small>"+esc(p.tracking_number||"No tracking number")+"</small></div><span class='status'>"+esc(p.stage)+"</span></div><div class='meta'><div><small>Payment</small><strong>"+esc(p.payment_status)+"</strong></div><div><small>Location</small><strong>"+esc(p.location_code||"-")+"</strong></div><div><small>Updated</small><strong>"+new Date(p.updated_at).toLocaleDateString()+"</strong></div></div></div>").join(""):"<div class='empty'>No packages found.</div>";
+}
+$("packageSearch").oninput=e=>renderPackages(e.target.value);
+
+function renderCustomers(){
+  $("customerList").innerHTML=workspace.customers.length
+    ? workspace.customers.map(c=>{
+        const aliases=(c.aliases||[]).map(a=>esc(a.alias)).filter(Boolean);
+        return "<div class='item'>"+
+          "<div class='itemTop'><div><strong>"+esc(c.name)+"</strong><br><small>"+esc(c.customer_type||"PERSON")+" · "+esc(c.email||"No email")+" · "+esc(c.phone||"No phone")+"</small></div><span class='status'>RECOGNITION TARGET</span></div>"+
+          (aliases.length?"<div class='meta'><div><small>Known label names / codes</small><strong>"+aliases.join(" · ")+"</strong></div></div>":"")+
+          "</div>";
+      }).join("")
+    : "<div class='empty'>No recognition targets yet.</div>";
+}
+function renderAliasControls(){
+  const root=$("aliasCustomer");
+  if(!root)return;
+  const current=root.value;
+  root.innerHTML='<option value="">Select customer</option>'+
+    (workspace?.customers||[]).map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join("");
+  if((workspace?.customers||[]).some(c=>c.id===current))root.value=current;
+}
+
+$("addAliasButton").onclick=async()=>{
+  const customer_id=$("aliasCustomer").value;
+  const alias=$("aliasValue").value.trim();
+  const alias_type=$("aliasType").value;
+
+  if(!customer_id){alert("Choose the customer.");return}
+  if(!alias){alert("Enter the alias or customer code.");return}
+
+  try{
+    await api({action:"add_customer_alias",customer_id,alias,alias_type});
+    $("aliasValue").value="";
+    await loadWorkspace();
+    document.querySelector('[data-tab="customers"]').click();
+  }catch(e){alert(e.message||String(e))}
+};
+
+function renderFacilities(){
+  $("facilityList").innerHTML=workspace.facilities.length?workspace.facilities.map(f=>"<div class='item'><div class='itemTop'><div><strong>"+esc(f.name)+"</strong><br><small>"+esc([f.address_line1,f.city,f.region,f.country].filter(Boolean).join(", ")||"Address not set")+"</small></div><span class='status'>"+esc(f.facility_type)+"</span></div></div>").join(""):"<div class='empty'>No warehouse profiles yet.</div>";
+}
+
+function renderStaffControls(){
+  const role=workspace?.company?.role||"";
+  const staffFeatureEnabled=workspace?.profile?.needs_worker_sublogins!==false;
+  const canManageStaff=["OWNER","MANAGER"].includes(role)&&staffFeatureEnabled;
+
+  $("staffTabButton").classList.toggle("hidden",!canManageStaff);
+  $("billingTabButton").classList.toggle("hidden",role!=="OWNER");
+
+  if(!canManageStaff)return;
+
+  $("staffFacilityChoices").innerHTML=(workspace.facilities||[]).map(f=>
+    '<label class="facilityChoice"><input type="checkbox" value="'+f.id+'"><span>'+esc(f.name)+'</span></label>'
+  ).join("")||"<div class='empty'>Add a warehouse before creating warehouse-worker access.</div>";
+
+  $("staffList").innerHTML=(workspace.staff||[]).length
+    ? workspace.staff.map(s=>"<div class='item'><div class='itemTop'><div><strong>"+esc(s.email||"Staff account")+"</strong><br><small>"+esc(s.role)+"</small></div><span class='status'>"+(s.active?"ACTIVE":"INACTIVE")+"</span></div></div>").join("")
+    : "<div class='empty'>No staff accounts yet.</div>";
+
+  $("pendingInviteList").innerHTML=(workspace.pending_invites||[]).length
+    ? workspace.pending_invites.map(i=>"<div class='item'><strong>"+esc(i.email||"Unassigned email")+"</strong><br><small>"+esc(i.role)+" · expires "+new Date(i.expires_at).toLocaleDateString()+"</small></div>").join("")
+    : "<div class='empty'>No pending invite codes.</div>";
+}
+
+$("createStaffInviteButton").onclick=async()=>{
+  const role=$("staffRole").value;
+  const facility_ids=[...$("staffFacilityChoices").querySelectorAll('input[type="checkbox"]:checked')].map(x=>x.value);
+  const email=$("staffEmail").value.trim();
+
+  $("staffInviteResult").classList.add("hidden");
+  try{
+    const r=await api({action:"create_staff_invite",email,role,facility_ids});
+    $("staffInviteResult").innerHTML="<strong>One-time staff code</strong><span class='inviteCode'>"+esc(r.invite.code)+"</span><small>"+esc(r.invite.role)+" · expires "+new Date(r.invite.expires_at).toLocaleString()+"</small>";
+    $("staffInviteResult").classList.remove("hidden");
+    $("staffEmail").value="";
+    await loadWorkspace();
+    document.querySelector('[data-tab="staff"]').click();
+  }catch(e){
+    alert(e.message||String(e));
+  }
+};
+
+function facilitySort(items){
+  const order={MIA:1,FLL:2,ORL:3,NAS:4};
+  return [...items].sort((a,b)=>(order[a.code]||50)-(order[b.code]||50)||String(a.name).localeCompare(String(b.name)));
+}
+
+function renderReceiveControls(){
+  const customers=workspace?.customers||[];
+  const facilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
+
+  const currentCustomer=$("receiveCustomer").value;
+  const currentOrigin=$("receiveOrigin").value;
+  const currentDestination=$("receiveDestination").value;
+
+  $("receiveCustomer").innerHTML='<option value="">New / unmatched customer</option>'+
+    customers.map(c=>'<option value="'+c.id+'">'+esc(c.name)+(c.email?" — "+esc(c.email):"")+'</option>').join("");
+  if(customers.some(c=>c.id===currentCustomer))$("receiveCustomer").value=currentCustomer;
+
+  const allFacilityOptions=facilities.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("");
+  $("receiveOrigin").innerHTML=allFacilityOptions||'<option value="">No warehouse configured</option>';
+  $("receiveDestination").innerHTML='<option value="">No next warehouse selected</option>'+allFacilityOptions;
+
+  if(facilities.length){
+    const miami=facilities.find(f=>f.code==="MIA");
+    const nassau=facilities.find(f=>f.code==="NAS");
+    if(facilities.some(f=>f.id===currentOrigin))$("receiveOrigin").value=currentOrigin;
+    else if(miami)$("receiveOrigin").value=miami.id;
+
+    if(facilities.some(f=>f.id===currentDestination))$("receiveDestination").value=currentDestination;
+    else if(nassau)$("receiveDestination").value=nassau.id;
+  }
+
+  if(!$("receiveCustomer").value)showInlineCustomer(intakeOcrName);
+  else hideInlineCustomer();
+}
+
+$("receiveCustomer").onchange=()=>{
+  if($("receiveCustomer").value)hideInlineCustomer();
+  else showInlineCustomer(intakeOcrName);
+};
+
+$("packagePhoto").onchange=async e=>{
+  const file=e.target.files?.[0];
+  if(!file)return;
+  $("receiveResult").textContent="";
+  $("receiveNewCustomerEmail").value="";
+  $("receiveNewCustomerPhone").value="";
+  try{
+    const [uploadImage,ocrImage]=await Promise.all([
+      compressImage(file),
+      prepareOcrImage(file)
+    ]);
+    intakePhotoDataUrl=uploadImage;
+    $("packagePhotoPreview").innerHTML='<img src="'+intakePhotoDataUrl+'" alt="Package photo">';
+    const result=await readPackagePhoto(ocrImage);
+    intakeOcrAddress=result.address||"";
+  }catch(err){
+    console.error(err);
+    $("processingBox").classList.remove("hidden");
+    $("processingText").textContent="New / unmatched customer";
+    $("processingDetail").textContent="Enter customer name and email";
+    showInlineCustomer(intakeOcrName);
+  }
+};
+
+async function createReceiveCustomer(){
+  const name=$("receiveNewCustomerName").value.trim();
+  const email=$("receiveNewCustomerEmail").value.trim();
+  const phone=$("receiveNewCustomerPhone").value.trim();
+  if(!name)throw new Error("Enter the customer name.");
+  if(!email)throw new Error("Enter the customer email so Parcel Snap can send the arrival notice.");
+
+  const result=await api({action:"create_customer",name,email,phone});
+  const customer=result.customer;
+  workspace.customers=workspace.customers||[];
+  workspace.customers.push(customer);
+  renderReceiveControls();
+  $("receiveCustomer").value=customer.id;
+  hideInlineCustomer();
+  return customer.id;
+}
+
+$("saveReceiveCustomer").onclick=async()=>{
+  try{
+    const customerId=await createReceiveCustomer();
+    $("receiveCustomer").value=customerId;
+    $("processingText").textContent=$("receiveNewCustomerName").value.trim()||"Customer saved";
+    $("processingDetail").textContent="Email saved for future package notices";
+  }catch(e){
+    alert(e.message||String(e));
+  }
+};
+
+$("addCustomerButton").onclick=async()=>{
+  const name=$("newCustomerName").value.trim();
+  const email=$("newCustomerEmail").value.trim();
+  const phone=$("newCustomerPhone").value.trim();
+  const customer_type=$("newCustomerType").value;
+  const labelAlias=$("newCustomerAlias").value.trim();
+  const customerCode=$("newCustomerCode").value.trim();
+
+  if(!name){alert("Enter the customer or business name.");return}
+
+  const aliases=[];
+  if(labelAlias)aliases.push({alias:labelAlias,alias_type:"LABEL"});
+  if(customerCode)aliases.push({alias:customerCode,alias_type:"CUSTOMER_CODE"});
+
+  try{
+    await api({action:"create_customer",name,email,phone,customer_type,aliases});
+    ["newCustomerName","newCustomerEmail","newCustomerPhone","newCustomerAlias","newCustomerCode"].forEach(id=>$(id).value="");
+    $("newCustomerType").value="PERSON";
+    await loadWorkspace();
+    document.querySelector('[data-tab="customers"]').click();
+  }catch(e){alert(e.message)}
+};
+
+$("addFacilityButton").onclick=async()=>{
+  const body={
+    action:"create_facility",
+    name:$("newFacilityName").value.trim(),
+    facility_type:$("newFacilityType").value,
+    city:$("newFacilityCity").value.trim(),
+    address_line1:$("newFacilityAddress").value.trim()||null,
+    region:$("newFacilityRegion").value.trim()||null,
+    postal_code:$("newFacilityPostal").value.trim()||null,
+    country:$("newFacilityCountry").value.trim()||null
+  };
+  if(!body.name||!body.city){alert("Enter the warehouse name and city.");return}
+  try{
+    await api(body);
+    ["newFacilityName","newFacilityCity","newFacilityAddress","newFacilityRegion","newFacilityPostal","newFacilityCountry"].forEach(id=>$(id).value="");
+    await loadWorkspace();
+    document.querySelector('[data-tab="warehouses"]').click();
+  }catch(e){alert(e.message)}
+};
+
+$("receivePackageButton").onclick=async()=>{
+  let customer_id=$("receiveCustomer").value;
+  const origin_facility_id=$("receiveOrigin").value;
+
+  if(!intakePhotoDataUrl){alert("Take a package photo first.");return}
+  if(!origin_facility_id){alert("Choose the receiving warehouse.");return}
+
+  $("receivePackageButton").disabled=true;
+  $("receiveResult").textContent="Saving package…";
+
+  try{
+    if(!customer_id){
+      customer_id=await createReceiveCustomer();
+    }
+
+    const r=await api({
+      action:"receive_package",
+      customer_id,
+      origin_facility_id,
+      destination_facility_id:$("receiveDestination").value||null,
+      tracking_number:$("receiveTracking").value||null,
+      carrier:$("receiveCarrier").value.trim()||null,
+      size_class:$("receiveSize").value,
+      weight_lb:$("receiveWeight").value||null,
+      payment_status:$("receivePayment").value,
+      ocr_name:intakeOcrName||null,
+      ocr_tracking:$("receiveTracking").value||null,
+      ocr_raw_text:intakeOcrText||null,
+      ocr_recipient_address:intakeOcrAddress||null,
+      photo_data_url:intakePhotoDataUrl
+    });
+
+    const emailStatus=r.email?.status||"SKIPPED";
+    $("receiveResult").textContent=
+      "Package received · photo saved · email "+emailStatus+
+      (r.assigned_location_id?" · location assigned":"");
+
+    intakePhotoDataUrl=null;
+    intakeOcrText="";
+    intakeOcrName="";
+    intakeOcrAddress="";
+    $("packagePhoto").value="";
+    $("packagePhotoPreview").innerHTML="";
+    $("processingBox").classList.add("hidden");
+    $("receiveTracking").value="";
+    $("receiveCarrier").value="";
+    $("receiveWeight").value="";
+    $("receiveNewCustomerName").value="";
+    $("receiveNewCustomerEmail").value="";
+    $("receiveNewCustomerPhone").value="";
+    hideInlineCustomer();
+
+    await loadWorkspace();
+    document.querySelector('[data-tab="receive"]').click();
+  }catch(e){
+    $("receiveResult").textContent=e.message||String(e);
+  }finally{
+    $("receivePackageButton").disabled=false;
+  }
+};
 
 
-================================================================================
-VISION CLIENT
-parcel-snap-customer/vision-client.js
-================================================================================
+function renderTransferControls(){
+  const facilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
+  const packages=(workspace?.packages||[]).filter(p=>!["DELIVERED","PICKED_UP"].includes(p.stage));
+
+  const currentFacility=$("transferFacility")?.value||"";
+  const currentPackage=$("transferPackage")?.value||"";
+
+  if($("transferFacility")){
+    $("transferFacility").innerHTML=facilities.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("")||'<option value="">No warehouse configured</option>';
+    if(facilities.some(f=>f.id===currentFacility))$("transferFacility").value=currentFacility;
+    else{
+      const nassau=facilities.find(f=>f.code==="NAS");
+      if(nassau)$("transferFacility").value=nassau.id;
+    }
+  }
+
+  if($("transferPackage")){
+    $("transferPackage").innerHTML='<option value="">Select package</option>'+packages.map(p=>{
+      const ref=p.tracking_number||"No tracking";
+      const who=p.customer_name||"Unknown customer";
+      return '<option value="'+p.id+'">'+esc(who)+' — '+esc(ref)+' — '+esc(p.stage)+'</option>';
+    }).join("");
+    if(packages.some(p=>p.id===currentPackage))$("transferPackage").value=currentPackage;
+  }
+}
+
+function normalizeTracking(v){
+  return String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+}
+
+function chooseTransferCandidates(tracking,customerId){
+  const active=(workspace?.packages||[]).filter(p=>!["DELIVERED","PICKED_UP"].includes(p.stage));
+  const t=normalizeTracking(tracking);
+
+  let candidates=[];
+  if(t){
+    candidates=active.filter(p=>normalizeTracking(p.tracking_number)===t);
+    if(candidates.length)return candidates;
+  }
+
+  if(customerId){
+    candidates=active.filter(p=>String(p.customer_id||"")===String(customerId));
+    if(candidates.length)return candidates;
+  }
+
+  return active;
+}
+
+async function analyzeTransferImage(dataUrl){
+  const started=performance.now();
+  const barcodePromise=detectBarcode(dataUrl);
+
+  let merged=await fastOcrRecognize(dataUrl);
+  let tracking=await barcodePromise;
+  if(!tracking)tracking=guessTracking(merged);
+
+  let m=window.ParcelSnapKnownMatcher
+    ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
+    : {status:"NO_MATCH",customer:null};
+
+  if(!tracking&&m.status!=="MATCHED"){
+    const enhanced=await enhanceForReading(dataUrl);
+    const recovery=await fastOcrRecognize(enhanced);
+    if(recovery)merged+="\n"+recovery;
+    if(!tracking)tracking=guessTracking(merged);
+    m=window.ParcelSnapKnownMatcher
+      ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
+      : {status:"NO_MATCH",customer:null};
+  }
+
+  return {
+    tracking,
+    text:merged,
+    customer:m.customer||null,
+    match:m,
+    elapsed_seconds:Number(((performance.now()-started)/1000).toFixed(1))
+  };
+}
+
+$("transferPhoto").onchange=async e=>{
+  const file=e.target.files?.[0];
+  if(!file)return;
+
+  $("transferResult").textContent="";
+  $("transferProcessing").classList.remove("hidden");
+  $("transferProcessingText").textContent="Reading package…";
+  $("transferProcessingDetail").textContent="";
+
+  try{
+    const original=await readFileDataUrl(file);
+    const [uploadImage,ocrImage]=await Promise.all([
+      resizeDataUrl(original,1600,.82),
+      resizeDataUrl(original,2800,.96)
+    ]);
+
+    transferPhotoDataUrl=uploadImage;
+    $("transferPhotoPreview").innerHTML='<img src="'+uploadImage+'" alt="Arrival package photo">';
+
+    const result=await analyzeTransferImage(ocrImage);
+    const candidates=chooseTransferCandidates(result.tracking,result.customer?.id);
+
+    $("transferPackage").innerHTML='<option value="">Select package</option>'+candidates.map(p=>{
+      const ref=p.tracking_number||"No tracking";
+      const who=p.customer_name||"Unknown customer";
+      return '<option value="'+p.id+'">'+esc(who)+' — '+esc(ref)+' — '+esc(p.stage)+'</option>';
+    }).join("");
+
+    if(candidates.length===1)$("transferPackage").value=candidates[0].id;
+
+    if(candidates.length===1){
+      $("transferProcessingText").textContent=candidates[0].customer_name||"Package matched";
+      $("transferProcessingDetail").textContent=result.tracking
+        ?"Existing package found · tracking matched"
+        :"Existing package found · customer matched";
+    }else if(candidates.length>1){
+      $("transferProcessingText").textContent=result.customer?.name||"Multiple possible packages";
+      $("transferProcessingDetail").textContent="Choose the correct package";
+    }else{
+      $("transferProcessingText").textContent="Existing package not found";
+      $("transferProcessingDetail").textContent=result.tracking
+        ?"Tracking read, but no active package matched"
+        :"Choose an existing package manually";
+      renderTransferControls();
+    }
+  }catch(err){
+    console.error(err);
+    $("transferProcessingText").textContent="Could not identify package";
+    $("transferProcessingDetail").textContent="Choose the package manually";
+    renderTransferControls();
+  }
+};
+
+$("saveTransfer").onclick=async()=>{
+  const package_id=$("transferPackage").value;
+  const facility_id=$("transferFacility").value;
+
+  if(!package_id){alert("Choose the package.");return}
+  if(!facility_id){alert("Choose the arriving warehouse.");return}
+  if(!transferPhotoDataUrl){alert("Take the arrival photo first.");return}
+
+  $("saveTransfer").disabled=true;
+  $("transferResult").textContent="Saving arrival…";
+
+  try{
+    const r=await api({
+      action:"destination_arrival",
+      package_id,
+      facility_id,
+      note:$("transferNote").value.trim()||null,
+      photo_data_url:transferPhotoDataUrl
+    });
+
+    $("transferResult").textContent=
+      "Arrival saved · photo saved · email "+(r.email?.status||"SKIPPED")+
+      (r.assigned_location_id?" · location assigned":"");
+
+    transferPhotoDataUrl=null;
+    $("transferPhoto").value="";
+    $("transferPhotoPreview").innerHTML="";
+    $("transferProcessing").classList.add("hidden");
+    $("transferNote").value="";
+
+    await loadWorkspace();
+    document.querySelector('[data-tab="transfer"]').click();
+  }catch(e){
+    $("transferResult").textContent=e.message||String(e);
+  }finally{
+    $("saveTransfer").disabled=false;
+  }
+};
+
+document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===btn));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.add("hidden"));
+  $("tab-"+btn.dataset.tab).classList.remove("hidden");
+});
+
+sb.auth.onAuthStateChange((_event,session)=>{if(!session){$("authView").classList.remove("hidden");$("appView").classList.add("hidden")}});
+boot();
+
+
+==========================================================================================
+FILE: parcel-snap-customer/vision-client.js
+==========================================================================================
+
 (() => {
   const VISION_API = SUPABASE_URL + "/functions/v1/parcel-snap-vision";
 
@@ -319,197 +1365,298 @@ parcel-snap-customer/vision-client.js
   };
 })();
 
-================================================================================
-SERVER-SIDE VISION FUNCTION
-parcel-snap-vision
-================================================================================
-import postgres from "npm:postgres@3.4.7";
+==========================================================================================
+FILE: parcel-snap-customer/known-customer-matcher.js
+==========================================================================================
 
-const DB_URL = Deno.env.get("SUPABASE_DB_URL")!;
-const sql = postgres(DB_URL, { prepare: false, max: 1 });
+(function(g){
+"use strict";
+const N=s=>String(s||"").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+const C=s=>N(s).replace(/ /g,"");
+function lev(a,b){a=String(a||"");b=String(b||"");const d=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));for(let i=0;i<=a.length;i++)d[i][0]=i;for(let j=0;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length];}
+function sim(a,b){a=C(a);b=C(b);return !a||!b?0:1-lev(a,b)/Math.max(a.length,b.length);}
+function prefixScore(alias,text,minCoverage=.58){alias=C(alias);text=C(text);let best=0;for(let i=0;i<text.length;i++){let k=0;while(k<alias.length&&i+k<text.length&&alias[k]===text[i+k])k++;best=Math.max(best,k);}if(best<7||best/alias.length<minCoverage)return 0;return Math.min(.96,.72+(best/alias.length)*.25);}
+function aliases(customer){const primaryType=(customer.customer_type||"PERSON")==="BUSINESS"?"BUSINESS_NAME":"PERSON_NAME";const out=[{alias:customer.name,alias_type:primaryType}];for(const x of (customer.aliases||[])){if(x?.alias&&!out.some(y=>N(y.alias)===N(x.alias)))out.push(x);}return out;}
+function typeWeight(customer,type){type=String(type||"LABEL");const ct=customer.customer_type||"PERSON";if(type==="CUSTOMER_CODE"||type==="LABEL")return 1.05;if(type==="PERSON_NAME")return ct==="PERSON"?1.03:.85;if(type==="BUSINESS_NAME")return ct==="BUSINESS"?1.03:.68;return 1;}
+function lineContext(lines,index){const senderStart=lines.findIndex(x=>/return\s+address/i.test(x));let senderEnd=-1;if(senderStart>=0){senderEnd=Math.min(lines.length-1,senderStart+4);for(let i=senderStart+1;i<Math.min(lines.length,senderStart+6);i++){if(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i.test(lines[i])){senderEnd=i;break;}}}if(senderStart>=0&&index>=senderStart&&index<=senderEnd)return .45;const line=lines[index]||"";if(/electr.*needs|\byen\b/i.test(line)&&/[\/|:-]/.test(line))return 1.08;const next=lines[index+1]||"";if(/^\d{3,6}\s+/.test(next)&&/\b(ave|avenue|st|street|rd|road|blvd|dr|lane|ln)\b/i.test(next))return 1.08;return 1;}
+function tokenSim(a,b){return sim(a,b);}function knownTokenScore(known,seen){const k=C(known),s=C(seen);if(!k||!s)return 0;if(k===s)return 1;if(s.startsWith(k)&&s.length<=k.length+5)return .96;if(k.startsWith(s)&&s.length>=4)return .92;return sim(k,s);}
+function phraseCoverage(alias,line){const at=N(alias).split(" ").filter(Boolean),lt=N(line).split(" ").filter(Boolean);if(!at.length||!lt.length)return 0;let total=0;for(const a of at){let best=0;for(const t of lt)best=Math.max(best,tokenSim(a,t));total+=best;}return total/at.length;}
+function compoundPersonHit(customer,lines){if((customer.customer_type||"PERSON")!=="PERSON")return null;const nameTokens=N(customer.name).split(" ").filter(Boolean);if(!nameTokens.length)return null;const first=nameTokens[0],last=nameTokens[nameTokens.length-1];const business=(customer.aliases||[]).filter(x=>x.alias_type==="BUSINESS_NAME"&&x.alias);if(!business.length)return null;let best=null;for(let i=0;i<lines.length;i++){const line=lines[i]+" "+(lines[i+1]||"");for(const b of business){const bs=phraseCoverage(b.alias,line);if(bs<.82)continue;const lt=N(line).split(" ").filter(Boolean);let fs=0,ls=0;for(const t of lt){fs=Math.max(fs,knownTokenScore(first,t));ls=Math.max(ls,knownTokenScore(last,t));}if(fs<.80)continue;let score=.90+Math.min(.05,(fs-.80)*.25)+Math.min(.03,Math.max(0,ls-.72)*.12);score=Math.min(.98,score*lineContext(lines,i));const hit={score,evidence:line.trim(),reason:"business-plus-known-person",alias:b.alias+" + "+customer.name,alias_type:"COMPOUND"};if(!best||score>best.score)best=hit;}}return best;}
+function scoreAlias(customer,a,lines){const ac=C(a.alias);if(!ac)return null;let best={score:0,evidence:"",reason:""};for(let i=0;i<lines.length;i++){const windows=[lines[i],lines[i]+" "+(lines[i+1]||"")];for(const w of windows){const wc=C(w),wn=N(w),an=N(a.alias);const type=String(a.alias_type||"LABEL"),ct=customer.customer_type||"PERSON";const phrase=(" "+wn+" ").includes(" "+an+" ");let s=0,reason="";if(wn===an){s=1;reason="exact-line";}else if(phrase){s=.985;reason="word-boundary-phrase";}else if(type!=="PERSON_NAME"&&wc.includes(ac)){s=.97;reason="compact-exact";}else{let minCoverage=1.1;if(type==="PERSON_NAME")minCoverage=.58;else if(type==="LABEL")minCoverage=.82;else if(type==="BUSINESS_NAME"&&ct==="BUSINESS")minCoverage=.75;s=minCoverage<=1?prefixScore(a.alias,w,minCoverage):0;reason=s?"known-target-partial":"";if(!s&&type==="PERSON_NAME"&&Math.abs(wc.length-ac.length)<=8){const f=sim(a.alias,w);if(f>=.82){s=Math.min(.88,f);reason="fuzzy-window";}}}if(!s)continue;s=s*typeWeight(customer,a.alias_type)*lineContext(lines,i);if(reason==="known-target-partial")s=Math.min(.89,s);else if(reason==="fuzzy-window")s=Math.min(.88,s);else if(reason==="word-boundary-phrase")s=Math.min(.90,s);else if(reason==="compact-exact")s=Math.min(.92,s);else s=Math.min(1,s);if(s>best.score)best={score:s,evidence:w.trim(),reason};}}return best.score?{...best,alias:a.alias,alias_type:a.alias_type}:null;}
+function matchDirectory(customers,rawText){const lines=String(rawText||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);const ranked=[];for(const customer of (customers||[])){const hits=aliases(customer).map(a=>scoreAlias(customer,a,lines)).filter(Boolean);const compound=compoundPersonHit(customer,lines);if(compound)hits.push(compound);hits.sort((a,b)=>b.score-a.score);if(!hits.length)continue;const strong=hits.find(h=>h.alias_type!=="BUSINESS_NAME"||(customer.customer_type||"PERSON")==="BUSINESS");const score=strong?Math.max(hits[0].score,strong.score):Math.min(hits[0].score,.69);ranked.push({customer,score,evidence:hits[0],hits:hits.slice(0,4)});}ranked.sort((a,b)=>b.score-a.score);const best=ranked[0],second=ranked[1];if(!best)return {status:"NO_MATCH",customer:null,score:0,ranked:[]};const margin=best.score-(second?.score||0);let status="NO_MATCH";if(best.score>=.90&&margin>=.08)status="MATCHED";else if(best.score>=.72)status=margin<.08?"AMBIGUOUS":"REVIEW";return {status,customer:status==="MATCHED"?best.customer:null,candidate:best.customer,score:best.score,margin,evidence:best.evidence,ranked:ranked.slice(0,5)};}
+g.ParcelSnapKnownMatcher={matchDirectory,normalize:N,compact:C};
+})(typeof window!=="undefined"?window:globalThis);
 
-const ALLOWED_ORIGINS = new Set([
-  "https://www.yourelectronicneeds.org",
-  "https://yourelectronicneeds.org",
-  "https://treylove1.github.io"
-]);
 
-function cors(req: Request) {
-  const origin=req.headers.get("origin")||"";
-  const allow=ALLOWED_ORIGINS.has(origin)?origin:"https://www.yourelectronicneeds.org";
-  return {
-    "Access-Control-Allow-Origin":allow,
-    "Access-Control-Allow-Headers":"authorization, apikey, content-type",
-    "Access-Control-Allow-Methods":"POST, OPTIONS",
-    "Vary":"Origin"
-  };
+==========================================================================================
+FILE: parcel-snap-customer/tests/known-customer-matcher-test.mjs
+==========================================================================================
+
+await import("../known-customer-matcher.js");
+const M=globalThis.ParcelSnapKnownMatcher;
+if(!M)throw new Error("Matcher failed to load");
+
+const customers=[
+  {
+    id:"trevon",
+    name:"Trevon Humes",
+    customer_type:"PERSON",
+    aliases:[
+      {alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"},
+      {alias:"Your Electronic Needs / Trevon Humes",alias_type:"LABEL"}
+    ]
+  },
+  {id:"jane",name:"Jane Doe",customer_type:"PERSON",aliases:[]},
+  {id:"mark-daniels",name:"Mark Daniels",customer_type:"PERSON",aliases:[]},
+  {id:"mark-daniel",name:"Mark Daniel",customer_type:"PERSON",aliases:[]},
+  {id:"brenda-forbes",name:"Brenda Forbes",customer_type:"PERSON",aliases:[]},
+  {id:"brenda-ford",name:"Brenda Ford",customer_type:"PERSON",aliases:[]},
+  {
+    id:"abc",
+    name:"ABC Hardware",
+    customer_type:"BUSINESS",
+    aliases:[{alias:"ABC Hardware Ltd",alias_type:"BUSINESS_NAME"}]
+  },
+  {
+    id:"abc-east",
+    name:"ABC Hardware East",
+    customer_type:"BUSINESS",
+    aliases:[{alias:"ABC Hardware East Ltd",alias_type:"BUSINESS_NAME"}]
+  },
+  {id:"island-courier",name:"Island Courier",customer_type:"BUSINESS",aliases:[]},
+  {id:"island-couriers",name:"Island Couriers",customer_type:"BUSINESS",aliases:[]}
+];
+
+function expect(label,condition,detail){
+  if(!condition)throw new Error(label+" FAILED: "+JSON.stringify(detail));
+  console.log(label,"PASS",detail||"");
 }
 
-function json(req: Request, data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...cors(req) }
-  });
-}
+const roadie=[
+  "ROADIE",
+  "Return Address",
+  "BBY-1502",
+  "10000 NW 10th St",
+  "Sweetwater FL 33172",
+  "Your electronic needs/TrevonHu",
+  "20000 NW 20TH AVE UNIT 1",
+  "HIALEAH FL 33014-6110",
+  "PACKAGE TRACKING CODE"
+].join("\n");
 
-async function secret(name: string) {
-  const rows = await sql.unsafe(
-    "select secret_value from parcel_snap.integration_secrets where name=$1 limit 1",
-    [name]
-  );
-  return rows[0]?.secret_value ? String(rows[0].secret_value) : "";
-}
+let r=M.matchDirectory(customers,roadie);
+expect("partial known recipient",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
 
-function stripCodeFence(value: string) {
-  return value
-    .replace(/^\s*```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-}
+r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10000 NW 10th St\nSweetwater FL 33172\nPACKAGE TRACKING CODE");
+expect("return address does not identify recipient",r.status!=="MATCHED",r);
 
-function normalizeResult(obj: any) {
-  const base = {
-    readable: Boolean(obj?.readable),
-    carrier: String(obj?.carrier || "").trim(),
-    return_address: String(obj?.return_address || "").trim(),
-    recipient_name: String(obj?.recipient_name || "").trim(),
-    recipient_business: String(obj?.recipient_business || "").trim(),
-    recipient_address: String(obj?.recipient_address || "").trim(),
-    tracking_code: String(obj?.tracking_code || "").trim(),
-    confidence: Number(obj?.confidence || 0),
-    needs_review: Boolean(obj?.needs_review),
-    evidence: {
-      carrier: String(obj?.evidence?.carrier || "").trim(),
-      recipient: String(obj?.evidence?.recipient || "").trim(),
-      destination: String(obj?.evidence?.destination || "").trim(),
-      tracking: String(obj?.evidence?.tracking || "").trim()
-    }
-  };
+r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n20000 NW 20TH AVE UNIT 1\nHIALEAH FL 33014-6110");
+expect("business prefix alone does not become person",r.status!=="MATCHED",r);
 
-  if (!Number.isFinite(base.confidence)) base.confidence = 0;
-  base.confidence = Math.max(0, Math.min(1, base.confidence));
+r=M.matchDirectory(customers,"ROADIE\nA Aaa Freded Was\nPACKAGE TRACKING CODE\n998877665544");
+expect("OCR garbage rejected",r.status==="NO_MATCH",r);
 
-  if (base.confidence < 0.78) base.needs_review = true;
-  if (!base.recipient_name) base.needs_review = true;
+r=M.matchDirectory(customers,"ABC Hardware Ltd\n55 MARKET STREET\nNASSAU BAHAMAS");
+expect("business customer recognized",r.status==="MATCHED"&&r.customer?.id==="abc",r);
 
-  return base;
-}
+const realRoadieOcr=[
+  "Sweetwater FL 33172",
+  "Your electconic needs Trevor",
+  "20000 Ni 20TH AVE UNIT 1",
+  "HIALEAH FL 33014-6110"
+].join("\n");
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok",{headers:cors(req)});
-  if (req.method !== "POST") return json(req,{ error: "Method not allowed" }, 405);
+r=M.matchDirectory(customers,realRoadieOcr);
+expect("real Roadie image OCR",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
 
-  try {
-    const auth = req.headers.get("authorization") || "";
-    if (!auth.startsWith("Bearer ")) return json(req,{ error: "Authentication required" }, 401);
+r=M.matchDirectory(customers,"Mark Daniels\n300 TEST STREET\nMIAMI FL 33101");
+expect("ten-customer exact collision",r.status==="MATCHED"&&r.customer?.id==="mark-daniels",r);
 
-    const body = await req.json();
-    const image = String(body?.image_data_url || "");
-    if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(image)) {
-      return json(req,{ error: "A package image is required." }, 400);
-    }
+r=M.matchDirectory(customers,"Brenda Forb\n400 TEST AVE\nMIAMI FL 33101");
+expect("similar surname partial requires caution",r.status!=="MATCHED",r);
 
-    const accountId = await secret("cloudflare_account_id");
-    const apiToken = await secret("cloudflare_api_token");
+r=M.matchDirectory(customers,"ABC Hardware East Ltd\n55 MARKET STREET\nNASSAU BAHAMAS");
+expect("similar business names stay distinct",r.status==="MATCHED"&&r.customer?.id==="abc-east",r);
 
-    if (!accountId || !apiToken) {
-      return json(req,{
-        configured: false,
-        error: "VISION_NOT_CONFIGURED"
-      }, 503);
-    }
-
-    const prompt = `
-You are the visual intake engine for Parcel Snap, a warehouse package-processing system.
-
-Look at the ENTIRE shipping-label image as a human warehouse worker would. Do not treat OCR lines independently. Determine semantic roles from layout and labels.
-
-Rules:
-- Carrier/company branding such as ROADIE, UPS, FEDEX, USPS, AMAZON is NOT the recipient.
-- Anything explicitly under "Return Address" is sender/return information, NOT the recipient.
-- The delivery/destination address block is the block that identifies where the package is being delivered.
-- The recipient/account/customer name is normally immediately above or attached to that destination address block.
-- A pattern such as "Your Electronic Needs / Trevon..." means the text after the slash is likely the individual recipient/account name and "Your Electronic Needs" is a business/account marker.
-- Never invent a person's name. If the visible name is partial, return the visible partial text and set needs_review=true unless there is enough evidence to identify it confidently.
-- Do not infer a full surname from an incomplete image unless the visible text supports it.
-- Distinguish sender address from recipient address.
-- Read QR/barcode text only if visibly decoded from the image; otherwise leave tracking_code blank.
-- If the image is blurry, skewed, cropped, or ambiguous, say so through confidence and needs_review.
-- Return JSON only. No prose outside JSON.
-
-Required JSON:
-{
-  "readable": true,
-  "carrier": "",
-  "return_address": "",
-  "recipient_name": "",
-  "recipient_business": "",
-  "recipient_address": "",
-  "tracking_code": "",
-  "confidence": 0.0,
-  "needs_review": true,
-  "evidence": {
-    "carrier": "short visible evidence",
-    "recipient": "short visible evidence",
-    "destination": "short visible evidence",
-    "tracking": "short visible evidence"
+const sharedBusiness=[
+  {
+    id:"trevon-a",
+    name:"Trevon Humes",
+    customer_type:"PERSON",
+    aliases:[{alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"}]
+  },
+  {
+    id:"trevon-b",
+    name:"Trevon Holmes",
+    customer_type:"PERSON",
+    aliases:[{alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"}]
   }
-}
-`;
+];
 
-    const cf = await fetch(
-      "https://api.cloudflare.com/client/v4/accounts/" +
-        encodeURIComponent(accountId) +
-        "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
-      {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + apiToken,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: "system", content: "You analyze package labels and return strict structured JSON." },
-            { role: "user", content: prompt }
-          ],
-          image
-        })
+r=M.matchDirectory(sharedBusiness,"Your Electronic Needs Trevor\n500 TEST ROAD\nHIALEAH FL 33014");
+expect("shared business plus ambiguous first name does not auto-match",r.status!=="MATCHED",r);
+
+console.log("known customer matcher regression tests passed");
+
+
+const actualLocalRoadieOcr=[
+  "Vrs Wi LPth 31",
+  "Sweetwater F\\ si 22",
+  "Nour electoonic needs Trevor",
+  "16600 NH S4TH AVE UNIT 9",
+  "HIALEAH FL Sone 6118",
+  "PACKAGE TRACKING CODE"
+].join("\n");
+
+r=M.matchDirectory(customers,actualLocalRoadieOcr);
+expect("actual local Roadie OCR",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+
+const scaleCustomers=[
+  {id:"trevon",name:"Trevon Humes",customer_type:"PERSON",aliases:[
+    {alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"},
+    {alias:"Your Electronic Needs / Trevon Humes",alias_type:"LABEL"}
+  ]},
+  {id:"mark-roberts",name:"Mark Roberts",customer_type:"PERSON",aliases:[]},
+  {id:"felida-hughes",name:"Felida Hughes",customer_type:"PERSON",aliases:[]},
+  {id:"jalida-hughes",name:"Jalida Hughes",customer_type:"PERSON",aliases:[]},
+  {id:"john-bull",name:"John Bull",customer_type:"BUSINESS",aliases:[
+    {alias:"John Bull Business Centre",alias_type:"BUSINESS_NAME"}
+  ]},
+  ...Array.from({length:245},(_,i)=>({
+    id:"synthetic-"+i,
+    name:"Warehouse Customer "+String(i+1).padStart(3,"0"),
+    customer_type:i%5===0?"BUSINESS":"PERSON",
+    aliases:i%5===0?[{alias:"Business Account "+String(i+1).padStart(3,"0"),alias_type:"BUSINESS_NAME"}]:[]
+  }))
+];
+
+r=M.matchDirectory(scaleCustomers,"Mark Roberts\n400 TEST STREET\nMIAMI FL 33101");
+expect("250-customer Mark Roberts",r.status==="MATCHED"&&r.customer?.id==="mark-roberts",r);
+
+r=M.matchDirectory(scaleCustomers,"Felida Hughes\n401 TEST STREET\nMIAMI FL 33101");
+expect("250-customer Felida Hughes",r.status==="MATCHED"&&r.customer?.id==="felida-hughes",r);
+
+r=M.matchDirectory(scaleCustomers,"Jalida Hughes\n402 TEST STREET\nMIAMI FL 33101");
+expect("250-customer Jalida Hughes",r.status==="MATCHED"&&r.customer?.id==="jalida-hughes",r);
+
+r=M.matchDirectory(scaleCustomers,"John Bull Business Centre\n403 TEST STREET\nNASSAU BAHAMAS");
+expect("250-customer business identity",r.status==="MATCHED"&&r.customer?.id==="john-bull",r);
+
+r=M.matchDirectory(scaleCustomers,"Unknown Walk-In Customer\n404 TEST STREET\nMIAMI FL 33101");
+expect("250-customer unknown stays unmatched",r.status!=="MATCHED",r);
+
+console.log("250-customer directory regression tests passed");
+
+
+==========================================================================================
+FILE: parcel-snap-customer/tests/ocr-parser-test.mjs
+==========================================================================================
+
+function normText(s=""){return String(s).toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
+function editDistance(a,b){a=normText(a);b=normText(b);const m=a.length,n=b.length,dp=Array.from({length:m+1},()=>Array(n+1).fill(0));for(let i=0;i<=m;i++)dp[i][0]=i;for(let j=0;j<=n;j++)dp[0][j]=j;for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return dp[m][n]}
+function tokenSimilarity(a,b){a=normText(a);b=normText(b);if(!a||!b)return 0;if(a===b)return 1;if((a.length>=4&&b.includes(a))||(b.length>=4&&a.includes(b)))return .92;return 1-editDistance(a,b)/Math.max(a.length,b.length)}
+
+function cleanRecipientCandidate(value){
+  let v=String(value||"").replace(/[\\|]+/g," ").replace(/[^A-Za-z.' -]/g," ").replace(/\s+/g," ").trim();
+  v=v.replace(/^(customer|recipient|consignee)\s*[:\-]?\s*/i,"");
+  if(!v)return "";
+  const words=v.split(" ").filter(Boolean);
+  if(words.length>5)return "";
+  if(words.some(w=>w.length===1))return "";
+  if(/return address|tracking|package|order reference|partner order|in hand date|street|road|avenue|lane|unit|warehouse|hialeah|sweetwater|florida|bahamas|roadie|fedex|usps|amazon/i.test(v))return "";
+  if(words.length===1&&words[0].length<6)return "";
+  if(words.length>=2&&!words.some(w=>w.length>=4))return "";
+  return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(" ");
+}
+
+function recipientAnalysis(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const streetRegex=/^\s*\d{3,6}\s+.*\b(?:NW|NE|SW|SE)?\s*(?:AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|DRIVE|LANE|LN|HWY|HIGHWAY)\b/i;
+  const cityZipRegex=/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i;
+
+  for(const line of lines){
+    const explicit=line.match(/(?:your\s+)?electr[\W_]*[o0]nic\s+needs\s*[\\/|:\-]+\s*(.+)$/i)
+      || line.match(/\byen\s*[\\/|:\-]+\s*(.+)$/i);
+    if(explicit){
+      const name=cleanRecipientCandidate(explicit[1]);
+      if(name)return {name,confidence:.97,reason:"business-slash-recipient"};
+    }
+  }
+
+  for(let i=0;i<lines.length;i++){
+    if(streetRegex.test(lines[i])){
+      const previous=lines[i-1]||"";
+      const previous2=lines[i-2]||"";
+      const slashSource=[previous,previous2].find(x=>/[\\/|]/.test(x)&&/needs|yen|electr/i.test(x));
+      if(slashSource){
+        const tail=slashSource.replace(/^.*?[\\/|]\s*/,"");
+        const name=cleanRecipientCandidate(tail);
+        if(name)return {name,confidence:.95,reason:"recipient-line-before-destination-address"};
       }
-    );
-
-    const raw = await cf.json().catch(() => ({}));
-
-    if (!cf.ok || raw?.success === false) {
-      console.error("Cloudflare vision error", raw);
-      return json(req,{
-        configured: true,
-        error: "VISION_PROVIDER_ERROR"
-      }, 502);
+      const name=cleanRecipientCandidate(previous);
+      const hasCityAfter=Boolean(lines[i+1]&&cityZipRegex.test(lines[i+1]));
+      if(name&&hasCityAfter)return {name,confidence:.82,reason:"name-directly-above-destination-address"};
     }
-
-    const responseText =
-      raw?.result?.response ??
-      raw?.result?.text ??
-      raw?.response ??
-      raw?.result ??
-      "";
-
-    let parsed: any;
-    if (typeof responseText === "string") {
-      parsed = JSON.parse(stripCodeFence(responseText));
-    } else {
-      parsed = responseText;
-    }
-
-    return json(req,{
-      configured: true,
-      provider: "cloudflare-workers-ai",
-      model: "@cf/meta/llama-3.2-11b-vision-instruct",
-      result: normalizeResult(parsed)
-    });
-  } catch (err) {
-    console.error(err);
-    return json(req,{ error: "VISION_PROCESSING_FAILED" }, 500);
   }
-});
+  return {name:"",confidence:0,reason:"unresolved"};
+}
+function extractNameCandidate(text){const r=recipientAnalysis(text);return r.confidence>=.82?r.name:""}
+function candidateScore(name,candidate){const n=normText(name).replace(/ /g,""),c=normText(candidate).replace(/ /g,"");if(!n||!c)return 0;if(n===c)return 1;if(c.length>=6&&(n.startsWith(c)||c.startsWith(n)))return .96;if(c.length>=6&&n.includes(c))return .94;return 1-editDistance(n,c)/Math.max(n.length,c.length)}
+function scoreName(name,text){const candidate=extractNameCandidate(text),candidateBased=candidate?candidateScore(name,candidate):0;const nts=normText(name).split(" ").filter(x=>x.length>=2),tts=normText(text).split(" ").filter(x=>x.length>=2);if(!nts.length||!tts.length)return candidateBased;const tokenBased=nts.map(n=>Math.max(...tts.map(t=>tokenSimilarity(n,t)))).reduce((a,b)=>a+b,0)/nts.length;return Math.max(candidateBased,tokenBased)}
+function best(customers,text){const ranked=customers.map(customer=>({customer,score:scoreName(customer.name,text)})).sort((a,b)=>b.score-a.score);const b=ranked[0],s=ranked[1];return b&&b.score>=.78&&(!s||b.score-s.score>=.06)?b:null}
+
+const customers=[{name:"Trevon Humes"},{name:"Jane Doe"}];
+const good=[
+  "Your electronic needs/Trevon Humes\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110",
+  "Your electr-onic needs/TrevonHu\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110",
+  "YOUR ELECTRONIC NEEDS / TREVON HUMES\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110"
+];
+
+for(const sample of good){
+  const candidate=extractNameCandidate(sample);
+  const match=best(customers,sample);
+  if(!candidate)throw new Error("No anchored recipient candidate: "+sample);
+  if(match?.customer?.name!=="Trevon Humes")throw new Error("Wrong match: "+JSON.stringify(match));
+  console.log({candidate,match:match.customer.name,score:match.score});
+}
+
+const nonsense="ROADIE\nReturn Address\nBBY-1502\n10760 NW 17th St\nSweetwater FL 33172\nA Aaa Freded Was\nPACKAGE TRACKING CODE\n1234567890";
+if(extractNameCandidate(nonsense)!=="")throw new Error("Weak OCR noise was incorrectly accepted as a recipient name");
+
+const unresolved="ROADIE\nReturn Address\nBBY-1502\n10760 NW 17th St\nSweetwater FL 33172\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110\nPACKAGE TRACKING CODE";
+if(extractNameCandidate(unresolved)!=="")throw new Error("Missing recipient should stay unresolved rather than being invented");
+
+console.log("customer OCR semantic recipient tests passed");
+
+
+==========================================================================================
+FILE: parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
+==========================================================================================
+
+import fs from "node:fs";
+
+const app=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
+
+function expect(label,condition){
+  if(!condition)throw new Error(label+" FAILED");
+  console.log(label,"PASS");
+}
+
+expect("persistent OCR worker exists",app.includes("getParcelSnapOcrWorker"));
+expect("worker recognize is reused",app.includes("worker.recognize(image)"));
+expect("no direct Tesseract.recognize in live app",!app.includes("Tesseract.recognize("));
+expect("old package rotation OCR loop removed",!app.includes("for(const angle of [-5,5,-9,9])"));
+expect("old transfer three-pass OCR array removed",!app.includes("passes=[enhanced,await rotateDataUrl(enhanced,-5),await rotateDataUrl(enhanced,5)]"));
+
+const mainBlock=app.slice(app.indexOf("async function readPackagePhoto"),app.indexOf("function setMode"));
+const mainRecognitions=(mainBlock.match(/fastOcrRecognize\(/g)||[]).length;
+expect("package intake has at most two OCR recognition calls in code path",mainRecognitions<=2);
+
+const transferStart=app.indexOf("async function analyzeTransferImage");
+const transferEnd=app.indexOf('$("#transferPhoto")',transferStart);
+const transferBlock=app.slice(transferStart,transferEnd);
+const transferRecognitions=(transferBlock.match(/fastOcrRecognize\(/g)||[]).length;
+expect("transfer intake has at most two OCR recognition calls in code path",transferRecognitions<=2);
+
+console.log("OCR speed architecture regression tests passed");
 
