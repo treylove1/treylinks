@@ -149,6 +149,9 @@
       $("packagePhotoPreview").innerHTML=
         '<img src="' + instantUrl + '" alt="Package photo">';
 
+      // Yield one frame so the employee sees the photo immediately.
+      await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+
       const prepared=await preparePackageImages(file);
       intakePhotoDataUrl=prepared.preview;
 
