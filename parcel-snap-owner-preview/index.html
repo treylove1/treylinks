@@ -28,7 +28,7 @@
       <div>
         <span class="eyebrow">PARCEL SNAP · OWNER FULL ACCESS</span>
         <h1>Warehouse Test Console</h1>
-        <p>Photo label → identify customer → Miami email → Nassau photo → warehouse location.</p>
+        <p>Photo → identify customer → notify → destination arrival → warehouse location.</p>
       </div>
       <div class="headerActions">
         <span class="pill">OWNER · $0 TEST MODE</span>
@@ -40,14 +40,15 @@
       <section class="grid metrics">
         <article class="card"><span>Customers</span><strong id="customerCount">0</strong><small>Saved on this device</small></article>
         <article class="card"><span>Total packages</span><strong id="totalPackages">0</strong><small>Package records</small></article>
-        <article class="card"><span>Miami received</span><strong id="miamiCount">0</strong><small>Arrival photo saved</small></article>
-        <article class="card"><span>Nassau received</span><strong id="nassauCount">0</strong><small>Arrival confirmed</small></article>
+        <article class="card"><span>Origin received</span><strong id="miamiCount">0</strong><small>Arrival photo saved</small></article>
+        <article class="card"><span>Destination received</span><strong id="nassauCount">0</strong><small>Arrival confirmed</small></article>
       </section>
 
       <nav class="tabs">
-        <button class="tab active" data-tab="miami">Miami Photo Intake</button>
-        <button class="tab" data-tab="nassau">Nassau Arrival</button>
+        <button class="tab active" data-tab="miami">Receiving</button>
+        <button class="tab" data-tab="nassau">Destination Arrival</button>
         <button class="tab" data-tab="warehouse">Warehouse</button>
+        <button class="tab" data-tab="facilities">Warehouses</button>
         <button class="tab" data-tab="customers">Customers</button>
         <button class="tab" data-tab="search">Search</button>
         <button class="tab" data-tab="owner">Owner</button>
@@ -55,8 +56,12 @@
 
       <section id="tab-miami" class="tabPanel">
         <article class="card">
-          <span class="eyebrow">MIAMI RECEIVING</span>
+          <span class="eyebrow">RECEIVING</span>
           <h2>Take Package Photo</h2>
+          <label>Active receiving warehouse
+            <select id="activeOriginWarehouse"></select>
+          </label>
+          <div id="activeOriginAddress" class="facilitySummary"></div>
           <label class="cameraBox">
             <span>📷 Take Package Photo</span>
             <input id="miamiPhotos" type="file" accept="image/*" capture="environment" multiple>
@@ -90,7 +95,7 @@
 
             <input id="trackingRef" type="hidden">
             <input id="carrier" type="hidden">
-            <button id="saveMiami" class="primary wide">Save Miami Arrival</button>
+            <button id="saveMiami" class="primary wide">Save Arrival</button>
           </div>
 
           <div id="emailResult" class="notice hidden"></div>
@@ -99,26 +104,30 @@
 
       <section id="tab-nassau" class="tabPanel hidden">
         <article class="card">
-          <span class="eyebrow">NASSAU RECEIVING</span>
-          <h2>Record Nassau arrival</h2>
+          <span class="eyebrow">DESTINATION RECEIVING</span>
+          <h2>Record Destination Arrival</h2>
+          <label>Destination warehouse
+            <select id="activeDestinationWarehouse"></select>
+          </label>
+          <div id="activeDestinationAddress" class="facilitySummary"></div>
           <label>Select package
             <select id="nassauPackage"></select>
           </label>
           <div class="formGrid">
-            <label>Nassau receiving area
-              <input id="nassauLocation" value="Nassau Receiving">
+            <label>Receiving area
+              <input id="nassauLocation" value="Receiving">
             </label>
             <label>Condition / note
               <input id="nassauNote" placeholder="Box OK / damaged corner / inspection note">
             </label>
           </div>
           <label class="cameraBox">
-            <span>📷 Take Nassau arrival photo(s)</span>
+            <span>📷 Take destination arrival photo(s)</span>
             <input id="nassauPhotos" type="file" accept="image/*" capture="environment" multiple>
             <small>These stay attached to the same package record.</small>
           </label>
           <div id="nassauPreview" class="photoGrid"></div>
-          <button id="saveNassau" class="primary wide">Save Nassau Arrival</button>
+          <button id="saveNassau" class="primary wide">Save Destination Arrival</button>
         </article>
       </section>
 
@@ -155,6 +164,41 @@
           <button id="saveWarehouse" class="primary wide">Save Warehouse Location</button>
         </article>
         <div id="warehouseList"></div>
+      </section>
+
+
+      <section id="tab-facilities" class="tabPanel hidden">
+        <article class="card">
+          <span class="eyebrow">WAREHOUSE PROFILES</span>
+          <h2>Receiving locations</h2>
+          <p>Set each warehouse once. The active location is used automatically for package intake and notifications.</p>
+          <div class="formGrid">
+            <label>Warehouse name
+              <input id="facilityName" placeholder="Miami Warehouse">
+            </label>
+            <label>Type
+              <select id="facilityType">
+                <option value="ORIGIN">Origin / receiving</option>
+                <option value="DESTINATION">Destination</option>
+                <option value="TRANSIT">Transit</option>
+              </select>
+            </label>
+            <label>City
+              <input id="facilityCity" placeholder="Miami">
+            </label>
+            <label>Street address
+              <input id="facilityAddress" placeholder="Enter actual warehouse address">
+            </label>
+            <label>Region / state
+              <input id="facilityRegion" placeholder="FL">
+            </label>
+            <label>Country
+              <input id="facilityCountry" placeholder="USA">
+            </label>
+          </div>
+          <button id="addFacility" class="primary wide">Add Warehouse</button>
+        </article>
+        <div id="facilityList"></div>
       </section>
 
       <section id="tab-customers" class="tabPanel hidden">
