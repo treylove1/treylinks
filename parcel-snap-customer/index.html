@@ -51,7 +51,10 @@
         <h1 id="companyTitle">Business Portal</h1>
         <p id="companyMeta"></p>
       </div>
-      <button id="signOut" class="ghost">Sign out</button>
+      <div class="headerActions">
+        <button id="testBusinessSetup" class="ghost hidden">Test New Business Setup</button>
+        <button id="signOut" class="ghost">Sign out</button>
+      </div>
     </header>
 
     <main>
@@ -84,8 +87,13 @@
 
       <section id="businessSetupState" class="hidden">
         <article class="card setupCard">
-          <span class="eyebrow">BUSINESS NEEDS ASSESSMENT</span>
-          <h2>Tell Parcel Snap how your operation works</h2>
+          <div class="sectionHead">
+            <div>
+              <span class="eyebrow">BUSINESS NEEDS ASSESSMENT</span>
+              <h2>Tell Parcel Snap how your operation works</h2>
+            </div>
+            <button id="exitBusinessSetupPreview" class="ghost hidden">Back to My Workspace</button>
+          </div>
           <p>We use these answers to build your company workspace. We do not assume your warehouses, staff roles, storage areas, or workflow.</p>
 
           <div class="setupProgress">
@@ -213,6 +221,7 @@
               <button id="saveBusinessSetup" class="primary">Build My Parcel Snap Workspace</button>
             </div>
             <div id="businessSetupMessage" class="message"></div>
+            <div id="businessSetupPreviewResult" class="hidden"></div>
           </div>
         </article>
       </section>
