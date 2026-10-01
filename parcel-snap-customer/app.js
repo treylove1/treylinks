@@ -693,7 +693,8 @@ function renderFacilities(){
 
 function renderStaffControls(){
   const role=workspace?.company?.role||"";
-  const canManageStaff=["OWNER","MANAGER"].includes(role);
+  const staffFeatureEnabled=workspace?.profile?.needs_worker_sublogins!==false;
+  const canManageStaff=["OWNER","MANAGER"].includes(role)&&staffFeatureEnabled;
 
   $("staffTabButton").classList.toggle("hidden",!canManageStaff);
   $("billingTabButton").classList.toggle("hidden",role!=="OWNER");
