@@ -44,3 +44,5 @@ button,.linkButton{border:0;border-radius:10px;padding:11px 14px;font-weight:850
 .inviteResult{margin-top:12px;background:#0a1628;border:1px solid #345477;border-radius:12px;padding:14px}
 .inviteCode{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:1.5rem;letter-spacing:.14em;margin:8px 0;color:#ffffff}
 @media(max-width:760px){.facilityChoices{grid-template-columns:1fr}.segmented.three{grid-template-columns:1fr}}
+
+.inlineCustomer{margin-top:12px;padding:14px;border:1px solid #345477;border-radius:12px;background:#0a1628}
