@@ -741,6 +741,174 @@ $("receivePackageButton").onclick=async()=>{
   }
 };
 
+
+function renderTransferControls(){
+  const facilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
+  const packages=(workspace?.packages||[]).filter(p=>!["DELIVERED","PICKED_UP"].includes(p.stage));
+
+  const currentFacility=$("transferFacility")?.value||"";
+  const currentPackage=$("transferPackage")?.value||"";
+
+  if($("transferFacility")){
+    $("transferFacility").innerHTML=facilities.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("")||'<option value="">No warehouse configured</option>';
+    if(facilities.some(f=>f.id===currentFacility))$("transferFacility").value=currentFacility;
+    else{
+      const nassau=facilities.find(f=>f.code==="NAS");
+      if(nassau)$("transferFacility").value=nassau.id;
+    }
+  }
+
+  if($("transferPackage")){
+    $("transferPackage").innerHTML='<option value="">Select package</option>'+packages.map(p=>{
+      const ref=p.tracking_number||"No tracking";
+      const who=p.customer_name||"Unknown customer";
+      return '<option value="'+p.id+'">'+esc(who)+' — '+esc(ref)+' — '+esc(p.stage)+'</option>';
+    }).join("");
+    if(packages.some(p=>p.id===currentPackage))$("transferPackage").value=currentPackage;
+  }
+}
+
+function normalizeTracking(v){
+  return String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+}
+
+function chooseTransferCandidates(tracking,customerId){
+  const active=(workspace?.packages||[]).filter(p=>!["DELIVERED","PICKED_UP"].includes(p.stage));
+  const t=normalizeTracking(tracking);
+
+  let candidates=[];
+  if(t){
+    candidates=active.filter(p=>normalizeTracking(p.tracking_number)===t);
+    if(candidates.length)return candidates;
+  }
+
+  if(customerId){
+    candidates=active.filter(p=>String(p.customer_id||"")===String(customerId));
+    if(candidates.length)return candidates;
+  }
+
+  return active;
+}
+
+async function analyzeTransferImage(dataUrl){
+  let tracking=await detectBarcode(dataUrl);
+  let merged="";
+  const enhanced=await enhanceForReading(dataUrl);
+  const passes=[enhanced,await rotateDataUrl(enhanced,-5),await rotateDataUrl(enhanced,5)];
+
+  for(const source of passes){
+    const result=await Tesseract.recognize(source,"eng");
+    merged+="\n"+(result.data.text||"");
+
+    if(!tracking)tracking=guessTracking(merged);
+
+    if(window.ParcelSnapKnownMatcher){
+      const m=window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged);
+      if((tracking&&tracking.length>=6)||m.status==="MATCHED"){
+        return {tracking,text:merged,customer:m.customer||null,match:m};
+      }
+    }
+  }
+
+  const m=window.ParcelSnapKnownMatcher
+    ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
+    : {status:"NO_MATCH",customer:null};
+
+  return {tracking,text:merged,customer:m.customer||null,match:m};
+}
+
+$("transferPhoto").onchange=async e=>{
+  const file=e.target.files?.[0];
+  if(!file)return;
+
+  $("transferResult").textContent="";
+  $("transferProcessing").classList.remove("hidden");
+  $("transferProcessingText").textContent="Reading package…";
+  $("transferProcessingDetail").textContent="";
+
+  try{
+    const original=await readFileDataUrl(file);
+    const [uploadImage,ocrImage]=await Promise.all([
+      resizeDataUrl(original,1600,.82),
+      resizeDataUrl(original,2800,.96)
+    ]);
+
+    transferPhotoDataUrl=uploadImage;
+    $("transferPhotoPreview").innerHTML='<img src="'+uploadImage+'" alt="Arrival package photo">';
+
+    const result=await analyzeTransferImage(ocrImage);
+    const candidates=chooseTransferCandidates(result.tracking,result.customer?.id);
+
+    $("transferPackage").innerHTML='<option value="">Select package</option>'+candidates.map(p=>{
+      const ref=p.tracking_number||"No tracking";
+      const who=p.customer_name||"Unknown customer";
+      return '<option value="'+p.id+'">'+esc(who)+' — '+esc(ref)+' — '+esc(p.stage)+'</option>';
+    }).join("");
+
+    if(candidates.length===1)$("transferPackage").value=candidates[0].id;
+
+    if(candidates.length===1){
+      $("transferProcessingText").textContent=candidates[0].customer_name||"Package matched";
+      $("transferProcessingDetail").textContent=result.tracking
+        ?"Existing package found · tracking matched"
+        :"Existing package found · customer matched";
+    }else if(candidates.length>1){
+      $("transferProcessingText").textContent=result.customer?.name||"Multiple possible packages";
+      $("transferProcessingDetail").textContent="Choose the correct package";
+    }else{
+      $("transferProcessingText").textContent="Existing package not found";
+      $("transferProcessingDetail").textContent=result.tracking
+        ?"Tracking read, but no active package matched"
+        :"Choose an existing package manually";
+      renderTransferControls();
+    }
+  }catch(err){
+    console.error(err);
+    $("transferProcessingText").textContent="Could not identify package";
+    $("transferProcessingDetail").textContent="Choose the package manually";
+    renderTransferControls();
+  }
+};
+
+$("saveTransfer").onclick=async()=>{
+  const package_id=$("transferPackage").value;
+  const facility_id=$("transferFacility").value;
+
+  if(!package_id){alert("Choose the package.");return}
+  if(!facility_id){alert("Choose the arriving warehouse.");return}
+  if(!transferPhotoDataUrl){alert("Take the arrival photo first.");return}
+
+  $("saveTransfer").disabled=true;
+  $("transferResult").textContent="Saving arrival…";
+
+  try{
+    const r=await api({
+      action:"destination_arrival",
+      package_id,
+      facility_id,
+      note:$("transferNote").value.trim()||null,
+      photo_data_url:transferPhotoDataUrl
+    });
+
+    $("transferResult").textContent=
+      "Arrival saved · photo saved · email "+(r.email?.status||"SKIPPED")+
+      (r.assigned_location_id?" · location assigned":"");
+
+    transferPhotoDataUrl=null;
+    $("transferPhoto").value="";
+    $("transferPhotoPreview").innerHTML="";
+    $("transferProcessing").classList.add("hidden");
+    $("transferNote").value="";
+
+    await loadWorkspace();
+    document.querySelector('[data-tab="transfer"]').click();
+  }catch(e){
+    $("transferResult").textContent=e.message||String(e);
+  }finally{
+    $("saveTransfer").disabled=false;
+  }
+};
+
 document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===btn));
   document.querySelectorAll(".panel").forEach(x=>x.classList.add("hidden"));
