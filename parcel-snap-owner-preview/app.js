@@ -3,6 +3,45 @@ const DB_VERSION=2;
 const STORE_PACKAGES="packages";
 const STORE_CUSTOMERS="customers";
 let db, stagedMiamiPhotos=[], stagedNassauPhotos=[], ocrRawText="", currentDetectedName="";
+const FACILITY_KEY="parcel-snap-facilities-v1";
+const ACTIVE_ORIGIN_KEY="parcel-snap-active-origin";
+const ACTIVE_DESTINATION_KEY="parcel-snap-active-destination";
+
+function defaultFacilities(){
+  return [
+    {id:"FAC-MIA",name:"Miami Warehouse",type:"ORIGIN",city:"Miami",address:"",region:"FL",country:"USA",active:true},
+    {id:"FAC-FLL",name:"Fort Lauderdale Warehouse",type:"ORIGIN",city:"Fort Lauderdale",address:"",region:"FL",country:"USA",active:true},
+    {id:"FAC-ORL",name:"Orlando Warehouse",type:"ORIGIN",city:"Orlando",address:"",region:"FL",country:"USA",active:true},
+    {id:"FAC-NAS",name:"Nassau Warehouse",type:"DESTINATION",city:"Nassau",address:"",region:"New Providence",country:"Bahamas",active:true}
+  ];
+}
+function getFacilities(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(FACILITY_KEY)||"null");
+    if(Array.isArray(saved)&&saved.length)return saved;
+  }catch{}
+  const seed=defaultFacilities();
+  localStorage.setItem(FACILITY_KEY,JSON.stringify(seed));
+  return seed;
+}
+function saveFacilities(items){localStorage.setItem(FACILITY_KEY,JSON.stringify(items))}
+function facilityById(id){return getFacilities().find(f=>f.id===id)||null}
+function facilityLabel(f){return f?.city||f?.name||"Warehouse"}
+function facilityAddressText(f){return f?[f.address,f.city,f.region,f.country].filter(Boolean).join(", "):""}
+function getActiveOrigin(){
+  const items=getFacilities().filter(f=>f.type==="ORIGIN"&&f.active!==false);
+  let id=localStorage.getItem(ACTIVE_ORIGIN_KEY);
+  if(!items.some(f=>f.id===id))id=items[0]?.id||"";
+  if(id)localStorage.setItem(ACTIVE_ORIGIN_KEY,id);
+  return facilityById(id);
+}
+function getActiveDestination(){
+  const items=getFacilities().filter(f=>f.type==="DESTINATION"&&f.active!==false);
+  let id=localStorage.getItem(ACTIVE_DESTINATION_KEY);
+  if(!items.some(f=>f.id===id))id=items[0]?.id||"";
+  if(id)localStorage.setItem(ACTIVE_DESTINATION_KEY,id);
+  return facilityById(id);
+}
 
 function openDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,DB_VERSION);req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE_PACKAGES)){const s=d.createObjectStore(STORE_PACKAGES,{keyPath:"id"});s.createIndex("tracking","tracking");s.createIndex("customer","customer")}if(!d.objectStoreNames.contains(STORE_CUSTOMERS)){const s=d.createObjectStore(STORE_CUSTOMERS,{keyPath:"id"});s.createIndex("name","name");s.createIndex("email","email",{unique:false})}};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
 function store(name,mode="readonly"){return db.transaction(name,mode).objectStore(name)}
