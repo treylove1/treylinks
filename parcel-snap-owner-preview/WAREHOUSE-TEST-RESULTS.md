@@ -38,3 +38,22 @@ All test rows were rolled back afterward.
 The new parcel_snap schema is not connected to the public app yet.
 Supabase flagged RLS disabled on these new tables. Direct browser access will remain disconnected
 until tenant policies are explicitly approved and enabled.
+
+
+## Configurable receiving warehouses
+A cloud warehouse profile layer now supports interchangeable receiving sites.
+Verified profile rendering for:
+- Miami
+- Fort Lauderdale
+- Orlando
+- Nassau
+
+The arrival email pulls its warehouse name/address from the selected profile; package-processing code does not hard-code a city/address.
+
+Real Resend delivery sink results:
+- Miami profile: DELIVERED
+- Fort Lauderdale profile: DELIVERED
+- Orlando profile: DELIVERED
+- Nassau profile: DELIVERED
+
+The addresses used for this verification were rollback-only sentinel test addresses and were not persisted as customer/warehouse production data.
