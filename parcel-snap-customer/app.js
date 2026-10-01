@@ -10,6 +10,8 @@ let intakeOcrText="";
 let intakeOcrName="";
 let intakeOcrAddress="";
 let transferPhotoDataUrl=null;
+let businessSetupStep=1;
+let businessSetupLocations=[];
 
 const $=id=>document.getElementById(id);
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
@@ -422,7 +424,7 @@ async function boot(){
 }
 
 function showOnly(id){
-  ["loadingState","onboardingState","billingState","activeWorkspace"].forEach(x=>$(x).classList.add("hidden"));
+  ["loadingState","onboardingState","billingState","businessSetupState","activeWorkspace"].forEach(x=>$(x).classList.add("hidden"));
   $(id).classList.remove("hidden");
 }
 
@@ -441,6 +443,11 @@ async function loadWorkspace(){
       $("companyMeta").textContent=workspace.company?.role?"Role: "+workspace.company.role:"";
       $("billingStatus").textContent="Status: "+(workspace.subscription?.status||"Payment required");
       $("payLink").href=workspace.payment_link;
+      return;
+    }
+    if(workspace.state==="BUSINESS_SETUP_REQUIRED"){
+      prepareBusinessSetup(workspace);
+      showOnly("businessSetupState");
       return;
     }
     if(workspace.state==="ACTIVE"){
@@ -467,6 +474,151 @@ $("saveOnboarding").onclick=async()=>{
   }catch(e){alert(e.message)}
 };
 $("recheckAccess").onclick=loadWorkspace;
+
+function setBusinessSetupStep(step){
+  businessSetupStep=Number(step)||1;
+  [1,2,3,4].forEach(n=>{
+    const panel=$("businessSetupStep"+n);
+    if(panel)panel.classList.toggle("hidden",n!==businessSetupStep);
+    const dot=document.querySelector('[data-setup-dot="'+n+'"]');
+    if(dot)dot.classList.toggle("active",n===businessSetupStep);
+  });
+}
+
+function prepareBusinessSetup(data){
+  const profile=data.profile||{};
+  businessSetupLocations=Array.isArray(data.locations)?data.locations.map(x=>({...x})):[];
+  $("profileBusinessType").value=profile.business_type||"";
+  $("profileBusinessName").value=profile.primary_business_name||data.company?.name||"";
+  $("profileEmployees").value=profile.employee_count??"";
+  $("profileCustomers").value=profile.estimated_customers??"";
+  $("profilePackagesPerDay").value=profile.packages_per_day??"";
+  $("profileWebsite").value=profile.website||"";
+  $("profilePallets").checked=Boolean(profile.handles_pallets);
+  $("profileOversize").checked=Boolean(profile.handles_oversize);
+  $("profileAppliances").checked=Boolean(profile.handles_appliances);
+  $("profileTVs").checked=Boolean(profile.handles_tvs);
+  $("profileStorage").checked=Boolean(profile.needs_storage);
+  $("profileReturns").checked=Boolean(profile.needs_returns);
+  $("profileInspection").checked=Boolean(profile.needs_inspection);
+  $("profileDelivery").checked=Boolean(profile.needs_delivery);
+  $("profileNotifications").checked=profile.needs_customer_notifications!==false;
+  $("profileEmail").checked=(profile.notification_channels||["EMAIL"]).includes("EMAIL");
+  $("profileWhatsApp").checked=(profile.notification_channels||[]).includes("WHATSAPP");
+  $("profileWorkerLogins").checked=profile.needs_worker_sublogins!==false;
+  $("profileDrivers").checked=Boolean(profile.needs_driver_access);
+  $("profileNotes").value=profile.notes||"";
+  renderBusinessSetupLocations();
+  setBusinessSetupStep(1);
+}
+
+function renderBusinessSetupLocations(){
+  const root=$("setupLocationList");
+  if(!root)return;
+  if(!businessSetupLocations.length){
+    root.innerHTML='<div class="empty">No locations added yet.</div>';
+    return;
+  }
+  root.innerHTML=businessSetupLocations.map((loc,index)=>{
+    const roleLabels={
+      RECEIVE:"Receives packages",
+      DESTINATION:"Destination / storage",
+      BOTH:"Receives and sends/moves packages",
+      NON_WAREHOUSE:"No package handling"
+    };
+    return '<div class="setupLocationCard"><div class="itemTop"><div><strong>'+
+      esc(loc.label||loc.city||("Location "+(index+1)))+
+      '</strong><br><small>'+
+      esc([loc.city,loc.region,loc.country].filter(Boolean).join(", "))+
+      ' · '+esc(roleLabels[loc.operation_role]||loc.operation_role||"BOTH")+
+      '</small></div><button class="ghost" data-remove-setup-location="'+index+'">Remove</button></div></div>';
+  }).join("");
+  root.querySelectorAll("[data-remove-setup-location]").forEach(btn=>{
+    btn.onclick=()=>{
+      businessSetupLocations.splice(Number(btn.dataset.removeSetupLocation),1);
+      renderBusinessSetupLocations();
+    };
+  });
+}
+
+function addBusinessSetupLocation(){
+  const city=$("setupLocationCity").value.trim();
+  if(!city){alert("Enter the city for this location.");return}
+  const location={
+    label:$("setupLocationLabel").value.trim()||city+" Location",
+    city,
+    region:$("setupLocationRegion").value.trim()||null,
+    country:$("setupLocationCountry").value.trim()||null,
+    address_line1:$("setupLocationAddress").value.trim()||null,
+    use_type:$("setupLocationUseType").value,
+    operation_role:$("setupLocationRole").value,
+    employee_count:$("setupLocationEmployees").value||null,
+    handles_customer_pickup:$("setupLocationPickup").checked,
+    handles_delivery_dispatch:$("setupLocationDispatch").checked,
+    handles_returns:$("setupLocationReturns").checked,
+    handles_inspection:$("setupLocationInspection").checked
+  };
+  businessSetupLocations.push(location);
+  ["setupLocationLabel","setupLocationCity","setupLocationRegion","setupLocationCountry","setupLocationEmployees","setupLocationAddress"].forEach(id=>$(id).value="");
+  ["setupLocationPickup","setupLocationDispatch","setupLocationReturns","setupLocationInspection"].forEach(id=>$(id).checked=false);
+  renderBusinessSetupLocations();
+}
+
+document.querySelectorAll("[data-setup-next]").forEach(btn=>btn.onclick=()=>{
+  const next=Number(btn.dataset.setupNext);
+  if(businessSetupStep===1){
+    if(!$("profileBusinessType").value.trim()){alert("Tell us what kind of business you operate.");return}
+    if(!$("profileBusinessName").value.trim()){alert("Enter the business name.");return}
+  }
+  if(businessSetupStep===2&&!businessSetupLocations.length){
+    alert("Add at least one business location.");
+    return;
+  }
+  setBusinessSetupStep(next);
+});
+document.querySelectorAll("[data-setup-back]").forEach(btn=>btn.onclick=()=>setBusinessSetupStep(Number(btn.dataset.setupBack)));
+$("addSetupLocation").onclick=addBusinessSetupLocation;
+
+$("saveBusinessSetup").onclick=async()=>{
+  if(!businessSetupLocations.length){alert("Add at least one business location.");return}
+  const channels=[];
+  if($("profileEmail").checked)channels.push("EMAIL");
+  if($("profileWhatsApp").checked)channels.push("WHATSAPP");
+
+  const profile={
+    business_type:$("profileBusinessType").value.trim(),
+    primary_business_name:$("profileBusinessName").value.trim(),
+    employee_count:$("profileEmployees").value||null,
+    estimated_customers:$("profileCustomers").value||null,
+    packages_per_day:$("profilePackagesPerDay").value||null,
+    website:$("profileWebsite").value.trim()||null,
+    handles_pallets:$("profilePallets").checked,
+    handles_oversize:$("profileOversize").checked,
+    handles_appliances:$("profileAppliances").checked,
+    handles_tvs:$("profileTVs").checked,
+    needs_storage:$("profileStorage").checked,
+    needs_returns:$("profileReturns").checked,
+    needs_inspection:$("profileInspection").checked,
+    needs_delivery:$("profileDelivery").checked,
+    needs_customer_notifications:$("profileNotifications").checked,
+    notification_channels:channels.length?channels:["EMAIL"],
+    needs_worker_sublogins:$("profileWorkerLogins").checked,
+    needs_driver_access:$("profileDrivers").checked,
+    notes:$("profileNotes").value.trim()||null
+  };
+
+  $("saveBusinessSetup").disabled=true;
+  $("businessSetupMessage").textContent="Building your Parcel Snap workspace…";
+  try{
+    await api({action:"save_business_profile",profile,locations:businessSetupLocations});
+    $("businessSetupMessage").textContent="Workspace created.";
+    await loadWorkspace();
+  }catch(e){
+    $("businessSetupMessage").textContent=e.message||String(e);
+  }finally{
+    $("saveBusinessSetup").disabled=false;
+  }
+};
 
 function renderWorkspace(){
   $("companyTitle").textContent=workspace.company.name;
