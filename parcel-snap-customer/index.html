@@ -84,14 +84,77 @@
         </section>
 
         <nav class="tabs">
-          <button class="tab active" data-tab="overview">Overview</button>
+          <button class="tab active" data-tab="receive">Receive</button>
+          <button class="tab" data-tab="overview">Overview</button>
           <button class="tab" data-tab="packages">Packages</button>
           <button class="tab" data-tab="customers">Customers</button>
           <button class="tab" data-tab="warehouses">Warehouses</button>
           <button class="tab" data-tab="billing">Billing</button>
         </nav>
 
-        <section id="tab-overview" class="panel">
+        <section id="tab-receive" class="panel">
+          <article class="card">
+            <span class="eyebrow">PACKAGE INTAKE</span>
+            <h2>Take Package Photo</h2>
+
+            <div class="formGrid">
+              <label>Receiving warehouse
+                <select id="receiveOrigin"></select>
+              </label>
+              <label>Destination warehouse
+                <select id="receiveDestination"></select>
+              </label>
+            </div>
+
+            <label class="cameraBox">
+              <span>📷 Take Package Photo</span>
+              <input id="packagePhoto" type="file" accept="image/*" capture="environment">
+            </label>
+            <div id="packagePhotoPreview" class="photoPreview"></div>
+
+            <div id="processingBox" class="processing hidden">
+              <strong id="processingText">Processing package…</strong>
+              <small id="processingDetail"></small>
+            </div>
+
+            <label>Customer
+              <select id="receiveCustomer"></select>
+            </label>
+
+            <div class="formGrid">
+              <label>Carrier
+                <input id="receiveCarrier" placeholder="UPS / FedEx / USPS / Amazon">
+              </label>
+              <label>Package size
+                <select id="receiveSize">
+                  <option value="UNKNOWN">Unknown</option>
+                  <option value="SMALL">Small</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LARGE">Large</option>
+                  <option value="OVERSIZE">Oversize</option>
+                </select>
+              </label>
+              <label>Payment status
+                <select id="receivePayment">
+                  <option value="UNKNOWN">Unknown</option>
+                  <option value="UNPAID">Unpaid</option>
+                  <option value="PARTIAL">Partial</option>
+                  <option value="PAID">Paid</option>
+                  <option value="WAIVED">Waived</option>
+                </select>
+              </label>
+              <label>Weight (lb)
+                <input id="receiveWeight" type="number" step="0.01" min="0">
+              </label>
+            </div>
+
+            <input id="receiveTracking" type="hidden">
+            <button id="receivePackageButton" class="primary wide">Receive Package</button>
+            <div id="receiveResult" class="message"></div>
+          </article>
+        </section>
+
+        <section id="tab-overview" class="panel hidden">
           <article class="card">
             <span class="eyebrow">TODAY</span>
             <h2>Warehouse attention queue</h2>
@@ -115,6 +178,21 @@
         <section id="tab-customers" class="panel hidden">
           <article class="card">
             <span class="eyebrow">CUSTOMER DIRECTORY</span>
+            <h2>Add Customer</h2>
+            <div class="formGrid">
+              <label>Name
+                <input id="newCustomerName" placeholder="Customer name">
+              </label>
+              <label>Email
+                <input id="newCustomerEmail" type="email" placeholder="customer@example.com">
+              </label>
+              <label>Phone
+                <input id="newCustomerPhone" placeholder="Optional">
+              </label>
+            </div>
+            <button id="addCustomerButton" class="primary wide">Add Customer</button>
+          </article>
+          <article class="card">
             <h2>Customers</h2>
             <div id="customerList"></div>
           </article>
@@ -123,6 +201,37 @@
         <section id="tab-warehouses" class="panel hidden">
           <article class="card">
             <span class="eyebrow">WAREHOUSE PROFILES</span>
+            <h2>Add Warehouse</h2>
+            <div class="formGrid">
+              <label>Name
+                <input id="newFacilityName" placeholder="Fort Lauderdale Warehouse">
+              </label>
+              <label>Type
+                <select id="newFacilityType">
+                  <option value="ORIGIN">Origin / receiving</option>
+                  <option value="DESTINATION">Destination</option>
+                  <option value="TRANSIT">Transit</option>
+                </select>
+              </label>
+              <label>City
+                <input id="newFacilityCity" placeholder="Fort Lauderdale">
+              </label>
+              <label>Street address
+                <input id="newFacilityAddress" placeholder="Actual warehouse address">
+              </label>
+              <label>Region / state
+                <input id="newFacilityRegion" placeholder="FL">
+              </label>
+              <label>Postal code
+                <input id="newFacilityPostal" placeholder="Optional">
+              </label>
+              <label>Country
+                <input id="newFacilityCountry" placeholder="USA">
+              </label>
+            </div>
+            <button id="addFacilityButton" class="primary wide">Add Warehouse</button>
+          </article>
+          <article class="card">
             <h2>Facilities</h2>
             <div id="facilityList"></div>
           </article>
@@ -140,6 +249,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
