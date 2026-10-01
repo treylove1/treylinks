@@ -45,7 +45,7 @@ function recipientAnalysis(text){
   const cityZipRegex=/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i;
 
   for(const line of lines){
-    const explicit=line.match(/(?:your\s+)?electr[o0]nic\s+needs\s*[\\/|:\-]+\s*(.+)$/i)
+    const explicit=line.match(/(?:your\s+)?electr[\W_]*[o0]nic\s+needs\s*[\\/|:\-]+\s*(.+)$/i)
       || line.match(/\byen\s*[\\/|:\-]+\s*(.+)$/i);
     if(explicit){
       const name=cleanRecipientCandidate(explicit[1]);
@@ -92,13 +92,9 @@ function candidateScore(name,candidate){
 }
 
 function scoreName(name,text){
-  const candidate=extractNameCandidate(text);
-  const candidateBased=candidate?candidateScore(name,candidate):0;
-  const nts=normText(name).split(" ").filter(x=>x.length>=2);
-  const tts=normText(text).split(" ").filter(x=>x.length>=2);
-  if(!nts.length||!tts.length)return candidateBased;
-  const tokenBased=nts.map(n=>Math.max(...tts.map(t=>tokenSimilarity(n,t)))).reduce((a,b)=>a+b,0)/nts.length;
-  return Math.max(candidateBased,tokenBased);
+  const analysis=recipientAnalysis(text);
+  if(!analysis.name||analysis.confidence<.82)return 0;
+  return candidateScore(name,analysis.name)*analysis.confidence;
 }
 
 function bestCustomerFromText(text){
