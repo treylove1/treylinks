@@ -36,3 +36,11 @@ button,.linkButton{border:0;border-radius:10px;padding:11px 14px;font-weight:850
 .processing strong,.processing small{display:block}
 .processing small{color:#9fb0c9;margin-top:4px}
 @media(max-width:760px){.formGrid{grid-template-columns:1fr}}
+
+.segmented.three{grid-template-columns:repeat(3,1fr)}
+.facilityChoices{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
+.facilityChoice{display:flex;gap:8px;align-items:center;background:#0a1628;border:1px solid #29486f;border-radius:10px;padding:10px}
+.facilityChoice input{width:auto;margin:0}
+.inviteResult{margin-top:12px;background:#0a1628;border:1px solid #345477;border-radius:12px;padding:14px}
+.inviteCode{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:1.5rem;letter-spacing:.14em;margin:8px 0;color:#ffffff}
+@media(max-width:760px){.facilityChoices{grid-template-columns:1fr}.segmented.three{grid-template-columns:1fr}}
