@@ -26,6 +26,9 @@ jobs:
       - name: Validate customer portal JavaScript syntax
         run: node --check parcel-snap-customer/app.js
 
+      - name: Validate vision client JavaScript syntax
+        run: node --check parcel-snap-customer/vision-client.js
+
       - name: Run customer OCR parser regression
         run: node parcel-snap-customer/tests/ocr-parser-test.mjs
 
