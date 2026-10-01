@@ -9,6 +9,7 @@ let intakePhotoDataUrl=null;
 let intakeOcrText="";
 let intakeOcrName="";
 let intakeOcrAddress="";
+let transferPhotoDataUrl=null;
 
 const $=id=>document.getElementById(id);
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
@@ -479,6 +480,7 @@ function renderWorkspace(){
   renderCustomers();
   renderFacilities();
   renderReceiveControls();
+  renderTransferControls();
   renderStaffControls();
   $("subscriptionCard").innerHTML="<div class='billingBox'><strong>ParcelSnap Business Subscription</strong><span>"+esc(workspace.subscription.status)+"</span><small>"+(workspace.subscription.current_period_end?"Current period ends "+new Date(workspace.subscription.current_period_end).toLocaleDateString():"Active access")+"</small></div>";
 }
@@ -636,11 +638,23 @@ $("saveReceiveCustomer").onclick=async()=>{
 };
 
 $("addCustomerButton").onclick=async()=>{
-  const name=$("newCustomerName").value.trim(),email=$("newCustomerEmail").value.trim(),phone=$("newCustomerPhone").value.trim();
-  if(!name){alert("Enter the customer name.");return}
+  const name=$("newCustomerName").value.trim();
+  const email=$("newCustomerEmail").value.trim();
+  const phone=$("newCustomerPhone").value.trim();
+  const customer_type=$("newCustomerType").value;
+  const labelAlias=$("newCustomerAlias").value.trim();
+  const customerCode=$("newCustomerCode").value.trim();
+
+  if(!name){alert("Enter the customer or business name.");return}
+
+  const aliases=[];
+  if(labelAlias)aliases.push({alias:labelAlias,alias_type:"LABEL"});
+  if(customerCode)aliases.push({alias:customerCode,alias_type:"CUSTOMER_CODE"});
+
   try{
-    await api({action:"create_customer",name,email,phone});
-    ["newCustomerName","newCustomerEmail","newCustomerPhone"].forEach(id=>$(id).value="");
+    await api({action:"create_customer",name,email,phone,customer_type,aliases});
+    ["newCustomerName","newCustomerEmail","newCustomerPhone","newCustomerAlias","newCustomerCode"].forEach(id=>$(id).value="");
+    $("newCustomerType").value="PERSON";
     await loadWorkspace();
     document.querySelector('[data-tab="customers"]').click();
   }catch(e){alert(e.message)}
