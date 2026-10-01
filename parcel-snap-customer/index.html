@@ -82,6 +82,141 @@
         <button id="recheckAccess" class="ghost wide">I paid — recheck access</button>
       </section>
 
+      <section id="businessSetupState" class="hidden">
+        <article class="card setupCard">
+          <span class="eyebrow">BUSINESS NEEDS ASSESSMENT</span>
+          <h2>Tell Parcel Snap how your operation works</h2>
+          <p>We use these answers to build your company workspace. We do not assume your warehouses, staff roles, storage areas, or workflow.</p>
+
+          <div class="setupProgress">
+            <span data-setup-dot="1" class="active">1</span>
+            <span data-setup-dot="2">2</span>
+            <span data-setup-dot="3">3</span>
+            <span data-setup-dot="4">4</span>
+          </div>
+
+          <div id="businessSetupStep1" class="setupStep">
+            <h3>1. Your business</h3>
+            <div class="formGrid">
+              <label>What kind of business is this?
+                <input id="profileBusinessType" placeholder="Courier, shipping company, warehouse, retailer...">
+              </label>
+              <label>Business name
+                <input id="profileBusinessName" placeholder="Company name">
+              </label>
+              <label>How many employees?
+                <input id="profileEmployees" type="number" min="0" placeholder="e.g. 12">
+              </label>
+              <label>About how many customers?
+                <input id="profileCustomers" type="number" min="0" placeholder="e.g. 250">
+              </label>
+              <label>Packages received per day
+                <input id="profilePackagesPerDay" type="number" min="0" placeholder="e.g. 100">
+              </label>
+              <label>Website <small>(optional)</small>
+                <input id="profileWebsite" placeholder="https://...">
+              </label>
+            </div>
+            <button class="primary wide" data-setup-next="2">Next: Locations</button>
+          </div>
+
+          <div id="businessSetupStep2" class="setupStep hidden">
+            <h3>2. Your locations</h3>
+            <p>Add every warehouse, storage building, pickup point, or office that matters to your operation.</p>
+
+            <div class="formGrid">
+              <label>Location name
+                <input id="setupLocationLabel" placeholder="Chicago Warehouse">
+              </label>
+              <label>City
+                <input id="setupLocationCity" placeholder="Chicago">
+              </label>
+              <label>State / region
+                <input id="setupLocationRegion" placeholder="IL">
+              </label>
+              <label>Country
+                <input id="setupLocationCountry" placeholder="USA">
+              </label>
+              <label>What kind of location?
+                <select id="setupLocationUseType">
+                  <option value="WAREHOUSE">Warehouse</option>
+                  <option value="STORAGE_ONLY">Storage only</option>
+                  <option value="PICKUP_POINT">Customer pickup point</option>
+                  <option value="OFFICE">Office</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </label>
+              <label>What happens here?
+                <select id="setupLocationRole">
+                  <option value="BOTH">Receives and sends/moves packages</option>
+                  <option value="RECEIVE">Receives packages</option>
+                  <option value="DESTINATION">Destination / storage</option>
+                  <option value="NON_WAREHOUSE">No package handling</option>
+                </select>
+              </label>
+              <label>Employees at this location
+                <input id="setupLocationEmployees" type="number" min="0" placeholder="Optional">
+              </label>
+              <label>Street address <small>(optional now)</small>
+                <input id="setupLocationAddress" placeholder="Actual facility address">
+              </label>
+            </div>
+
+            <div class="facilityChoices setupChecks">
+              <label class="facilityChoice"><input id="setupLocationPickup" type="checkbox"> Customer pickup</label>
+              <label class="facilityChoice"><input id="setupLocationDispatch" type="checkbox"> Delivery dispatch</label>
+              <label class="facilityChoice"><input id="setupLocationReturns" type="checkbox"> Returns</label>
+              <label class="facilityChoice"><input id="setupLocationInspection" type="checkbox"> Inspection / open-box</label>
+            </div>
+
+            <button id="addSetupLocation" class="ghost wide">Add This Location</button>
+            <div id="setupLocationList"></div>
+
+            <div class="setupNav">
+              <button class="ghost" data-setup-back="1">Back</button>
+              <button class="primary" data-setup-next="3">Next: Freight & Storage</button>
+            </div>
+          </div>
+
+          <div id="businessSetupStep3" class="setupStep hidden">
+            <h3>3. What do you handle?</h3>
+            <div class="facilityChoices setupChecks">
+              <label class="facilityChoice"><input id="profilePallets" type="checkbox"> Pallets</label>
+              <label class="facilityChoice"><input id="profileOversize" type="checkbox"> Oversized packages</label>
+              <label class="facilityChoice"><input id="profileAppliances" type="checkbox"> Appliances / refrigerators</label>
+              <label class="facilityChoice"><input id="profileTVs" type="checkbox"> TVs / fragile electronics</label>
+              <label class="facilityChoice"><input id="profileStorage" type="checkbox"> Long-term storage</label>
+              <label class="facilityChoice"><input id="profileReturns" type="checkbox"> Customer returns</label>
+              <label class="facilityChoice"><input id="profileInspection" type="checkbox"> Inspection / verification</label>
+              <label class="facilityChoice"><input id="profileDelivery" type="checkbox"> Local delivery</label>
+            </div>
+            <div class="setupNav">
+              <button class="ghost" data-setup-back="2">Back</button>
+              <button class="primary" data-setup-next="4">Next: Staff & Alerts</button>
+            </div>
+          </div>
+
+          <div id="businessSetupStep4" class="setupStep hidden">
+            <h3>4. Staff and customer communication</h3>
+            <div class="facilityChoices setupChecks">
+              <label class="facilityChoice"><input id="profileNotifications" type="checkbox" checked> Customer arrival notifications</label>
+              <label class="facilityChoice"><input id="profileEmail" type="checkbox" checked> Email notifications</label>
+              <label class="facilityChoice"><input id="profileWhatsApp" type="checkbox"> WhatsApp desired</label>
+              <label class="facilityChoice"><input id="profileWorkerLogins" type="checkbox" checked> Worker sub-logins</label>
+              <label class="facilityChoice"><input id="profileDrivers" type="checkbox"> Driver access</label>
+            </div>
+            <label>Anything unusual about your operation?
+              <textarea id="profileNotes" rows="4" placeholder="Examples: 10 refrigerators at a time, customer-held inventory, inspection area, return cage, pallet staging..."></textarea>
+            </label>
+            <div class="setupNav">
+              <button class="ghost" data-setup-back="3">Back</button>
+              <button id="saveBusinessSetup" class="primary">Build My Parcel Snap Workspace</button>
+            </div>
+            <div id="businessSetupMessage" class="message"></div>
+          </div>
+        </article>
+      </section>
+
       <section id="activeWorkspace" class="hidden">
         <section class="metrics">
           <article class="card"><span>Packages</span><strong id="packageCount">0</strong><small>Current records</small></article>
