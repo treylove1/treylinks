@@ -103,3 +103,52 @@ r=M.matchDirectory(sharedBusiness,"Your Electronic Needs Trevor\n500 TEST ROAD\n
 expect("shared business plus ambiguous first name does not auto-match",r.status!=="MATCHED",r);
 
 console.log("known customer matcher regression tests passed");
+
+
+const actualLocalRoadieOcr=[
+  "Vrs Wi LPth 31",
+  "Sweetwater F\\ si 22",
+  "Nour electoonic needs Trevor",
+  "16600 NH S4TH AVE UNIT 9",
+  "HIALEAH FL Sone 6118",
+  "PACKAGE TRACKING CODE"
+].join("\n");
+
+r=M.matchDirectory(customers,actualLocalRoadieOcr);
+expect("actual local Roadie OCR",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+
+const scaleCustomers=[
+  {id:"trevon",name:"Trevon Humes",customer_type:"PERSON",aliases:[
+    {alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"},
+    {alias:"Your Electronic Needs / Trevon Humes",alias_type:"LABEL"}
+  ]},
+  {id:"mark-roberts",name:"Mark Roberts",customer_type:"PERSON",aliases:[]},
+  {id:"felida-hughes",name:"Felida Hughes",customer_type:"PERSON",aliases:[]},
+  {id:"jalida-hughes",name:"Jalida Hughes",customer_type:"PERSON",aliases:[]},
+  {id:"john-bull",name:"John Bull",customer_type:"BUSINESS",aliases:[
+    {alias:"John Bull Business Centre",alias_type:"BUSINESS_NAME"}
+  ]},
+  ...Array.from({length:245},(_,i)=>({
+    id:"synthetic-"+i,
+    name:"Warehouse Customer "+String(i+1).padStart(3,"0"),
+    customer_type:i%5===0?"BUSINESS":"PERSON",
+    aliases:i%5===0?[{alias:"Business Account "+String(i+1).padStart(3,"0"),alias_type:"BUSINESS_NAME"}]:[]
+  }))
+];
+
+r=M.matchDirectory(scaleCustomers,"Mark Roberts\n400 TEST STREET\nMIAMI FL 33101");
+expect("250-customer Mark Roberts",r.status==="MATCHED"&&r.customer?.id==="mark-roberts",r);
+
+r=M.matchDirectory(scaleCustomers,"Felida Hughes\n401 TEST STREET\nMIAMI FL 33101");
+expect("250-customer Felida Hughes",r.status==="MATCHED"&&r.customer?.id==="felida-hughes",r);
+
+r=M.matchDirectory(scaleCustomers,"Jalida Hughes\n402 TEST STREET\nMIAMI FL 33101");
+expect("250-customer Jalida Hughes",r.status==="MATCHED"&&r.customer?.id==="jalida-hughes",r);
+
+r=M.matchDirectory(scaleCustomers,"John Bull Business Centre\n403 TEST STREET\nNASSAU BAHAMAS");
+expect("250-customer business identity",r.status==="MATCHED"&&r.customer?.id==="john-bull",r);
+
+r=M.matchDirectory(scaleCustomers,"Unknown Walk-In Customer\n404 TEST STREET\nMIAMI FL 33101");
+expect("250-customer unknown stays unmatched",r.status!=="MATCHED",r);
+
+console.log("250-customer directory regression tests passed");
