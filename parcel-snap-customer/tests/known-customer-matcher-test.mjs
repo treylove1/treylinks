@@ -12,18 +12,25 @@ const customers=[
       {alias:"Your Electronic Needs / Trevon Humes",alias_type:"LABEL"}
     ]
   },
-  {
-    id:"jane",
-    name:"Jane Doe",
-    customer_type:"PERSON",
-    aliases:[]
-  },
+  {id:"jane",name:"Jane Doe",customer_type:"PERSON",aliases:[]},
+  {id:"mark-daniels",name:"Mark Daniels",customer_type:"PERSON",aliases:[]},
+  {id:"mark-daniel",name:"Mark Daniel",customer_type:"PERSON",aliases:[]},
+  {id:"brenda-forbes",name:"Brenda Forbes",customer_type:"PERSON",aliases:[]},
+  {id:"brenda-ford",name:"Brenda Ford",customer_type:"PERSON",aliases:[]},
   {
     id:"abc",
     name:"ABC Hardware",
     customer_type:"BUSINESS",
     aliases:[{alias:"ABC Hardware Ltd",alias_type:"BUSINESS_NAME"}]
-  }
+  },
+  {
+    id:"abc-east",
+    name:"ABC Hardware East",
+    customer_type:"BUSINESS",
+    aliases:[{alias:"ABC Hardware East Ltd",alias_type:"BUSINESS_NAME"}]
+  },
+  {id:"island-courier",name:"Island Courier",customer_type:"BUSINESS",aliases:[]},
+  {id:"island-couriers",name:"Island Couriers",customer_type:"BUSINESS",aliases:[]}
 ];
 
 function expect(label,condition,detail){
@@ -67,5 +74,32 @@ const realRoadieOcr=[
 
 r=M.matchDirectory(customers,realRoadieOcr);
 expect("real Roadie image OCR",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+
+r=M.matchDirectory(customers,"Mark Daniels\n300 TEST STREET\nMIAMI FL 33101");
+expect("ten-customer exact collision",r.status==="MATCHED"&&r.customer?.id==="mark-daniels",r);
+
+r=M.matchDirectory(customers,"Brenda Forb\n400 TEST AVE\nMIAMI FL 33101");
+expect("similar surname partial requires caution",r.status!=="MATCHED",r);
+
+r=M.matchDirectory(customers,"ABC Hardware East Ltd\n55 MARKET STREET\nNASSAU BAHAMAS");
+expect("similar business names stay distinct",r.status==="MATCHED"&&r.customer?.id==="abc-east",r);
+
+const sharedBusiness=[
+  {
+    id:"trevon-a",
+    name:"Trevon Humes",
+    customer_type:"PERSON",
+    aliases:[{alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"}]
+  },
+  {
+    id:"trevon-b",
+    name:"Trevon Holmes",
+    customer_type:"PERSON",
+    aliases:[{alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"}]
+  }
+];
+
+r=M.matchDirectory(sharedBusiness,"Your Electronic Needs Trevor\n500 TEST ROAD\nHIALEAH FL 33014");
+expect("shared business plus ambiguous first name does not auto-match",r.status!=="MATCHED",r);
 
 console.log("known customer matcher regression tests passed");
