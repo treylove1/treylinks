@@ -499,7 +499,15 @@ function renderPackages(q){
 $("packageSearch").oninput=e=>renderPackages(e.target.value);
 
 function renderCustomers(){
-  $("customerList").innerHTML=workspace.customers.length?workspace.customers.map(c=>"<div class='item'><strong>"+esc(c.name)+"</strong><br><small>"+esc(c.email||"No email")+" · "+esc(c.phone||"No phone")+"</small></div>").join(""):"<div class='empty'>No customers yet.</div>";
+  $("customerList").innerHTML=workspace.customers.length
+    ? workspace.customers.map(c=>{
+        const aliases=(c.aliases||[]).map(a=>esc(a.alias)).filter(Boolean);
+        return "<div class='item'>"+
+          "<div class='itemTop'><div><strong>"+esc(c.name)+"</strong><br><small>"+esc(c.customer_type||"PERSON")+" · "+esc(c.email||"No email")+" · "+esc(c.phone||"No phone")+"</small></div><span class='status'>RECOGNITION TARGET</span></div>"+
+          (aliases.length?"<div class='meta'><div><small>Known label names / codes</small><strong>"+aliases.join(" · ")+"</strong></div></div>":"")+
+          "</div>";
+      }).join("")
+    : "<div class='empty'>No recognition targets yet.</div>";
 }
 function renderFacilities(){
   $("facilityList").innerHTML=workspace.facilities.length?workspace.facilities.map(f=>"<div class='item'><div class='itemTop'><div><strong>"+esc(f.name)+"</strong><br><small>"+esc([f.address_line1,f.city,f.region,f.country].filter(Boolean).join(", ")||"Address not set")+"</small></div><span class='status'>"+esc(f.facility_type)+"</span></div></div>").join(""):"<div class='empty'>No warehouse profiles yet.</div>";
