@@ -7,6 +7,7 @@ on:
     paths:
       - "parcel-snap-owner-preview/app.js"
       - "parcel-snap-owner-preview/tests/**"
+      - "parcel-snap-customer/**"
       - ".github/workflows/parcel-snap-cloud-ocr-test.yml"
 
 permissions:
@@ -21,6 +22,9 @@ jobs:
 
       - name: Validate browser JavaScript syntax
         run: node --check parcel-snap-owner-preview/app.js
+
+      - name: Validate customer portal JavaScript syntax
+        run: node --check parcel-snap-customer/app.js
 
       - name: Install OCR tools
         run: |
