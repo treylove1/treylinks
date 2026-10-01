@@ -26,6 +26,9 @@ jobs:
       - name: Validate customer portal JavaScript syntax
         run: node --check parcel-snap-customer/app.js
 
+      - name: Run customer OCR parser regression
+        run: node parcel-snap-customer/tests/ocr-parser-test.mjs
+
       - name: Install OCR tools
         run: |
           sudo apt-get update
