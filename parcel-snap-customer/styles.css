@@ -58,3 +58,6 @@ button,.linkButton{border:0;border-radius:10px;padding:11px 14px;font-weight:850
 .setupLocationCard{background:#0a1628;border:1px solid #29486f;border-radius:12px;padding:12px;margin-top:10px}
 .setupLocationCard .itemTop{align-items:flex-start}
 textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #304d72;background:#0a1628;color:#eef4ff;font:inherit;margin-top:6px;resize:vertical}
+
+.headerActions{display:flex;gap:8px;align-items:center}
+@media(max-width:760px){.headerActions{flex-direction:column;align-items:stretch}}
