@@ -8,6 +8,7 @@ let workspace=null;
 let intakePhotoDataUrl=null;
 let intakeOcrText="";
 let intakeOcrName="";
+let intakeOcrAddress="";
 
 const $=id=>document.getElementById(id);
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
@@ -514,24 +515,89 @@ $("createStaffInviteButton").onclick=async()=>{
   }
 };
 
-function renderReceiveControls(){
-  const customers=workspace?.customers||[],facilities=workspace?.facilities||[];
-  $("receiveCustomer").innerHTML='<option value="">Select customer</option>'+customers.map(c=>'<option value="'+c.id+'">'+esc(c.name)+(c.email?" — "+esc(c.email):"")+'</option>').join("");
-  $("receiveOrigin").innerHTML=facilities.filter(f=>f.facility_type==="ORIGIN"||f.facility_type==="TRANSIT").map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("");
-  $("receiveDestination").innerHTML='<option value="">No destination selected</option>'+facilities.filter(f=>f.facility_type==="DESTINATION"||f.facility_type==="TRANSIT").map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("");
+function facilitySort(items){
+  const order={MIA:1,FLL:2,ORL:3,NAS:4};
+  return [...items].sort((a,b)=>(order[a.code]||50)-(order[b.code]||50)||String(a.name).localeCompare(String(b.name)));
 }
 
+function renderReceiveControls(){
+  const customers=workspace?.customers||[];
+  const facilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
+
+  const currentCustomer=$("receiveCustomer").value;
+  $("receiveCustomer").innerHTML='<option value="">New / unmatched customer</option>'+
+    customers.map(c=>'<option value="'+c.id+'">'+esc(c.name)+(c.email?" — "+esc(c.email):"")+'</option>').join("");
+  if(customers.some(c=>c.id===currentCustomer))$("receiveCustomer").value=currentCustomer;
+
+  const allFacilityOptions=facilities.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("");
+  $("receiveOrigin").innerHTML=allFacilityOptions||'<option value="">No warehouse configured</option>';
+  $("receiveDestination").innerHTML='<option value="">No next warehouse selected</option>'+allFacilityOptions;
+
+  if(facilities.length){
+    const miami=facilities.find(f=>f.code==="MIA");
+    const nassau=facilities.find(f=>f.code==="NAS");
+    if(!$("receiveOrigin").value&&miami)$("receiveOrigin").value=miami.id;
+    if(!$("receiveDestination").value&&nassau)$("receiveDestination").value=nassau.id;
+  }
+
+  if(!$("receiveCustomer").value)showInlineCustomer(intakeOcrName);
+  else hideInlineCustomer();
+}
+
+$("receiveCustomer").onchange=()=>{
+  if($("receiveCustomer").value)hideInlineCustomer();
+  else showInlineCustomer(intakeOcrName);
+};
+
 $("packagePhoto").onchange=async e=>{
-  const file=e.target.files?.[0];if(!file)return;
+  const file=e.target.files?.[0];
+  if(!file)return;
   $("receiveResult").textContent="";
+  $("receiveNewCustomerEmail").value="";
+  $("receiveNewCustomerPhone").value="";
   try{
-    intakePhotoDataUrl=await compressImage(file);
+    const [uploadImage,ocrImage]=await Promise.all([
+      compressImage(file),
+      prepareOcrImage(file)
+    ]);
+    intakePhotoDataUrl=uploadImage;
     $("packagePhotoPreview").innerHTML='<img src="'+intakePhotoDataUrl+'" alt="Package photo">';
-    await readPackagePhoto(intakePhotoDataUrl);
+    const result=await readPackagePhoto(ocrImage);
+    intakeOcrAddress=result.address||"";
   }catch(err){
+    console.error(err);
     $("processingBox").classList.remove("hidden");
-    $("processingText").textContent="Select customer";
-    $("processingDetail").textContent="Package photo ready";
+    $("processingText").textContent="New / unmatched customer";
+    $("processingDetail").textContent="Enter customer name and email";
+    showInlineCustomer(intakeOcrName);
+  }
+};
+
+async function createReceiveCustomer(){
+  const name=$("receiveNewCustomerName").value.trim();
+  const email=$("receiveNewCustomerEmail").value.trim();
+  const phone=$("receiveNewCustomerPhone").value.trim();
+  if(!name)throw new Error("Enter the customer name.");
+  if(!email)throw new Error("Enter the customer email so Parcel Snap can send the arrival notice.");
+
+  const result=await api({action:"create_customer",name,email,phone});
+  const customer=result.customer;
+  workspace.customers=workspace.customers||[];
+  workspace.customers.push(customer);
+  renderReceiveControls();
+  $("receiveCustomer").value=customer.id;
+  hideInlineCustomer();
+  return customer.id;
+}
+
+$("saveReceiveCustomer").onclick=async()=>{
+  try{
+    const customerId=await createReceiveCustomer();
+    $("receiveCustomer").value=customerId;
+    $("processingText").textContent=$("receiveNewCustomerName").value.trim()||"Customer saved";
+    $("processingDetail").textContent="Email saved for future package notices";
+  }catch(e){
+    alert(e.message||String(e));
   }
 };
 
@@ -567,13 +633,20 @@ $("addFacilityButton").onclick=async()=>{
 };
 
 $("receivePackageButton").onclick=async()=>{
-  const customer_id=$("receiveCustomer").value,origin_facility_id=$("receiveOrigin").value;
+  let customer_id=$("receiveCustomer").value;
+  const origin_facility_id=$("receiveOrigin").value;
+
   if(!intakePhotoDataUrl){alert("Take a package photo first.");return}
-  if(!customer_id){alert("Select the customer.");return}
   if(!origin_facility_id){alert("Choose the receiving warehouse.");return}
+
   $("receivePackageButton").disabled=true;
   $("receiveResult").textContent="Saving package…";
+
   try{
+    if(!customer_id){
+      customer_id=await createReceiveCustomer();
+    }
+
     const r=await api({
       action:"receive_package",
       customer_id,
@@ -586,12 +659,31 @@ $("receivePackageButton").onclick=async()=>{
       payment_status:$("receivePayment").value,
       ocr_name:intakeOcrName||null,
       ocr_tracking:$("receiveTracking").value||null,
+      ocr_raw_text:intakeOcrText||null,
+      ocr_recipient_address:intakeOcrAddress||null,
       photo_data_url:intakePhotoDataUrl
     });
+
     const emailStatus=r.email?.status||"SKIPPED";
-    $("receiveResult").textContent="Package received · photo saved · email "+emailStatus+(r.assigned_location_id?" · location assigned":"");
-    intakePhotoDataUrl=null;intakeOcrText="";intakeOcrName="";
-    $("packagePhoto").value="";$("packagePhotoPreview").innerHTML="";$("processingBox").classList.add("hidden");$("receiveTracking").value="";$("receiveCarrier").value="";$("receiveWeight").value="";
+    $("receiveResult").textContent=
+      "Package received · photo saved · email "+emailStatus+
+      (r.assigned_location_id?" · location assigned":"");
+
+    intakePhotoDataUrl=null;
+    intakeOcrText="";
+    intakeOcrName="";
+    intakeOcrAddress="";
+    $("packagePhoto").value="";
+    $("packagePhotoPreview").innerHTML="";
+    $("processingBox").classList.add("hidden");
+    $("receiveTracking").value="";
+    $("receiveCarrier").value="";
+    $("receiveWeight").value="";
+    $("receiveNewCustomerName").value="";
+    $("receiveNewCustomerEmail").value="";
+    $("receiveNewCustomerPhone").value="";
+    hideInlineCustomer();
+
     await loadWorkspace();
     document.querySelector('[data-tab="receive"]').click();
   }catch(e){
