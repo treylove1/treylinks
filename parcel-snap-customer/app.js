@@ -1048,30 +1048,34 @@ function chooseTransferCandidates(tracking,customerId){
 }
 
 async function analyzeTransferImage(dataUrl){
-  let tracking=await detectBarcode(dataUrl);
-  let merged="";
-  const enhanced=await enhanceForReading(dataUrl);
-  const passes=[enhanced,await rotateDataUrl(enhanced,-5),await rotateDataUrl(enhanced,5)];
+  const started=performance.now();
+  const barcodePromise=detectBarcode(dataUrl);
 
-  for(const source of passes){
-    const result=await Tesseract.recognize(source,"eng");
-    merged+="\n"+(result.data.text||"");
+  let merged=await fastOcrRecognize(dataUrl);
+  let tracking=await barcodePromise;
+  if(!tracking)tracking=guessTracking(merged);
 
-    if(!tracking)tracking=guessTracking(merged);
-
-    if(window.ParcelSnapKnownMatcher){
-      const m=window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged);
-      if((tracking&&tracking.length>=6)||m.status==="MATCHED"){
-        return {tracking,text:merged,customer:m.customer||null,match:m};
-      }
-    }
-  }
-
-  const m=window.ParcelSnapKnownMatcher
+  let m=window.ParcelSnapKnownMatcher
     ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
     : {status:"NO_MATCH",customer:null};
 
-  return {tracking,text:merged,customer:m.customer||null,match:m};
+  if(!tracking&&m.status!=="MATCHED"){
+    const enhanced=await enhanceForReading(dataUrl);
+    const recovery=await fastOcrRecognize(enhanced);
+    if(recovery)merged+="\n"+recovery;
+    if(!tracking)tracking=guessTracking(merged);
+    m=window.ParcelSnapKnownMatcher
+      ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
+      : {status:"NO_MATCH",customer:null};
+  }
+
+  return {
+    tracking,
+    text:merged,
+    customer:m.customer||null,
+    match:m,
+    elapsed_seconds:Number(((performance.now()-started)/1000).toFixed(1))
+  };
 }
 
 $("transferPhoto").onchange=async e=>{
