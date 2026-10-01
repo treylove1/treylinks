@@ -478,6 +478,7 @@ function renderWorkspace(){
   renderAttention();
   renderPackages("");
   renderCustomers();
+  renderAliasControls();
   renderFacilities();
   renderReceiveControls();
   renderTransferControls();
@@ -509,6 +510,31 @@ function renderCustomers(){
       }).join("")
     : "<div class='empty'>No recognition targets yet.</div>";
 }
+function renderAliasControls(){
+  const root=$("aliasCustomer");
+  if(!root)return;
+  const current=root.value;
+  root.innerHTML='<option value="">Select customer</option>'+
+    (workspace?.customers||[]).map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join("");
+  if((workspace?.customers||[]).some(c=>c.id===current))root.value=current;
+}
+
+$("addAliasButton").onclick=async()=>{
+  const customer_id=$("aliasCustomer").value;
+  const alias=$("aliasValue").value.trim();
+  const alias_type=$("aliasType").value;
+
+  if(!customer_id){alert("Choose the customer.");return}
+  if(!alias){alert("Enter the alias or customer code.");return}
+
+  try{
+    await api({action:"add_customer_alias",customer_id,alias,alias_type});
+    $("aliasValue").value="";
+    await loadWorkspace();
+    document.querySelector('[data-tab="customers"]').click();
+  }catch(e){alert(e.message||String(e))}
+};
+
 function renderFacilities(){
   $("facilityList").innerHTML=workspace.facilities.length?workspace.facilities.map(f=>"<div class='item'><div class='itemTop'><div><strong>"+esc(f.name)+"</strong><br><small>"+esc([f.address_line1,f.city,f.region,f.country].filter(Boolean).join(", ")||"Address not set")+"</small></div><span class='status'>"+esc(f.facility_type)+"</span></div></div>").join(""):"<div class='empty'>No warehouse profiles yet.</div>";
 }
