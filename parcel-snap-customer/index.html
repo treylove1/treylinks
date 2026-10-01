@@ -13,9 +13,10 @@
       <h1>Business Portal</h1>
       <p>Private package intake, warehouse organization, and customer notifications.</p>
 
-      <div class="segmented">
+      <div class="segmented three">
         <button id="signInMode" class="active">Sign in</button>
-        <button id="signUpMode">Create account</button>
+        <button id="signUpMode">Create company</button>
+        <button id="joinStaffMode">Join staff</button>
       </div>
 
       <label>Email
@@ -29,6 +30,12 @@
       <div id="signupCompanyWrap" class="hidden">
         <label>Company name
           <input id="signupCompany" placeholder="Courier or warehouse company">
+        </label>
+      </div>
+
+      <div id="staffInviteWrap" class="hidden">
+        <label>Staff invite code
+          <input id="staffInviteCode" inputmode="text" autocomplete="one-time-code" placeholder="8-character code">
         </label>
       </div>
 
@@ -89,7 +96,8 @@
           <button class="tab" data-tab="packages">Packages</button>
           <button class="tab" data-tab="customers">Customers</button>
           <button class="tab" data-tab="warehouses">Warehouses</button>
-          <button class="tab" data-tab="billing">Billing</button>
+          <button id="staffTabButton" class="tab" data-tab="staff">Staff</button>
+          <button id="billingTabButton" class="tab" data-tab="billing">Billing</button>
         </nav>
 
         <section id="tab-receive" class="panel">
@@ -234,6 +242,42 @@
           <article class="card">
             <h2>Facilities</h2>
             <div id="facilityList"></div>
+          </article>
+        </section>
+
+        <section id="tab-staff" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">STAFF ACCESS</span>
+            <h2>Create Worker Login</h2>
+            <p>Create a one-time invite code. The worker creates their own login, and Parcel Snap assigns the role and warehouse access automatically.</p>
+            <div class="formGrid">
+              <label>Worker email <small>(optional but recommended)</small>
+                <input id="staffEmail" type="email" placeholder="worker@example.com">
+              </label>
+              <label>Role
+                <select id="staffRole">
+                  <option value="STAFF">Warehouse worker</option>
+                  <option value="DRIVER">Driver</option>
+                  <option value="VIEWER">Viewer</option>
+                  <option value="MANAGER">Manager</option>
+                </select>
+              </label>
+            </div>
+            <label>Warehouse access
+              <div id="staffFacilityChoices" class="facilityChoices"></div>
+            </label>
+            <button id="createStaffInviteButton" class="primary wide">Create Staff Code</button>
+            <div id="staffInviteResult" class="inviteResult hidden"></div>
+          </article>
+
+          <article class="card">
+            <h2>Active Staff</h2>
+            <div id="staffList"></div>
+          </article>
+
+          <article class="card">
+            <h2>Pending Codes</h2>
+            <div id="pendingInviteList"></div>
           </article>
         </section>
 
