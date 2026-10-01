@@ -13,6 +13,28 @@ let transferPhotoDataUrl=null;
 let businessSetupStep=1;
 let businessSetupLocations=[];
 let businessSetupPreviewMode=false;
+let parcelSnapOcrWorkerPromise=null;
+
+async function getParcelSnapOcrWorker(){
+  if(!parcelSnapOcrWorkerPromise){
+    parcelSnapOcrWorkerPromise=Tesseract.createWorker("eng").catch(err=>{
+      parcelSnapOcrWorkerPromise=null;
+      throw err;
+    });
+  }
+  return await parcelSnapOcrWorkerPromise;
+}
+
+function warmParcelSnapOcr(){
+  if(typeof Tesseract==="undefined")return;
+  getParcelSnapOcrWorker().catch(err=>console.warn("OCR warmup failed",err));
+}
+
+async function fastOcrRecognize(image){
+  const worker=await getParcelSnapOcrWorker();
+  const result=await worker.recognize(image);
+  return result?.data?.text||"";
+}
 
 const $=id=>document.getElementById(id);
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
@@ -206,7 +228,7 @@ async function compressImage(file){
 
 async function prepareOcrImage(file){
   const original=await readFileDataUrl(file);
-  return await resizeDataUrl(original,2800,.96);
+  return await resizeDataUrl(original,1900,.92);
 }
 
 async function rotateDataUrl(dataUrl,degrees){
@@ -262,30 +284,30 @@ function hideInlineCustomer(){
 
 async function readPackagePhoto(dataUrl){
   const processing=$("processingBox");
-  $("processingText").textContent="Processing package…";
+  $("processingText").textContent="Reading package…";
   $("processingDetail").textContent="";
   processing.classList.remove("hidden");
 
-  let merged="",match=null,tracking=await detectBarcode(dataUrl);
-  const enhanced=await enhanceForReading(dataUrl);
-  const passes=[enhanced];
+  const started=performance.now();
+  const barcodePromise=detectBarcode(dataUrl);
+  let merged="",match=null;
 
-  for(const angle of [-5,5,-9,9]){
-    passes.push(await rotateDataUrl(enhanced,angle));
-  }
+  // PASS 1: one high-resolution read. This is the normal warehouse path.
+  const firstText=await fastOcrRecognize(dataUrl);
+  merged=firstText||"";
+  match=bestCustomerFromText(merged);
 
-  for(const source of passes){
-    const result=await Tesseract.recognize(source,"eng");
-    merged+="\n"+(result.data.text||"");
-    match=bestCustomerFromText(merged);
-    const candidate=extractNameCandidate(merged);
-    if(match||candidate)break;
-  }
+  let tracking=await barcodePromise;
+  if(!tracking)tracking=guessTracking(merged);
 
+  // PASS 2: only when the fast pass did not identify a known customer/business.
+  // No rotation loop. One enhanced recovery pass, then stop and ask the worker.
   if(!match){
-    const originalResult=await Tesseract.recognize(dataUrl,"eng");
-    merged+="\n"+(originalResult.data.text||"");
+    const enhanced=await enhanceForReading(dataUrl);
+    const recoveryText=await fastOcrRecognize(enhanced);
+    if(recoveryText)merged+="\n"+recoveryText;
     match=bestCustomerFromText(merged);
+    if(!tracking)tracking=guessTracking(merged);
   }
 
   intakeOcrText=merged;
@@ -300,25 +322,28 @@ async function readPackagePhoto(dataUrl){
 
   intakeOcrName=match?.customer?.name||candidate||"";
 
-  if(!tracking)tracking=guessTracking(merged);
   $("receiveTracking").value=tracking||"";
 
   const carrier=guessCarrier(merged);
   if(carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=carrier;
 
+  const elapsed=Math.max(0,(performance.now()-started)/1000).toFixed(1);
+
   if(match){
     $("receiveCustomer").value=match.customer.id;
     hideInlineCustomer();
     $("processingText").textContent=match.customer.name;
-    $("processingDetail").textContent=tracking?"Customer matched · tracking captured":"Customer matched";
+    $("processingDetail").textContent=tracking
+      ? "Customer matched · tracking captured · "+elapsed+"s"
+      : "Customer matched · "+elapsed+"s";
   }else{
     $("receiveCustomer").value="";
     showInlineCustomer("");
     $("receiveNewCustomerName").value="";
     $("processingText").textContent="No known customer matched";
     $("processingDetail").textContent=tracking
-      ?"Enter customer name/email · tracking captured"
-      :"Enter customer name and email";
+      ? "Enter customer name/email · tracking captured · "+elapsed+"s"
+      : "Enter customer name and email · "+elapsed+"s";
   }
 
   return {
@@ -326,7 +351,8 @@ async function readPackagePhoto(dataUrl){
     tracking,
     candidate:intakeOcrName,
     carrier,
-    address:guessRecipientAddress(merged)
+    address:guessRecipientAddress(merged),
+    elapsed_seconds:Number(elapsed)
   };
 }
 
@@ -677,6 +703,7 @@ function renderWorkspace(){
   renderReceiveControls();
   renderTransferControls();
   renderStaffControls();
+  setTimeout(warmParcelSnapOcr,0);
   $("testBusinessSetup").classList.toggle("hidden",workspace.company.role!=="OWNER");
   $("subscriptionCard").innerHTML="<div class='billingBox'><strong>ParcelSnap Business Subscription</strong><span>"+esc(workspace.subscription.status)+"</span><small>"+(workspace.subscription.current_period_end?"Current period ends "+new Date(workspace.subscription.current_period_end).toLocaleDateString():"Active access")+"</small></div>";
 }
