@@ -58,4 +58,14 @@ expect("OCR garbage rejected",r.status==="NO_MATCH",r);
 r=M.matchDirectory(customers,"ABC Hardware Ltd\n55 MARKET STREET\nNASSAU BAHAMAS");
 expect("business customer recognized",r.status==="MATCHED"&&r.customer?.id==="abc",r);
 
+const realRoadieOcr=[
+  "Sweetwater FL 33172",
+  "Your electconic needs Trevor",
+  "16600 Ni S4TH AVE UNIT 9",
+  "HIALEAH FL 33014-6110"
+].join("\n");
+
+r=M.matchDirectory(customers,realRoadieOcr);
+expect("real Roadie image OCR",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+
 console.log("known customer matcher regression tests passed");
