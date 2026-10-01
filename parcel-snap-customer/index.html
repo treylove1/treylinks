@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Parcel Snap Business Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="authView" class="screen">
+    <section class="authCard">
+      <div class="brand">PARCEL SNAP</div>
+      <h1>Business Portal</h1>
+      <p>Private package intake, warehouse organization, and customer notifications.</p>
+
+      <div class="segmented">
+        <button id="signInMode" class="active">Sign in</button>
+        <button id="signUpMode">Create account</button>
+      </div>
+
+      <label>Email
+        <input id="email" type="email" autocomplete="email" placeholder="you@company.com">
+      </label>
+
+      <label>Password
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
+      </label>
+
+      <div id="signupCompanyWrap" class="hidden">
+        <label>Company name
+          <input id="signupCompany" placeholder="Courier or warehouse company">
+        </label>
+      </div>
+
+      <button id="authButton" class="primary wide">Sign in</button>
+      <div id="authMessage" class="message"></div>
+    </section>
+  </div>
+
+  <div id="appView" class="hidden">
+    <header>
+      <div>
+        <div class="brand">PARCEL SNAP</div>
+        <h1 id="companyTitle">Business Portal</h1>
+        <p id="companyMeta"></p>
+      </div>
+      <button id="signOut" class="ghost">Sign out</button>
+    </header>
+
+    <main>
+      <section id="loadingState" class="card">
+        <h2>Loading workspace…</h2>
+      </section>
+
+      <section id="onboardingState" class="card hidden">
+        <span class="eyebrow">SETUP</span>
+        <h2>Create your company workspace</h2>
+        <p>Enter the company name that should own this private Parcel Snap workspace.</p>
+        <label>Company name
+          <input id="onboardingCompany" placeholder="Company name">
+        </label>
+        <button id="saveOnboarding" class="primary wide">Continue</button>
+      </section>
+
+      <section id="billingState" class="card hidden">
+        <span class="eyebrow">ACCOUNT ACCESS</span>
+        <h2>Activate Parcel Snap</h2>
+        <p>Your workspace is protected until the ParcelSnap Business Subscription is active.</p>
+        <div class="billingBox">
+          <strong>ParcelSnap Business Subscription</strong>
+          <span>$100 / month</span>
+          <small id="billingStatus">Payment required</small>
+        </div>
+        <a id="payLink" class="primary linkButton" target="_blank" rel="noopener">Continue to secure payment</a>
+        <button id="recheckAccess" class="ghost wide">I paid — recheck access</button>
+      </section>
+
+      <section id="activeWorkspace" class="hidden">
+        <section class="metrics">
+          <article class="card"><span>Packages</span><strong id="packageCount">0</strong><small>Current records</small></article>
+          <article class="card"><span>Customers</span><strong id="customerCount">0</strong><small>Directory</small></article>
+          <article class="card"><span>Warehouses</span><strong id="facilityCount">0</strong><small>Configured locations</small></article>
+          <article class="card"><span>Needs attention</span><strong id="attentionCount">0</strong><small>Action queue</small></article>
+        </section>
+
+        <nav class="tabs">
+          <button class="tab active" data-tab="overview">Overview</button>
+          <button class="tab" data-tab="packages">Packages</button>
+          <button class="tab" data-tab="customers">Customers</button>
+          <button class="tab" data-tab="warehouses">Warehouses</button>
+          <button class="tab" data-tab="billing">Billing</button>
+        </nav>
+
+        <section id="tab-overview" class="panel">
+          <article class="card">
+            <span class="eyebrow">TODAY</span>
+            <h2>Warehouse attention queue</h2>
+            <div id="attentionList"></div>
+          </article>
+        </section>
+
+        <section id="tab-packages" class="panel hidden">
+          <article class="card">
+            <div class="sectionHead">
+              <div>
+                <span class="eyebrow">PACKAGE RECORDS</span>
+                <h2>Packages</h2>
+              </div>
+              <input id="packageSearch" class="search" placeholder="Search customer, tracking, shelf…">
+            </div>
+            <div id="packageList"></div>
+          </article>
+        </section>
+
+        <section id="tab-customers" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">CUSTOMER DIRECTORY</span>
+            <h2>Customers</h2>
+            <div id="customerList"></div>
+          </article>
+        </section>
+
+        <section id="tab-warehouses" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">WAREHOUSE PROFILES</span>
+            <h2>Facilities</h2>
+            <div id="facilityList"></div>
+          </article>
+        </section>
+
+        <section id="tab-billing" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">SUBSCRIPTION</span>
+            <h2>ParcelSnap Business</h2>
+            <div id="subscriptionCard"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
