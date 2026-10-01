@@ -25,3 +25,14 @@ button,.linkButton{border:0;border-radius:10px;padding:11px 14px;font-weight:850
 .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.meta div{background:#0f1d33;padding:9px;border-radius:9px}.meta small{display:block}.meta strong{font-size:.9rem}
 .empty{color:#8ea0bb;padding:20px 0;text-align:center}
 @media(max-width:760px){body{padding:12px}header{align-items:flex-start}.metrics{grid-template-columns:repeat(2,1fr)}.sectionHead{display:block}.search{max-width:none}.meta{grid-template-columns:1fr 1fr}}
+
+.formGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.cameraBox{display:block;border:1px dashed #476a9a;border-radius:14px;padding:16px;background:#0b1729;cursor:pointer;margin-top:14px}
+.cameraBox span{display:block;font-weight:900;color:#dfe9f8}
+.cameraBox input{margin-top:10px}
+.photoPreview{margin-top:10px}
+.photoPreview img{width:min(280px,100%);border-radius:12px;border:1px solid #314f75;display:block}
+.processing{margin-top:12px;background:#0a1628;border:1px solid #345477;border-radius:12px;padding:12px}
+.processing strong,.processing small{display:block}
+.processing small{color:#9fb0c9;margin-top:4px}
+@media(max-width:760px){.formGrid{grid-template-columns:1fr}}
