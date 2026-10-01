@@ -336,7 +336,39 @@ document.getElementById("saveMiami").onclick=async()=>{
   await renderAll();
 };
 
-document.getElementById("saveNassau").onclick=async()=>{const id=document.getElementById("nassauPackage").value;if(!id){alert("Select a package.");return}if(!stagedNassauPhotos.length){alert("Take at least one Nassau arrival photo.");return}const pkg=await get(STORE_PACKAGES,id);pkg.nassau={location:document.getElementById("nassauLocation").value.trim(),note:document.getElementById("nassauNote").value.trim(),photos:stagedNassauPhotos,at:now()};pkg.status="NASSAU_RECEIVED";pkg.events.push({type:"NASSAU_RECEIVED",at:now(),note:pkg.nassau.note||"Package arrived in Nassau"});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);stagedNassauPhotos=[];document.getElementById("nassauPhotos").value="";document.getElementById("nassauPreview").innerHTML="";document.getElementById("nassauNote").value="";alert("Nassau arrival saved.");await renderAll()};
+document.getElementById("saveNassau").onclick=async()=>{
+  const id=document.getElementById("nassauPackage").value;
+  if(!id){alert("Select a package.");return}
+  if(!stagedNassauPhotos.length){alert("Take at least one destination arrival photo.");return}
+
+  const facility=getActiveDestination();
+  if(!facility){alert("Choose a destination warehouse first.");return}
+
+  const pkg=await get(STORE_PACKAGES,id);
+  pkg.destinationFacility=facility;
+  pkg.nassau={
+    location:facility.name,
+    address:facilityAddressText(facility),
+    note:document.getElementById("nassauNote").value.trim(),
+    photos:stagedNassauPhotos,
+    at:now()
+  };
+  pkg.status="DESTINATION_RECEIVED";
+  pkg.events.push({
+    type:"DESTINATION_RECEIVED",
+    at:now(),
+    note:pkg.nassau.note||("Package arrived at "+facility.name)
+  });
+  pkg.updatedAt=now();
+
+  await put(STORE_PACKAGES,pkg);
+  stagedNassauPhotos=[];
+  document.getElementById("nassauPhotos").value="";
+  document.getElementById("nassauPreview").innerHTML="";
+  document.getElementById("nassauNote").value="";
+  alert("Destination arrival saved.");
+  await renderAll();
+};
 document.getElementById("saveWarehouse").onclick=async()=>{const id=document.getElementById("warehousePackage").value;if(!id){alert("Select a package.");return}const pkg=await get(STORE_PACKAGES,id),status=document.getElementById("warehouseStatus").value;pkg.warehouse={shelf:document.getElementById("shelf").value.trim(),bin:document.getElementById("bin").value.trim(),area:document.getElementById("area").value.trim(),note:document.getElementById("warehouseNote").value.trim(),at:now()};pkg.status=status;pkg.events.push({type:status,at:now(),note:`Warehouse: ${pkg.warehouse.area||"-"} / Shelf ${pkg.warehouse.shelf||"-"} / Bin ${pkg.warehouse.bin||"-"}`});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);alert("Warehouse location/status saved.");await renderAll()};
 document.getElementById("addDirectoryCustomer").onclick=async()=>{try{await addCustomer(document.getElementById("directoryName").value,document.getElementById("directoryEmail").value);document.getElementById("directoryName").value="";document.getElementById("directoryEmail").value="";await renderAll()}catch(e){alert(e.message)}};
 document.getElementById("searchBox").oninput=renderSearch;
