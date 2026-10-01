@@ -35,6 +35,9 @@ jobs:
       - name: Run known-customer matcher regression
         run: node parcel-snap-customer/tests/known-customer-matcher-test.mjs
 
+      - name: Run OCR speed architecture regression
+        run: node parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
+
       - name: Run customer OCR parser regression
         run: node parcel-snap-customer/tests/ocr-parser-test.mjs
 
