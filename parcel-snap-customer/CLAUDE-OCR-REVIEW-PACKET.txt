@@ -1,0 +1,339 @@
+PARCEL SNAP OCR REVIEW PACKET
+Updated: 2026-10-01
+
+GOAL
+A warehouse worker takes a phone photo of a package label.
+Parcel Snap should:
+1. Read the recipient/customer name.
+2. Match the name to an existing customer if possible.
+3. Capture tracking/barcode when available.
+4. Detect carrier where possible.
+5. Capture recipient address for the package record.
+6. If no customer match exists, prefill the OCR name and ask ON THE SAME SCREEN for:
+   - customer name
+   - email (required so arrival email can be sent)
+   - phone / WhatsApp (optional)
+7. Let the worker choose the current warehouse and next warehouse.
+8. Current facilities can include Miami, Fort Lauderdale, Orlando, and Nassau.
+
+REAL FAILURE THAT TRIGGERED THIS REVIEW
+The photographed label visibly contained a line similar to:
+  Your electronic needs/TrevonHu...
+followed by:
+  16600 NW 54TH AVE UNIT 9
+  HIALEAH FL 33014-6110
+
+The old parser rejected the entire name line because it contained the business words
+"electronic" and "needs". It also OCR'd a compressed upload-sized image rather than
+a higher-resolution OCR image.
+
+CURRENT FIX
+- Separate high-resolution OCR image (max 2800px / JPEG .96) from upload image.
+- Extract name after "electronic needs /" and related separators.
+- Fuzzy-match partial joined names such as "TrevonHu" against "Trevon Humes".
+- Fall back to the line immediately before the street address.
+- Run enhanced OCR plus small deskew rotations.
+- Preserve barcode detection.
+- If unmatched, show inline customer name/email/phone fields.
+- Email is required for a newly created customer before package intake completes.
+
+REQUEST FOR REVIEW
+Please inspect the JavaScript below and identify:
+- likely false-positive name matches,
+- likely missed name patterns,
+- performance problems on Android phones,
+- better preprocessing / deskew strategies that can run in-browser,
+- safer ways to distinguish recipient address from return address,
+- better tracking-code extraction,
+- anything that could block a real warehouse line.
+
+Do not recommend placeholder AI services. The desired implementation should remain
+usable in a browser and should fail safely into "Needs Review" rather than guessing
+the wrong customer.
+
+CURRENT OCR CODE
+================================================================================
+function extractNameCandidate(text){
+  const raw=String(text||"").replace(/\r/g,"");
+  const lines=raw.split("\n").map(x=>x.trim()).filter(Boolean);
+
+  const cleanCandidate=value=>{
+    let v=String(value||"")
+      .replace(/[\\|]+/g," ")
+      .replace(/[^A-Za-z.' -]/g," ")
+      .replace(/\s+/g," ")
+      .trim();
+    v=v.replace(/^(customer|recipient|consignee)\s*[:\-]?\s*/i,"");
+    if(!v)return "";
+    const words=v.split(" ").filter(Boolean);
+    if(words.length<1||words.length>5)return "";
+    if(/return address|tracking|package|order reference|partner order|in hand date|street|road|avenue|lane|unit|warehouse|hialeah|sweetwater|florida|bahamas/i.test(v))return "";
+    return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(" ");
+  };
+
+  for(const line of lines){
+    const slash=line.match(/(?:electr[o0]nic\s+needs|your\s+electr[o0]nic\s+needs|yen)\s*[\\/|:\-]+\s*(.+)$/i);
+    if(slash){
+      const candidate=cleanCandidate(slash[1]);
+      if(candidate)return candidate;
+    }
+  }
+
+  for(const line of lines){
+    const idx=line.toLowerCase().indexOf("needs");
+    if(idx>=0){
+      const tail=line.slice(idx+5).replace(/^[\\/|:\-\s]+/,"");
+      const candidate=cleanCandidate(tail);
+      if(candidate)return candidate;
+    }
+  }
+
+  for(let i=1;i<lines.length;i++){
+    if(/^\s*\d{3,6}\s+/.test(lines[i]) || /\b(?:NW|NE|SW|SE)\b.*\b(?:AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|LANE|LN)\b/i.test(lines[i])){
+      const previous=lines[i-1].replace(/^.*?[\\/|]\s*/,"");
+      const candidate=cleanCandidate(previous);
+      if(candidate)return candidate;
+    }
+  }
+
+  const bad=/tracking|ship|address|street|road|avenue|lane|unit|miami|nassau|bahamas|florida|warehouse|fedex|ups|usps|amazon|package|weight|return|order|reference|roadie/i;
+  for(const line of lines){
+    const candidate=cleanCandidate(line);
+    if(candidate&&!bad.test(candidate)&&candidate.split(" ").length>=2)return candidate;
+  }
+  return "";
+}
+
+function candidateScore(name,candidate){
+  const nameCompact=normText(name).replace(/ /g,"");
+  const candidateCompact=normText(candidate).replace(/ /g,"");
+  if(!nameCompact||!candidateCompact)return 0;
+  if(nameCompact===candidateCompact)return 1;
+  if(candidateCompact.length>=6&&(nameCompact.startsWith(candidateCompact)||candidateCompact.startsWith(nameCompact)))return .96;
+  if(candidateCompact.length>=6&&nameCompact.includes(candidateCompact))return .94;
+  return 1-editDistance(nameCompact,candidateCompact)/Math.max(nameCompact.length,candidateCompact.length);
+}
+
+function scoreName(name,text){
+  const candidate=extractNameCandidate(text);
+  const candidateBased=candidate?candidateScore(name,candidate):0;
+  const nts=normText(name).split(" ").filter(x=>x.length>=2);
+  const tts=normText(text).split(" ").filter(x=>x.length>=2);
+  if(!nts.length||!tts.length)return candidateBased;
+  const tokenBased=nts.map(n=>Math.max(...tts.map(t=>tokenSimilarity(n,t)))).reduce((a,b)=>a+b,0)/nts.length;
+  return Math.max(candidateBased,tokenBased);
+}
+
+function bestCustomerFromText(text){
+  if(!workspace?.customers?.length)return null;
+  const ranked=workspace.customers
+    .map(customer=>({customer,score:scoreName(customer.name,text)}))
+    .sort((a,b)=>b.score-a.score);
+  const best=ranked[0],second=ranked[1];
+  if(!best)return null;
+  const clear=best.score>=.78&&(!second||best.score-second.score>=.06);
+  return clear?best:null;
+}
+
+function guessTracking(text){
+  const raw=String(text||"");
+  const anchored=raw.match(/PACKAGE\s+TRACKING\s+CODE[\s\S]{0,120}?([A-Z0-9][A-Z0-9-]{7,40})/i);
+  if(anchored?.[1])return anchored[1];
+  const tokens=raw.match(/[A-Z0-9][A-Z0-9-]{8,35}/gi)||[];
+  return tokens.find(t=>!/^(ADDRESS|PACKAGE|CUSTOMER|TRACKING|ELECTRONIC|REFERENCE)$/i.test(t))||"";
+}
+
+function guessCarrier(text){
+  const t=String(text||"").toUpperCase();
+  if(t.includes("ROADIE"))return "Roadie";
+  if(t.includes("FEDEX"))return "FedEx";
+  if(t.includes("USPS")||t.includes("UNITED STATES POSTAL"))return "USPS";
+  if(/\bUPS\b/.test(t))return "UPS";
+  if(t.includes("AMAZON"))return "Amazon";
+  return "";
+}
+
+function guessRecipientAddress(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const nameCandidate=extractNameCandidate(text);
+  let start=-1;
+
+  if(nameCandidate){
+    const target=normText(nameCandidate).replace(/ /g,"");
+    for(let i=0;i<lines.length;i++){
+      const compact=normText(lines[i]).replace(/ /g,"");
+      if(compact.includes(target.slice(0,Math.min(target.length,7)))){start=i+1;break}
+    }
+  }
+
+  if(start<0){
+    for(let i=0;i<lines.length;i++){
+      if(/^\d{3,6}\s+/.test(lines[i])&&/\b(?:AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|LANE|LN|HWY)\b/i.test(lines[i])){
+        start=i;
+        break;
+      }
+    }
+  }
+
+  if(start<0)return "";
+  const collected=[];
+  for(let i=start;i<Math.min(lines.length,start+3);i++){
+    if(/order reference|partner order|in hand date|tracking code/i.test(lines[i]))break;
+    collected.push(lines[i]);
+  }
+  return collected.join(", ");
+}
+
+async function loadImage(dataUrl){
+  return await new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=reject;
+    img.src=dataUrl;
+  });
+}
+
+async function readFileDataUrl(file){
+  return await new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(String(r.result));
+    r.onerror=()=>reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function resizeDataUrl(original,maxDimension,quality){
+  const img=await loadImage(original);
+  const scale=Math.min(1,maxDimension/Math.max(img.width,img.height));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(img.width*scale));
+  canvas.height=Math.max(1,Math.round(img.height*scale));
+  const ctx=canvas.getContext("2d");
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  return canvas.toDataURL("image/jpeg",quality);
+}
+
+async function compressImage(file){
+  const original=await readFileDataUrl(file);
+  return await resizeDataUrl(original,1600,.82);
+}
+
+async function prepareOcrImage(file){
+  const original=await readFileDataUrl(file);
+  return await resizeDataUrl(original,2800,.96);
+}
+
+async function rotateDataUrl(dataUrl,degrees){
+  const img=await loadImage(dataUrl);
+  const rad=degrees*Math.PI/180;
+  const sin=Math.abs(Math.sin(rad)),cos=Math.abs(Math.cos(rad));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.ceil(img.width*cos+img.height*sin);
+  canvas.height=Math.ceil(img.width*sin+img.height*cos);
+  const ctx=canvas.getContext("2d");
+  ctx.translate(canvas.width/2,canvas.height/2);
+  ctx.rotate(rad);
+  ctx.drawImage(img,-img.width/2,-img.height/2);
+  return canvas.toDataURL("image/jpeg",.94);
+}
+
+async function enhanceForReading(dataUrl){
+  const img=await loadImage(dataUrl);
+  const scale=Math.min(2,Math.max(1,2200/Math.max(img.width,img.height)));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(img.width*scale);
+  canvas.height=Math.round(img.height*scale);
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data;
+  for(let i=0;i<d.length;i+=4){
+    const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+    const v=Math.max(0,Math.min(255,(g-128)*1.7+150));
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(im,0,0);
+  return canvas.toDataURL("image/jpeg",.95);
+}
+
+async function detectBarcode(dataUrl){
+  if(!("BarcodeDetector" in window))return "";
+  try{
+    const img=await loadImage(dataUrl);
+    const detector=new BarcodeDetector({formats:["qr_code","code_128","code_39","ean_13","ean_8","upc_a","upc_e","itf","codabar"]});
+    const codes=await detector.detect(img);
+    return (codes||[]).map(x=>String(x.rawValue||"").trim()).find(v=>v.length>=6&&v.length<=80)||"";
+  }catch{return ""}
+}
+
+function showInlineCustomer(candidate=""){
+  $("receiveNewCustomer").classList.remove("hidden");
+  if(candidate&&!$("receiveNewCustomerName").value)$("receiveNewCustomerName").value=candidate;
+}
+
+function hideInlineCustomer(){
+  $("receiveNewCustomer").classList.add("hidden");
+}
+
+async function readPackagePhoto(dataUrl){
+  const processing=$("processingBox");
+  $("processingText").textContent="Processing package…";
+  $("processingDetail").textContent="";
+  processing.classList.remove("hidden");
+
+  let merged="",match=null,tracking=await detectBarcode(dataUrl);
+  const enhanced=await enhanceForReading(dataUrl);
+  const passes=[enhanced];
+
+  for(const angle of [-5,5,-9,9]){
+    passes.push(await rotateDataUrl(enhanced,angle));
+  }
+
+  for(const source of passes){
+    const result=await Tesseract.recognize(source,"eng");
+    merged+="\n"+(result.data.text||"");
+    match=bestCustomerFromText(merged);
+    const candidate=extractNameCandidate(merged);
+    if(match||candidate)break;
+  }
+
+  if(!match){
+    const originalResult=await Tesseract.recognize(dataUrl,"eng");
+    merged+="\n"+(originalResult.data.text||"");
+    match=bestCustomerFromText(merged);
+  }
+
+  intakeOcrText=merged;
+  const candidate=extractNameCandidate(merged);
+  intakeOcrName=match?.customer?.name||candidate||"";
+
+  if(!tracking)tracking=guessTracking(merged);
+  $("receiveTracking").value=tracking||"";
+
+  const carrier=guessCarrier(merged);
+  if(carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=carrier;
+
+  if(match){
+    $("receiveCustomer").value=match.customer.id;
+    hideInlineCustomer();
+    $("processingText").textContent=match.customer.name;
+    $("processingDetail").textContent=tracking?"Customer matched · tracking captured":"Customer matched";
+  }else{
+    $("receiveCustomer").value="";
+    showInlineCustomer(intakeOcrName);
+    $("processingText").textContent=intakeOcrName||"New / unmatched customer";
+    $("processingDetail").textContent=tracking
+      ?"Enter email once · tracking captured"
+      :"Enter customer email once";
+  }
+
+  return {
+    match,
+    tracking,
+    candidate:intakeOcrName,
+    carrier,
+    address:guessRecipientAddress(merged)
+  };
+}
+
+
+================================================================================
