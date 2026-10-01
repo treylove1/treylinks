@@ -525,6 +525,9 @@ function renderReceiveControls(){
   const facilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
 
   const currentCustomer=$("receiveCustomer").value;
+  const currentOrigin=$("receiveOrigin").value;
+  const currentDestination=$("receiveDestination").value;
+
   $("receiveCustomer").innerHTML='<option value="">New / unmatched customer</option>'+
     customers.map(c=>'<option value="'+c.id+'">'+esc(c.name)+(c.email?" — "+esc(c.email):"")+'</option>').join("");
   if(customers.some(c=>c.id===currentCustomer))$("receiveCustomer").value=currentCustomer;
@@ -536,8 +539,11 @@ function renderReceiveControls(){
   if(facilities.length){
     const miami=facilities.find(f=>f.code==="MIA");
     const nassau=facilities.find(f=>f.code==="NAS");
-    if(!$("receiveOrigin").value&&miami)$("receiveOrigin").value=miami.id;
-    if(!$("receiveDestination").value&&nassau)$("receiveDestination").value=nassau.id;
+    if(facilities.some(f=>f.id===currentOrigin))$("receiveOrigin").value=currentOrigin;
+    else if(miami)$("receiveOrigin").value=miami.id;
+
+    if(facilities.some(f=>f.id===currentDestination))$("receiveDestination").value=currentDestination;
+    else if(nassau)$("receiveDestination").value=nassau.id;
   }
 
   if(!$("receiveCustomer").value)showInlineCustomer(intakeOcrName);
