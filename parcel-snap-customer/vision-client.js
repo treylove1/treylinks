@@ -144,11 +144,13 @@
       $("processingText").textContent = "Reading package…";
       $("processingDetail").textContent = "";
 
-      const prepared=await preparePackageImages(file);
-
-      intakePhotoDataUrl=prepared.preview;
+      // Instant visual feedback before any OCR/image preparation work.
+      const instantUrl=URL.createObjectURL(file);
       $("packagePhotoPreview").innerHTML=
-        '<img src="' + intakePhotoDataUrl + '" alt="Package photo">';
+        '<img src="' + instantUrl + '" alt="Package photo">';
+
+      const prepared=await preparePackageImages(file);
+      intakePhotoDataUrl=prepared.preview;
 
       const visionPromise=analyzePackageWithVision(prepared.vision)
         .catch(error=>{
@@ -157,8 +159,9 @@
         });
 
       // Do not wait for remote vision. Local OCR owns the fast path.
-      const local=await readPackagePhoto(prepared.ocr);
+      const local=await readPackagePhoto(prepared.ocrCanvas);
       intakeOcrAddress=local.address||"";
+      URL.revokeObjectURL(instantUrl);
 
       visionPromise.then(result=>{
         if(result) refineFromVision(result,local);
@@ -167,7 +170,7 @@
       if(prepared.label_crop_used){
         const detail=$("processingDetail").textContent;
         $("processingDetail").textContent=detail
-          ?detail+" · label crop"
+          ?detail+" · label "+prepared.crop_width+"×"+prepared.crop_height
           :"Label crop used";
       }
     } catch (error) {
