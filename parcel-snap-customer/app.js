@@ -12,6 +12,7 @@ let intakeOcrAddress="";
 let transferPhotoDataUrl=null;
 let businessSetupStep=1;
 let businessSetupLocations=[];
+let businessSetupPreviewMode=false;
 
 const $=id=>document.getElementById(id);
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
@@ -488,6 +489,10 @@ function setBusinessSetupStep(step){
 function prepareBusinessSetup(data){
   const profile=data.profile||{};
   businessSetupLocations=Array.isArray(data.locations)?data.locations.map(x=>({...x})):[];
+  $("businessSetupPreviewResult").classList.add("hidden");
+  $("businessSetupPreviewResult").innerHTML="";
+  $("businessSetupMessage").textContent="";
+  $("exitBusinessSetupPreview").classList.toggle("hidden",!businessSetupPreviewMode);
   $("profileBusinessType").value=profile.business_type||"";
   $("profileBusinessName").value=profile.primary_business_name||data.company?.name||"";
   $("profileEmployees").value=profile.employee_count??"";
@@ -610,14 +615,51 @@ $("saveBusinessSetup").onclick=async()=>{
   $("saveBusinessSetup").disabled=true;
   $("businessSetupMessage").textContent="Building your Parcel Snap workspace…";
   try{
-    await api({action:"save_business_profile",profile,locations:businessSetupLocations});
-    $("businessSetupMessage").textContent="Workspace created.";
-    await loadWorkspace();
+    if(businessSetupPreviewMode){
+      const result=await api({action:"preview_business_profile",profile,locations:businessSetupLocations});
+      const t=result.tailored||{};
+      const facilities=(t.facilities||[]).map(f=>"<li>"+esc(f.name)+" — "+esc(f.facility_type)+"</li>").join("");
+      const recommendations=(t.recommendations||[]).map(x=>"<li>"+esc(x)+"</li>").join("");
+      $("businessSetupPreviewResult").innerHTML=
+        "<article class='card'><span class='eyebrow'>OWNER PREVIEW — NOTHING SAVED</span>"+
+        "<h3>Parcel Snap would build this workspace</h3>"+
+        "<p><strong>"+esc(String(t.employee_count??""))+"</strong> employees · "+
+        "<strong>"+esc(String(t.estimated_customers??""))+"</strong> customers · "+
+        "<strong>"+esc(String(t.packages_per_day??""))+"</strong> packages/day</p>"+
+        "<h4>Facilities</h4><ul>"+facilities+"</ul>"+
+        "<h4>Recommended setup</h4><ul>"+recommendations+"</ul></article>";
+      $("businessSetupPreviewResult").classList.remove("hidden");
+      $("businessSetupMessage").textContent="Preview complete. Your real workspace was not changed.";
+    }else{
+      await api({action:"save_business_profile",profile,locations:businessSetupLocations});
+      $("businessSetupMessage").textContent="Workspace created.";
+      await loadWorkspace();
+    }
   }catch(e){
     $("businessSetupMessage").textContent=e.message||String(e);
   }finally{
     $("saveBusinessSetup").disabled=false;
   }
+};
+
+$("testBusinessSetup").onclick=()=>{
+  businessSetupPreviewMode=true;
+  prepareBusinessSetup({
+    company:workspace.company,
+    profile:{
+      primary_business_name:"",
+      notification_channels:["EMAIL"],
+      needs_customer_notifications:true,
+      needs_worker_sublogins:true
+    },
+    locations:[]
+  });
+  showOnly("businessSetupState");
+};
+
+$("exitBusinessSetupPreview").onclick=async()=>{
+  businessSetupPreviewMode=false;
+  await loadWorkspace();
 };
 
 function renderWorkspace(){
@@ -635,6 +677,7 @@ function renderWorkspace(){
   renderReceiveControls();
   renderTransferControls();
   renderStaffControls();
+  $("testBusinessSetup").classList.toggle("hidden",workspace.company.role!=="OWNER");
   $("subscriptionCard").innerHTML="<div class='billingBox'><strong>ParcelSnap Business Subscription</strong><span>"+esc(workspace.subscription.status)+"</span><small>"+(workspace.subscription.current_period_end?"Current period ends "+new Date(workspace.subscription.current_period_end).toLocaleDateString():"Active access")+"</small></div>";
 }
 
