@@ -46,3 +46,15 @@ button,.linkButton{border:0;border-radius:10px;padding:11px 14px;font-weight:850
 @media(max-width:760px){.facilityChoices{grid-template-columns:1fr}.segmented.three{grid-template-columns:1fr}}
 
 .inlineCustomer{margin-top:12px;padding:14px;border:1px solid #345477;border-radius:12px;background:#0a1628}
+
+.setupCard{max-width:920px;margin:0 auto}
+.setupProgress{display:flex;gap:10px;margin:18px 0 24px}
+.setupProgress span{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:#10213b;border:1px solid #29486f;color:#9fb0c9;font-weight:900}
+.setupProgress span.active{background:#2864e6;color:#fff;border-color:#2864e6}
+.setupNav{display:flex;justify-content:space-between;gap:12px;margin-top:18px}
+.setupNav button{flex:1}
+.setupChecks{margin:14px 0}
+#setupLocationList{margin-top:14px}
+.setupLocationCard{background:#0a1628;border:1px solid #29486f;border-radius:12px;padding:12px;margin-top:10px}
+.setupLocationCard .itemTop{align-items:flex-start}
+textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #304d72;background:#0a1628;color:#eef4ff;font:inherit;margin-top:6px;resize:vertical}
