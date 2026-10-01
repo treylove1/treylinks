@@ -57,3 +57,20 @@ Real Resend delivery sink results:
 - Nassau profile: DELIVERED
 
 The addresses used for this verification were rollback-only sentinel test addresses and were not persisted as customer/warehouse production data.
+
+
+## Configurable facilities
+- Facility profiles are now separate from package logic.
+- Origin can be Miami, Fort Lauderdale, Orlando, or another configured warehouse.
+- Destination can be Nassau or another configured destination warehouse.
+- Street addresses are configurable and are not invented by the system.
+- Notification wording uses the active facility profile.
+- Controlled email delivery tests:
+  - Miami: DELIVERED
+  - Fort Lauderdale: DELIVERED
+  - Orlando: DELIVERED
+- Cloud routing rollback test:
+  - Fort Lauderdale package -> FLL-R1
+  - Orlando package -> ORL-R1
+- Browser JavaScript syntax check: PASS
+- OCR cloud gate after facility changes: PASS
