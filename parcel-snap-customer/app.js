@@ -99,6 +99,15 @@ function scoreName(name,text){
 
 function bestCustomerFromText(text){
   if(!workspace?.customers?.length)return null;
+
+  if(window.ParcelSnapKnownMatcher){
+    const result=window.ParcelSnapKnownMatcher.matchDirectory(workspace.customers,text);
+    if(result.status==="MATCHED"&&result.customer){
+      return {customer:result.customer,score:result.score,knownMatch:result};
+    }
+    return null;
+  }
+
   const ranked=workspace.customers
     .map(customer=>({customer,score:scoreName(customer.name,text)}))
     .sort((a,b)=>b.score-a.score);
@@ -276,7 +285,15 @@ async function readPackagePhoto(dataUrl){
   }
 
   intakeOcrText=merged;
-  const candidate=extractNameCandidate(merged);
+
+  const knownResult=window.ParcelSnapKnownMatcher
+    ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
+    : null;
+
+  const candidate=knownResult?.status==="MATCHED"
+    ? knownResult.customer?.name||""
+    : "";
+
   intakeOcrName=match?.customer?.name||candidate||"";
 
   if(!tracking)tracking=guessTracking(merged);
@@ -292,11 +309,12 @@ async function readPackagePhoto(dataUrl){
     $("processingDetail").textContent=tracking?"Customer matched · tracking captured":"Customer matched";
   }else{
     $("receiveCustomer").value="";
-    showInlineCustomer(intakeOcrName);
-    $("processingText").textContent=intakeOcrName||"New / unmatched customer";
+    showInlineCustomer("");
+    $("receiveNewCustomerName").value="";
+    $("processingText").textContent="No known customer matched";
     $("processingDetail").textContent=tracking
-      ?"Enter email once · tracking captured"
-      :"Enter customer email once";
+      ?"Enter customer name/email · tracking captured"
+      :"Enter customer name and email";
   }
 
   return {
