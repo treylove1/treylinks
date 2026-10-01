@@ -20,7 +20,7 @@ async function getParcelSnapOcrWorker(){
     parcelSnapOcrWorkerPromise=(async()=>{
       const worker=await Tesseract.createWorker("eng");
       await worker.setParameters({
-        tessedit_pageseg_mode:"11",
+        tessedit_pageseg_mode:"3",
         preserve_interword_spaces:"1"
       });
       return worker;
@@ -363,15 +363,67 @@ function detectBrightLabelRegion(img){
   return {x:rx,y:ry,w:rw,h:rh};
 }
 
+function prepareFastOcrCanvas(source){
+  const w=source.width,h=source.height;
+  const srcCtx=source.getContext("2d",{willReadFrequently:true});
+  const im=srcCtx.getImageData(0,0,w,h);
+  const d=im.data;
+  const gray=new Uint8ClampedArray(w*h);
+
+  let sum=0;
+  for(let p=0,i=0;i<d.length;i+=4,p++){
+    const g=Math.max(0,Math.min(255,Math.round(d[i]*.299+d[i+1]*.587+d[i+2]*.114)));
+    gray[p]=g;
+    sum+=g;
+  }
+
+  const mean=sum/Math.max(1,gray.length);
+  const contrast=new Uint8ClampedArray(gray.length);
+  for(let i=0;i<gray.length;i++){
+    contrast[i]=Math.max(0,Math.min(255,Math.round(mean+2*(gray[i]-mean))));
+  }
+
+  const outCanvas=document.createElement("canvas");
+  outCanvas.width=w; outCanvas.height=h;
+  const outCtx=outCanvas.getContext("2d");
+  const out=outCtx.createImageData(w,h);
+  const od=out.data;
+
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const p=y*w+x;
+      let v=contrast[p];
+
+      if(x>0&&x<w-1&&y>0&&y<h-1){
+        const smooth=(
+          contrast[p-w-1]+contrast[p-w]+contrast[p-w+1]+
+          contrast[p-1]+5*contrast[p]+contrast[p+1]+
+          contrast[p+w-1]+contrast[p+w]+contrast[p+w+1]
+        )/13;
+        v=Math.max(0,Math.min(255,Math.round(2*contrast[p]-smooth)));
+      }
+
+      const i=p*4;
+      od[i]=od[i+1]=od[i+2]=v;
+      od[i+3]=255;
+    }
+  }
+
+  outCtx.putImageData(out,0,0);
+  return outCanvas;
+}
+
 async function preparePackageImages(file){
   const original=await readFileDataUrl(file);
   const img=await loadImage(original);
   const labelRect=detectBrightLabelRegion(img);
-  const ocrCanvas=drawImageRegionCanvas(img,labelRect,1350);
+  const rawOcrCanvas=drawImageRegionCanvas(img,labelRect,1350);
+  const ocrCanvas=prepareFastOcrCanvas(rawOcrCanvas);
 
   return {
     preview:drawImageRegion(img,null,1600,.82),
     ocrCanvas,
+    rawOcrCanvas,
     vision:drawImageRegion(img,labelRect||null,1600,.90),
     label_crop_used:Boolean(labelRect),
     crop_width:ocrCanvas.width,
