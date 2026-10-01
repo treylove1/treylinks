@@ -129,6 +129,22 @@
               <select id="receiveCustomer"></select>
             </label>
 
+            <div id="receiveNewCustomer" class="inlineCustomer hidden">
+              <span class="eyebrow">NEW / UNMATCHED CUSTOMER</span>
+              <div class="formGrid">
+                <label>Name
+                  <input id="receiveNewCustomerName" placeholder="Customer name">
+                </label>
+                <label>Email
+                  <input id="receiveNewCustomerEmail" type="email" placeholder="customer@example.com">
+                </label>
+                <label>Phone / WhatsApp
+                  <input id="receiveNewCustomerPhone" inputmode="tel" placeholder="Optional">
+                </label>
+              </div>
+              <button id="saveReceiveCustomer" class="ghost wide">Save Customer & Use</button>
+            </div>
+
             <div class="formGrid">
               <label>Carrier
                 <input id="receiveCarrier" placeholder="UPS / FedEx / USPS / Amazon">
