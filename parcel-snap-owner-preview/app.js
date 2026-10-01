@@ -55,6 +55,39 @@ function now(){return new Date().toISOString()}
 function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 function norm(s=""){return s.toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
 function statusLabel(s){return ({MIAMI_RECEIVED:"Miami received",NASSAU_RECEIVED:"Nassau received",WAREHOUSED:"Warehoused",READY_FOR_PICKUP:"Ready for pickup",OUT_FOR_DELIVERY:"Out for delivery",PICKED_UP:"Picked up",DELIVERED:"Delivered"})[s]||s}
+function renderFacilitySelectors(){
+  const facilities=getFacilities().filter(f=>f.active!==false);
+  const origin=document.getElementById("activeOriginWarehouse");
+  const destination=document.getElementById("activeDestinationWarehouse");
+  if(origin){
+    const current=getActiveOrigin()?.id||"";
+    origin.innerHTML=facilities.filter(f=>f.type==="ORIGIN").map(f=>'<option value="'+f.id+'" '+(f.id===current?'selected':'')+'>'+esc(f.name)+'</option>').join("");
+    const summary=document.getElementById("activeOriginAddress");
+    if(summary)summary.textContent=facilityAddressText(getActiveOrigin())||"Address not set";
+  }
+  if(destination){
+    const current=getActiveDestination()?.id||"";
+    destination.innerHTML=facilities.filter(f=>f.type==="DESTINATION").map(f=>'<option value="'+f.id+'" '+(f.id===current?'selected':'')+'>'+esc(f.name)+'</option>').join("");
+    const summary=document.getElementById("activeDestinationAddress");
+    if(summary)summary.textContent=facilityAddressText(getActiveDestination())||"Address not set";
+  }
+}
+function renderFacilities(){
+  const root=document.getElementById("facilityList");
+  if(!root)return;
+  const items=getFacilities();
+  root.innerHTML=items.map(f=>'<article class="packageCard"><div class="packageTop"><div><strong>'+esc(f.name)+'</strong><br><small>'+esc(f.type)+' · '+esc(facilityAddressText(f)||"Address not set")+'</small></div><button class="danger" data-delfacility="'+f.id+'">Delete</button></div></article>').join("");
+  root.querySelectorAll("[data-delfacility]").forEach(b=>b.onclick=()=>{
+    if(items.length<=1){alert("Keep at least one warehouse profile.");return}
+    const id=b.dataset.delfacility;
+    if(confirm("Delete this warehouse profile?")){
+      saveFacilities(getFacilities().filter(f=>f.id!==id));
+      renderFacilitySelectors();
+      renderFacilities();
+    }
+  });
+}
+
 async function filesToData(files){const out=[];for(const file of files){out.push(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,type:file.type,data:reader.result,at:now()});reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file)}))}return out}
 function previewPhotos(target,photos){target.innerHTML=photos.map(p=>`<img src="${p.data}" alt="Package photo">`).join("")}
 
