@@ -74,3 +74,29 @@ The addresses used for this verification were rollback-only sentinel test addres
   - Orlando package -> ORL-R1
 - Browser JavaScript syntax check: PASS
 - OCR cloud gate after facility changes: PASS
+
+
+## Customer portal and Stripe activation
+- Existing live product preserved: ParcelSnap Business Subscription — $100/month.
+- Existing payment link preserved; no replacement charge created.
+- Live Stripe webhook endpoint registered for checkout, subscription, and invoice events.
+- Webhook signing secret stored in private Parcel Snap backend.
+- Signed no-charge cloud webhook test:
+  - HTTP 200
+  - Stripe signature accepted
+  - Event processed successfully
+  - Test event records deleted after verification
+- Customer portal backend:
+  - real Supabase login
+  - company onboarding
+  - server-side subscription gate
+  - company-isolated workspace access
+  - private package photo storage
+  - customer creation
+  - warehouse creation
+  - package intake
+  - automatic location assignment
+  - transactional arrival email
+- Customer portal JavaScript syntax check: PASS
+- OCR cloud regression gate: PASS
+- GitHub Pages deployment: SUCCESS
