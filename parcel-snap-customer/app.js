@@ -17,7 +17,14 @@ let parcelSnapOcrWorkerPromise=null;
 
 async function getParcelSnapOcrWorker(){
   if(!parcelSnapOcrWorkerPromise){
-    parcelSnapOcrWorkerPromise=Tesseract.createWorker("eng").catch(err=>{
+    parcelSnapOcrWorkerPromise=(async()=>{
+      const worker=await Tesseract.createWorker("eng");
+      await worker.setParameters({
+        tessedit_pageseg_mode:"11",
+        preserve_interword_spaces:"1"
+      });
+      return worker;
+    })().catch(err=>{
       parcelSnapOcrWorkerPromise=null;
       throw err;
     });
@@ -219,6 +226,129 @@ async function resizeDataUrl(original,maxDimension,quality){
   const ctx=canvas.getContext("2d");
   ctx.drawImage(img,0,0,canvas.width,canvas.height);
   return canvas.toDataURL("image/jpeg",quality);
+}
+
+function drawImageRegion(img,rect,maxDimension,quality){
+  const source=rect||{x:0,y:0,w:img.width,h:img.height};
+  const scale=Math.min(1,maxDimension/Math.max(source.w,source.h));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(source.w*scale));
+  canvas.height=Math.max(1,Math.round(source.h*scale));
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(
+    img,
+    source.x,source.y,source.w,source.h,
+    0,0,canvas.width,canvas.height
+  );
+  return canvas.toDataURL("image/jpeg",quality);
+}
+
+function detectBrightLabelRegion(img){
+  const maxSample=180;
+  const scale=Math.min(1,maxSample/Math.max(img.width,img.height));
+  const w=Math.max(32,Math.round(img.width*scale));
+  const h=Math.max(32,Math.round(img.height*scale));
+  const canvas=document.createElement("canvas");
+  canvas.width=w; canvas.height=h;
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,0,0,w,h);
+
+  const data=ctx.getImageData(0,0,w,h).data;
+  const mask=new Uint8Array(w*h);
+  let mean=0;
+  for(let i=0;i<data.length;i+=4){
+    mean+=(data[i]*.299+data[i+1]*.587+data[i+2]*.114);
+  }
+  mean/=Math.max(1,w*h);
+  const threshold=Math.max(165,Math.min(225,mean+32));
+
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const i=(y*w+x)*4;
+      const lum=data[i]*.299+data[i+1]*.587+data[i+2]*.114;
+      mask[y*w+x]=lum>=threshold?1:0;
+    }
+  }
+
+  const seen=new Uint8Array(w*h);
+  const stack=[];
+  let best=null;
+
+  for(let sy=0;sy<h;sy++){
+    for(let sx=0;sx<w;sx++){
+      const seed=sy*w+sx;
+      if(!mask[seed]||seen[seed])continue;
+
+      let minX=sx,maxX=sx,minY=sy,maxY=sy,count=0;
+      stack.push(seed);
+      seen[seed]=1;
+
+      while(stack.length){
+        const p=stack.pop();
+        const y=Math.floor(p/w),x=p-y*w;
+        count++;
+        if(x<minX)minX=x;if(x>maxX)maxX=x;
+        if(y<minY)minY=y;if(y>maxY)maxY=y;
+
+        const next=[
+          x>0?p-1:-1,
+          x<w-1?p+1:-1,
+          y>0?p-w:-1,
+          y<h-1?p+w:-1
+        ];
+        for(const n of next){
+          if(n>=0&&mask[n]&&!seen[n]){seen[n]=1;stack.push(n)}
+        }
+      }
+
+      const bw=maxX-minX+1,bh=maxY-minY+1;
+      const boxArea=bw*bh;
+      const fill=count/Math.max(1,boxArea);
+      const areaFraction=boxArea/(w*h);
+      const aspect=bw/bh;
+
+      if(
+        areaFraction>=.045&&areaFraction<=.82&&
+        aspect>=.45&&aspect<=2.6&&
+        fill>=.35
+      ){
+        const score=boxArea*fill;
+        if(!best||score>best.score){
+          best={minX,maxX,minY,maxY,score};
+        }
+      }
+    }
+  }
+
+  if(!best)return null;
+
+  const padX=Math.round((best.maxX-best.minX+1)*.08);
+  const padY=Math.round((best.maxY-best.minY+1)*.08);
+  const x1=Math.max(0,best.minX-padX);
+  const y1=Math.max(0,best.minY-padY);
+  const x2=Math.min(w-1,best.maxX+padX);
+  const y2=Math.min(h-1,best.maxY+padY);
+
+  const rx=x1/w*img.width;
+  const ry=y1/h*img.height;
+  const rw=(x2-x1+1)/w*img.width;
+  const rh=(y2-y1+1)/h*img.height;
+
+  if(rw<160||rh<100)return null;
+  return {x:rx,y:ry,w:rw,h:rh};
+}
+
+async function preparePackageImages(file){
+  const original=await readFileDataUrl(file);
+  const img=await loadImage(original);
+  const labelRect=detectBrightLabelRegion(img);
+
+  return {
+    preview:drawImageRegion(img,null,1600,.82),
+    ocr:drawImageRegion(img,labelRect,1500,.92),
+    vision:drawImageRegion(img,labelRect||null,1600,.90),
+    label_crop_used:Boolean(labelRect)
+  };
 }
 
 async function compressImage(file){
