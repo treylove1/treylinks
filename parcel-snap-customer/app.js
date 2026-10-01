@@ -442,46 +442,34 @@ function hideInlineCustomer(){
   $("receiveNewCustomer").classList.add("hidden");
 }
 
-async function readPackagePhoto(dataUrl){
+async function readPackagePhoto(source){
   const processing=$("processingBox");
   $("processingText").textContent="Reading package…";
   $("processingDetail").textContent="";
   processing.classList.remove("hidden");
 
+  const token=++intakeReadToken;
   const started=performance.now();
-  const barcodePromise=detectBarcode(dataUrl);
-  let merged="",match=null;
+  const barcodePromise=detectBarcode(source);
 
-  // PASS 1: one high-resolution read. This is the normal warehouse path.
-  const firstText=await fastOcrRecognize(dataUrl);
-  merged=firstText||"";
-  match=bestCustomerFromText(merged);
+  // One blocking OCR pass only.
+  let merged=await fastOcrRecognize(source);
+  let match=bestCustomerFromText(merged);
 
   let tracking=await barcodePromise;
   if(!tracking)tracking=guessTracking(merged);
 
-  // PASS 2: only when the fast pass did not identify a known customer/business.
-  // No rotation loop. One enhanced recovery pass, then stop and ask the worker.
-  if(!match){
-    const enhanced=await enhanceForReading(dataUrl);
-    const recoveryText=await fastOcrRecognize(enhanced);
-    if(recoveryText)merged+="\n"+recoveryText;
-    match=bestCustomerFromText(merged);
-    if(!tracking)tracking=guessTracking(merged);
-  }
-
   intakeOcrText=merged;
 
   const knownResult=window.ParcelSnapKnownMatcher
-    ? window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
-    : null;
+    ?window.ParcelSnapKnownMatcher.matchDirectory(workspace?.customers||[],merged)
+    :null;
 
   const candidate=knownResult?.status==="MATCHED"
-    ? knownResult.customer?.name||""
-    : "";
+    ?knownResult.customer?.name||""
+    :"";
 
   intakeOcrName=match?.customer?.name||candidate||"";
-
   $("receiveTracking").value=tracking||"";
 
   const carrier=guessCarrier(merged);
@@ -494,16 +482,55 @@ async function readPackagePhoto(dataUrl){
     hideInlineCustomer();
     $("processingText").textContent=match.customer.name;
     $("processingDetail").textContent=tracking
-      ? "Customer matched · tracking captured · "+elapsed+"s"
-      : "Customer matched · "+elapsed+"s";
+      ?"Customer matched · tracking captured · "+elapsed+"s"
+      :"Customer matched · "+elapsed+"s";
   }else{
     $("receiveCustomer").value="";
     showInlineCustomer("");
     $("receiveNewCustomerName").value="";
     $("processingText").textContent="No known customer matched";
     $("processingDetail").textContent=tracking
-      ? "Enter customer name/email · tracking captured · "+elapsed+"s"
-      : "Enter customer name and email · "+elapsed+"s";
+      ?"Enter customer name/email · tracking captured · "+elapsed+"s"
+      :"Enter customer name and email · "+elapsed+"s";
+
+    // Recovery is non-blocking. The worker can already continue using the screen.
+    if((workspace?.customers||[]).length){
+      Promise.resolve()
+        .then(()=>enhanceForReading(source))
+        .then(enhanced=>fastOcrRecognize(enhanced))
+        .then(recoveryText=>{
+          if(token!==intakeReadToken||!recoveryText)return;
+
+          const combined=merged+"\n"+recoveryText;
+          const recovered=bestCustomerFromText(combined);
+          intakeOcrText=combined;
+
+          if(!recovered)return;
+          if($("receiveCustomer").value)return;
+          if($("receiveNewCustomerName").value.trim()||$("receiveNewCustomerEmail").value.trim())return;
+
+          match=recovered;
+          intakeOcrName=recovered.customer.name;
+          $("receiveCustomer").value=recovered.customer.id;
+          hideInlineCustomer();
+
+          if(!$("receiveTracking").value){
+            const recoveredTracking=guessTracking(combined);
+            if(recoveredTracking)$("receiveTracking").value=recoveredTracking;
+          }
+
+          if(!$("receiveCarrier").value){
+            const recoveredCarrier=guessCarrier(combined);
+            if(recoveredCarrier)$("receiveCarrier").value=recoveredCarrier;
+          }
+
+          $("processingText").textContent=recovered.customer.name;
+          $("processingDetail").textContent=$("receiveTracking").value
+            ?"Customer matched in background · tracking captured"
+            :"Customer matched in background";
+        })
+        .catch(err=>console.warn("Background OCR recovery failed",err));
+    }
   }
 
   return {
@@ -512,7 +539,8 @@ async function readPackagePhoto(dataUrl){
     candidate:intakeOcrName,
     carrier,
     address:guessRecipientAddress(merged),
-    elapsed_seconds:Number(elapsed)
+    elapsed_seconds:Number(elapsed),
+    recovery_pending:!match&&(workspace?.customers||[]).length>0
   };
 }
 
@@ -1335,6 +1363,12 @@ document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
   document.querySelectorAll(".panel").forEach(x=>x.classList.add("hidden"));
   $("tab-"+btn.dataset.tab).classList.remove("hidden");
 });
+
+if("requestIdleCallback" in window){
+  requestIdleCallback(warmParcelSnapOcr,{timeout:800});
+}else{
+  setTimeout(warmParcelSnapOcr,100);
+}
 
 sb.auth.onAuthStateChange((_event,session)=>{if(!session){$("authView").classList.remove("hidden");$("appView").classList.add("hidden")}});
 boot();
