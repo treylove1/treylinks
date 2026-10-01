@@ -92,6 +92,7 @@
 
         <nav class="tabs">
           <button class="tab active" data-tab="receive">Receive</button>
+          <button class="tab" data-tab="transfer">Arrival / Transfer</button>
           <button class="tab" data-tab="overview">Overview</button>
           <button class="tab" data-tab="packages">Packages</button>
           <button class="tab" data-tab="customers">Customers</button>
@@ -178,6 +179,40 @@
           </article>
         </section>
 
+        <section id="tab-transfer" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">PACKAGE MOVEMENT</span>
+            <h2>Record Arrival at Another Warehouse</h2>
+            <p>Photograph the package again. Parcel Snap will use tracking and the known-customer directory to find the existing package.</p>
+
+            <label>Arriving warehouse
+              <select id="transferFacility"></select>
+            </label>
+
+            <label class="cameraBox">
+              <span>📷 Take Arrival Photo</span>
+              <input id="transferPhoto" type="file" accept="image/*" capture="environment">
+            </label>
+            <div id="transferPhotoPreview" class="photoPreview"></div>
+
+            <div id="transferProcessing" class="processing hidden">
+              <strong id="transferProcessingText">Reading package…</strong>
+              <small id="transferProcessingDetail"></small>
+            </div>
+
+            <label>Package
+              <select id="transferPackage"></select>
+            </label>
+
+            <label>Note
+              <input id="transferNote" placeholder="Optional receiving note">
+            </label>
+
+            <button id="saveTransfer" class="primary wide">Save Arrival</button>
+            <div id="transferResult" class="message"></div>
+          </article>
+        </section>
+
         <section id="tab-overview" class="panel hidden">
           <article class="card">
             <span class="eyebrow">TODAY</span>
@@ -204,17 +239,29 @@
             <span class="eyebrow">CUSTOMER DIRECTORY</span>
             <h2>Add Customer</h2>
             <div class="formGrid">
-              <label>Name
-                <input id="newCustomerName" placeholder="Customer name">
+              <label>Customer type
+                <select id="newCustomerType">
+                  <option value="PERSON">Person</option>
+                  <option value="BUSINESS">Business</option>
+                </select>
+              </label>
+              <label>Name / business name
+                <input id="newCustomerName" placeholder="Customer or business name">
               </label>
               <label>Email
                 <input id="newCustomerEmail" type="email" placeholder="customer@example.com">
               </label>
-              <label>Phone
+              <label>Phone / WhatsApp
                 <input id="newCustomerPhone" placeholder="Optional">
               </label>
+              <label>Label alias <small>(optional)</small>
+                <input id="newCustomerAlias" placeholder="Name/code as it may appear on packages">
+              </label>
+              <label>Customer code <small>(optional)</small>
+                <input id="newCustomerCode" placeholder="Suite, mailbox, account code">
+              </label>
             </div>
-            <button id="addCustomerButton" class="primary wide">Add Customer</button>
+            <button id="addCustomerButton" class="primary wide">Add to Recognition Directory</button>
           </article>
           <article class="card">
             <h2>Customers</h2>
