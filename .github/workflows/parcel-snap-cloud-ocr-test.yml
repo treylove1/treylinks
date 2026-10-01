@@ -29,6 +29,12 @@ jobs:
       - name: Validate vision client JavaScript syntax
         run: node --check parcel-snap-customer/vision-client.js
 
+      - name: Validate known-customer matcher syntax
+        run: node --check parcel-snap-customer/known-customer-matcher.js
+
+      - name: Run known-customer matcher regression
+        run: node parcel-snap-customer/tests/known-customer-matcher-test.mjs
+
       - name: Run customer OCR parser regression
         run: node parcel-snap-customer/tests/ocr-parser-test.mjs
 
