@@ -1,7 +1,9 @@
 (() => {
   const VISION_API = SUPABASE_URL + "/functions/v1/parcel-snap-vision";
+  let visionUnavailableForSession=false;
 
   async function analyzePackageWithVision(imageDataUrl) {
+    if(visionUnavailableForSession) return null;
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return null;
 
@@ -16,7 +18,10 @@
     });
 
     const data = await response.json().catch(() => ({}));
-    if (response.status === 503 && data.error === "VISION_NOT_CONFIGURED") return null;
+    if (response.status === 503 && data.error === "VISION_NOT_CONFIGURED") {
+      visionUnavailableForSession=true;
+      return null;
+    }
     if (!response.ok) throw new Error(data.error || "Vision analysis failed");
     return data.result || null;
   }
@@ -76,6 +81,53 @@
   const input = $("packagePhoto");
   if (!input) return;
 
+  function visionDirectoryMatch(result){
+    if(!result?.recipient_name)return null;
+    return bestDirectoryMatch(result.recipient_name,Number(result.confidence||0));
+  }
+
+  function refineFromVision(result,local){
+    if(!result)return;
+
+    if(result.carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=result.carrier;
+    if(result.tracking_code&&!$("receiveTracking").value)$("receiveTracking").value=result.tracking_code;
+    if(result.recipient_address&&!intakeOcrAddress)intakeOcrAddress=result.recipient_address;
+
+    const vMatch=visionDirectoryMatch(result);
+
+    if(local?.match){
+      if(vMatch&&vMatch.id===local.match.customer.id&&!result.needs_review){
+        $("processingDetail").textContent=$("receiveTracking").value
+          ?"Customer matched · tracking captured · AI confirmed"
+          :"Customer matched · AI confirmed";
+      }else if(vMatch&&vMatch.id!==local.match.customer.id){
+        $("receiveCustomer").value="";
+        showInlineCustomer("");
+        $("processingText").textContent="Customer needs review";
+        $("processingDetail").textContent="OCR and vision disagree — choose customer";
+      }
+      return;
+    }
+
+    if(vMatch&&!result.needs_review&&Number(result.confidence||0)>=.78){
+      $("receiveCustomer").value=vMatch.id;
+      hideInlineCustomer();
+      intakeOcrName=vMatch.name;
+      $("processingText").textContent=vMatch.name;
+      $("processingDetail").textContent=result.tracking_code
+        ?"Vision matched customer · tracking captured"
+        :"Vision matched customer";
+      return;
+    }
+
+    if(!$("receiveCustomer").value){
+      const safe=Number(result.confidence||0)>=.65
+        ?String(result.recipient_name||"").trim()
+        :"";
+      if(safe&&!$("receiveNewCustomerName").value)$("receiveNewCustomerName").value=safe;
+    }
+  }
+
   input.onchange = async event => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -92,54 +144,31 @@
       $("processingText").textContent = "Reading package…";
       $("processingDetail").textContent = "";
 
-      const original = await readFileDataUrl(file);
-      const uploadImage = await resizeDataUrl(original, 1600, .82);
-      const visionImage = await resizeDataUrl(original, 1800, .90);
-      const ocrImage = await resizeDataUrl(original, 2800, .96);
+      const prepared=await preparePackageImages(file);
 
-      intakePhotoDataUrl = uploadImage;
-      $("packagePhotoPreview").innerHTML =
+      intakePhotoDataUrl=prepared.preview;
+      $("packagePhotoPreview").innerHTML=
         '<img src="' + intakePhotoDataUrl + '" alt="Package photo">';
 
-      let visionResult = null;
-      try {
-        visionResult = await analyzePackageWithVision(visionImage);
-      } catch (error) {
-        console.warn("Vision engine unavailable", error);
-      }
+      const visionPromise=analyzePackageWithVision(prepared.vision)
+        .catch(error=>{
+          console.warn("Vision engine unavailable",error);
+          return null;
+        });
 
-      if (visionResult) {
-        applyVision(visionResult);
+      // Do not wait for remote vision. Local OCR owns the fast path.
+      const local=await readPackagePhoto(prepared.ocr);
+      intakeOcrAddress=local.address||"";
 
-        const support = await readPackagePhoto(ocrImage);
+      visionPromise.then(result=>{
+        if(result) refineFromVision(result,local);
+      });
 
-        if (visionResult.carrier) $("receiveCarrier").value = visionResult.carrier;
-        if (visionResult.tracking_code) $("receiveTracking").value = visionResult.tracking_code;
-        if (visionResult.recipient_address) intakeOcrAddress = visionResult.recipient_address;
-
-        if (visionResult.needs_review || Number(visionResult.confidence || 0) < .78) {
-          $("receiveCustomer").value = "";
-          const safe = Number(visionResult.confidence || 0) >= .65
-            ? String(visionResult.recipient_name || "").trim()
-            : "";
-          showInlineCustomer(safe);
-          $("processingText").textContent = safe || "Name not clear";
-          $("processingDetail").textContent = $("receiveTracking").value
-            ? "Review customer · tracking captured"
-            : "Review customer before saving";
-        } else if (!support.match && !$("receiveCustomer").value) {
-          showInlineCustomer(intakeOcrName);
-        }
-      } else {
-        const support = await readPackagePhoto(ocrImage);
-        intakeOcrAddress = support.address || "";
-        if (!support.match && !support.candidate) {
-          $("processingText").textContent = "Name not clear";
-          $("processingDetail").textContent = $("receiveTracking").value
-            ? "Vision not connected · tracking captured"
-            : "Vision not connected · enter customer";
-          showInlineCustomer("");
-        }
+      if(prepared.label_crop_used){
+        const detail=$("processingDetail").textContent;
+        $("processingDetail").textContent=detail
+          ?detail+" · label crop"
+          :"Label crop used";
       }
     } catch (error) {
       console.error(error);
@@ -148,5 +177,6 @@
       $("processingDetail").textContent = "Enter customer name and email";
       showInlineCustomer("");
     }
+  };
   };
 })();
