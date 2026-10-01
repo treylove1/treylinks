@@ -35,10 +35,10 @@ const roadie=[
   "ROADIE",
   "Return Address",
   "BBY-1502",
-  "10760 NW 17th St",
+  "10000 NW 10th St",
   "Sweetwater FL 33172",
   "Your electronic needs/TrevonHu",
-  "16600 NW 54TH AVE UNIT 9",
+  "20000 NW 20TH AVE UNIT 1",
   "HIALEAH FL 33014-6110",
   "PACKAGE TRACKING CODE"
 ].join("\n");
@@ -46,10 +46,10 @@ const roadie=[
 let r=M.matchDirectory(customers,roadie);
 expect("partial known recipient",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
 
-r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10760 NW 17th St\nSweetwater FL 33172\nPACKAGE TRACKING CODE");
+r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10000 NW 10th St\nSweetwater FL 33172\nPACKAGE TRACKING CODE");
 expect("return address does not identify recipient",r.status!=="MATCHED",r);
 
-r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110");
+r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n20000 NW 20TH AVE UNIT 1\nHIALEAH FL 33014-6110");
 expect("business prefix alone does not become person",r.status!=="MATCHED",r);
 
 r=M.matchDirectory(customers,"ROADIE\nA Aaa Freded Was\nPACKAGE TRACKING CODE\n998877665544");
@@ -61,7 +61,7 @@ expect("business customer recognized",r.status==="MATCHED"&&r.customer?.id==="ab
 const realRoadieOcr=[
   "Sweetwater FL 33172",
   "Your electconic needs Trevor",
-  "16600 Ni S4TH AVE UNIT 9",
+  "20000 Ni 20TH AVE UNIT 1",
   "HIALEAH FL 33014-6110"
 ].join("\n");
 
