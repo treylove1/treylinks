@@ -283,7 +283,58 @@ document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{document.querySe
 document.getElementById("miamiPhotos").onchange=async e=>{stagedMiamiPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("miamiPreview"),stagedMiamiPhotos);if(stagedMiamiPhotos.length)await runLabelReader()};
 document.getElementById("nassauPhotos").onchange=async e=>{stagedNassauPhotos=await filesToData([...e.target.files]);previewPhotos(document.getElementById("nassauPreview"),stagedNassauPhotos)};
 
-document.getElementById("saveMiami").onclick=async()=>{if(!stagedMiamiPhotos.length){alert("Take at least one Miami package photo.");return}let customerId=document.getElementById("matchedCustomer").value,customer;if(!customerId){const name=document.getElementById("newCustomerName").value.trim(),email=document.getElementById("newCustomerEmail").value.trim();if(!name||!email){alert("Confirm the customer name and enter the email once.");return}customer=await addCustomer(name,email);customerId=customer.id}else customer=await get(STORE_CUSTOMERS,customerId);const pkg={id:uid("PS"),customerId:customer.id,customer:customer.name,customerEmail:customer.email,tracking:document.getElementById("trackingRef").value.trim(),carrier:document.getElementById("carrier").value.trim(),status:"MIAMI_RECEIVED",miami:{location:"Miami Receiving",photos:stagedMiamiPhotos,ocrText:ocrRawText,at:now()},nassau:null,warehouse:null,notifications:[],events:[{type:"MIAMI_RECEIVED",at:now(),note:"Package photographed and received in Miami"}],createdAt:now(),updatedAt:now()};const notice=await buildNotification(customer,pkg);pkg.notifications.push({...notice,status:"PREPARED",at:now()});await put(STORE_PACKAGES,pkg);await showPreparedEmail(customer,pkg);stagedMiamiPhotos=[];ocrRawText="";currentDetectedName="";document.getElementById("miamiPhotos").value="";document.getElementById("miamiPreview").innerHTML="";document.getElementById("processingPanel").classList.add("hidden");document.getElementById("matchPanel").classList.add("hidden");document.getElementById("trackingRef").value="";document.getElementById("carrier").value="";await renderAll()};
+document.getElementById("saveMiami").onclick=async()=>{
+  if(!stagedMiamiPhotos.length){alert("Take at least one package photo.");return}
+  const facility=getActiveOrigin();
+  const destination=getActiveDestination();
+  if(!facility){alert("Choose an active receiving warehouse first.");return}
+
+  let customerId=document.getElementById("matchedCustomer").value,customer;
+  if(!customerId){
+    const name=document.getElementById("newCustomerName").value.trim();
+    const email=document.getElementById("newCustomerEmail").value.trim();
+    if(!name||!email){alert("Confirm the customer name and enter the email once.");return}
+    customer=await addCustomer(name,email);
+    customerId=customer.id;
+  }else{
+    customer=await get(STORE_CUSTOMERS,customerId);
+  }
+
+  const pkg={
+    id:uid("PS"),
+    customerId:customer.id,
+    customer:customer.name,
+    customerEmail:customer.email,
+    tracking:document.getElementById("trackingRef").value.trim(),
+    carrier:document.getElementById("carrier").value.trim(),
+    status:"ORIGIN_RECEIVED",
+    arrivalFacility:facility,
+    destinationFacility:destination,
+    miami:{location:facility.name,address:facilityAddressText(facility),photos:stagedMiamiPhotos,ocrText:ocrRawText,at:now()},
+    nassau:null,
+    warehouse:null,
+    notifications:[],
+    events:[{type:"ORIGIN_RECEIVED",at:now(),note:"Package photographed and received at "+facility.name}],
+    createdAt:now(),
+    updatedAt:now()
+  };
+
+  const notice=await buildNotification(customer,pkg);
+  pkg.notifications.push({...notice,status:"PREPARED",at:now()});
+  await put(STORE_PACKAGES,pkg);
+  await showPreparedEmail(customer,pkg);
+
+  stagedMiamiPhotos=[];
+  ocrRawText="";
+  currentDetectedName="";
+  document.getElementById("miamiPhotos").value="";
+  document.getElementById("miamiPreview").innerHTML="";
+  document.getElementById("processingPanel").classList.add("hidden");
+  document.getElementById("matchPanel").classList.add("hidden");
+  document.getElementById("trackingRef").value="";
+  document.getElementById("carrier").value="";
+  await renderAll();
+};
 
 document.getElementById("saveNassau").onclick=async()=>{const id=document.getElementById("nassauPackage").value;if(!id){alert("Select a package.");return}if(!stagedNassauPhotos.length){alert("Take at least one Nassau arrival photo.");return}const pkg=await get(STORE_PACKAGES,id);pkg.nassau={location:document.getElementById("nassauLocation").value.trim(),note:document.getElementById("nassauNote").value.trim(),photos:stagedNassauPhotos,at:now()};pkg.status="NASSAU_RECEIVED";pkg.events.push({type:"NASSAU_RECEIVED",at:now(),note:pkg.nassau.note||"Package arrived in Nassau"});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);stagedNassauPhotos=[];document.getElementById("nassauPhotos").value="";document.getElementById("nassauPreview").innerHTML="";document.getElementById("nassauNote").value="";alert("Nassau arrival saved.");await renderAll()};
 document.getElementById("saveWarehouse").onclick=async()=>{const id=document.getElementById("warehousePackage").value;if(!id){alert("Select a package.");return}const pkg=await get(STORE_PACKAGES,id),status=document.getElementById("warehouseStatus").value;pkg.warehouse={shelf:document.getElementById("shelf").value.trim(),bin:document.getElementById("bin").value.trim(),area:document.getElementById("area").value.trim(),note:document.getElementById("warehouseNote").value.trim(),at:now()};pkg.status=status;pkg.events.push({type:status,at:now(),note:`Warehouse: ${pkg.warehouse.area||"-"} / Shelf ${pkg.warehouse.shelf||"-"} / Bin ${pkg.warehouse.bin||"-"}`});pkg.updatedAt=now();await put(STORE_PACKAGES,pkg);alert("Warehouse location/status saved.");await renderAll()};
