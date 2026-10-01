@@ -54,7 +54,7 @@ function uid(prefix){return prefix+"-"+Date.now()+"-"+Math.random().toString(36)
 function now(){return new Date().toISOString()}
 function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 function norm(s=""){return s.toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
-function statusLabel(s){return ({MIAMI_RECEIVED:"Miami received",NASSAU_RECEIVED:"Nassau received",WAREHOUSED:"Warehoused",READY_FOR_PICKUP:"Ready for pickup",OUT_FOR_DELIVERY:"Out for delivery",PICKED_UP:"Picked up",DELIVERED:"Delivered"})[s]||s}
+function statusLabel(s){return ({ORIGIN_RECEIVED:"Origin received",MIAMI_RECEIVED:"Origin received",DESTINATION_RECEIVED:"Destination received",NASSAU_RECEIVED:"Destination received",WAREHOUSED:"Warehoused",READY_FOR_PICKUP:"Ready for pickup",OUT_FOR_DELIVERY:"Out for delivery",PICKED_UP:"Picked up",DELIVERED:"Delivered"})[s]||s}
 function renderFacilitySelectors(){
   const facilities=getFacilities().filter(f=>f.active!==false);
   const origin=document.getElementById("activeOriginWarehouse");
@@ -261,7 +261,19 @@ function toggleNewCustomerFields(){document.getElementById("newCustomerFields").
 document.getElementById("matchedCustomer").onchange=toggleNewCustomerFields;
 document.getElementById("saveNewCustomer").onclick=async()=>{try{const c=await addCustomer(document.getElementById("newCustomerName").value,document.getElementById("newCustomerEmail").value);await populateCustomerMatch(c.id,c.name);await renderAll();alert("Customer saved. Parcel Snap can match this name next time.")}catch(e){alert(e.message)}};
 
-async function buildNotification(customer,pkg){return{to:customer.email,subject:"Parcel Snap: Your package arrived in Miami",body:`Hello ${customer.name},\n\nYour package has arrived at our Miami location and has been logged in Parcel Snap.\n\nReference: ${pkg.tracking||"No tracking number required"}\n\nWe will update the package record as it moves to Nassau.\n\nYour Electronic Needs / Alpha Omega Shipping`}}
+async function buildNotification(customer,pkg){
+  const facility=pkg.arrivalFacility||getActiveOrigin();
+  const destination=pkg.destinationFacility||getActiveDestination();
+  const place=facilityLabel(facility);
+  const address=facilityAddressText(facility);
+  const destinationLabel=destination?facilityLabel(destination):"the destination warehouse";
+  const addressLine=address?"\nWarehouse: "+address+"\n":"\n";
+  return {
+    to:customer.email,
+    subject:"Parcel Snap: Your package arrived in "+place,
+    body:"Hello "+customer.name+",\n\nYour package has arrived at our "+place+" warehouse and has been logged in Parcel Snap."+addressLine+"\nReference: "+(pkg.tracking||"No tracking number required")+"\n\nWe will update you again as the package moves to "+destinationLabel+".\n\nYour Electronic Needs / Alpha Omega Shipping"
+  };
+}
 async function showPreparedEmail(customer,pkg){const n=await buildNotification(customer,pkg),result=document.getElementById("emailResult");result.classList.remove("hidden");result.innerHTML=`<strong>Notification prepared for ${esc(n.to)}</strong><p>${esc(n.subject)}</p><p>Automatic server-side email is not connected in this static test build yet. Tap below to open the prepared message in your mail app.</p><a class="mailButton" href="mailto:${encodeURIComponent(n.to)}?subject=${encodeURIComponent(n.subject)}&body=${encodeURIComponent(n.body)}">Open prepared email</a>`;return n}
 
 document.getElementById("loginBtn").onclick=async()=>{const email=document.getElementById("loginEmail").value.trim().toLowerCase(),pin=document.getElementById("loginPin").value.trim();if(email!=="owner@yourelectronicneeds.org"||pin!=="2468"){alert("Use the owner test login shown on this page.");return}sessionStorage.setItem("parcelSnapOwnerLoggedIn","1");showApp()};
