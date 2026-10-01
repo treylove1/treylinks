@@ -264,6 +264,26 @@
             <button id="addCustomerButton" class="primary wide">Add to Recognition Directory</button>
           </article>
           <article class="card">
+            <h2>Add Recognition Alias</h2>
+            <div class="formGrid">
+              <label>Customer
+                <select id="aliasCustomer"></select>
+              </label>
+              <label>Alias type
+                <select id="aliasType">
+                  <option value="LABEL">Label name</option>
+                  <option value="PERSON_NAME">Person name</option>
+                  <option value="BUSINESS_NAME">Business name</option>
+                  <option value="CUSTOMER_CODE">Customer / mailbox code</option>
+                </select>
+              </label>
+              <label>Alias / code
+                <input id="aliasValue" placeholder="Text Parcel Snap should recognize">
+              </label>
+            </div>
+            <button id="addAliasButton" class="ghost wide">Add Recognition Alias</button>
+          </article>
+          <article class="card">
             <h2>Customers</h2>
             <div id="customerList"></div>
           </article>
