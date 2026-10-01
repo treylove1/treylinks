@@ -30,13 +30,16 @@ function setMode(mode){
   authMode=mode;
   $("signInMode").classList.toggle("active",mode==="signin");
   $("signUpMode").classList.toggle("active",mode==="signup");
+  $("joinStaffMode").classList.toggle("active",mode==="join");
   $("signupCompanyWrap").classList.toggle("hidden",mode!=="signup");
-  $("authButton").textContent=mode==="signin"?"Sign in":"Create account";
+  $("staffInviteWrap").classList.toggle("hidden",mode!=="join");
+  $("authButton").textContent=mode==="signin"?"Sign in":mode==="signup"?"Create company account":"Create staff account";
   $("password").autocomplete=mode==="signin"?"current-password":"new-password";
   $("authMessage").textContent="";
 }
 $("signInMode").onclick=()=>setMode("signin");
 $("signUpMode").onclick=()=>setMode("signup");
+$("joinStaffMode").onclick=()=>setMode("join");
 
 async function api(body){
   const {data:{session}}=await sb.auth.getSession();
@@ -63,7 +66,7 @@ $("authButton").onclick=async()=>{
     if(authMode==="signin"){
       const {error}=await sb.auth.signInWithPassword({email,password});
       if(error)throw error;
-    }else{
+    }else if(authMode==="signup"){
       const company_name=$("signupCompany").value.trim();
       if(!company_name)throw new Error("Enter your company name.");
       const {data,error}=await sb.auth.signUp({email,password});
@@ -73,6 +76,18 @@ $("authButton").onclick=async()=>{
         return;
       }
       await api({action:"onboard",company_name});
+    }else{
+      const inviteCode=$("staffInviteCode").value.trim().toUpperCase();
+      if(!inviteCode)throw new Error("Enter the staff invite code.");
+      localStorage.setItem("parcel-snap-pending-invite",inviteCode);
+      const {data,error}=await sb.auth.signUp({email,password});
+      if(error)throw error;
+      if(!data.session){
+        $("authMessage").textContent="Account created. Confirm your email, then sign in. Your staff code is saved on this device.";
+        return;
+      }
+      await api({action:"claim_staff_invite",code:inviteCode});
+      localStorage.removeItem("parcel-snap-pending-invite");
     }
     await boot();
   }catch(e){
@@ -91,6 +106,17 @@ async function boot(){
   }
   $("authView").classList.add("hidden");
   $("appView").classList.remove("hidden");
+
+  const pendingInvite=localStorage.getItem("parcel-snap-pending-invite");
+  if(pendingInvite){
+    try{
+      await api({action:"claim_staff_invite",code:pendingInvite});
+      localStorage.removeItem("parcel-snap-pending-invite");
+    }catch(e){
+      console.warn("Pending staff invite could not be claimed:",e);
+    }
+  }
+
   await loadWorkspace();
 }
 
@@ -153,6 +179,7 @@ function renderWorkspace(){
   renderCustomers();
   renderFacilities();
   renderReceiveControls();
+  renderStaffControls();
   $("subscriptionCard").innerHTML="<div class='billingBox'><strong>ParcelSnap Business Subscription</strong><span>"+esc(workspace.subscription.status)+"</span><small>"+(workspace.subscription.current_period_end?"Current period ends "+new Date(workspace.subscription.current_period_end).toLocaleDateString():"Active access")+"</small></div>";
 }
 
@@ -175,6 +202,46 @@ function renderCustomers(){
 function renderFacilities(){
   $("facilityList").innerHTML=workspace.facilities.length?workspace.facilities.map(f=>"<div class='item'><div class='itemTop'><div><strong>"+esc(f.name)+"</strong><br><small>"+esc([f.address_line1,f.city,f.region,f.country].filter(Boolean).join(", ")||"Address not set")+"</small></div><span class='status'>"+esc(f.facility_type)+"</span></div></div>").join(""):"<div class='empty'>No warehouse profiles yet.</div>";
 }
+
+function renderStaffControls(){
+  const role=workspace?.company?.role||"";
+  const canManageStaff=["OWNER","MANAGER"].includes(role);
+
+  $("staffTabButton").classList.toggle("hidden",!canManageStaff);
+  $("billingTabButton").classList.toggle("hidden",role!=="OWNER");
+
+  if(!canManageStaff)return;
+
+  $("staffFacilityChoices").innerHTML=(workspace.facilities||[]).map(f=>
+    '<label class="facilityChoice"><input type="checkbox" value="'+f.id+'"><span>'+esc(f.name)+'</span></label>'
+  ).join("")||"<div class='empty'>Add a warehouse before creating warehouse-worker access.</div>";
+
+  $("staffList").innerHTML=(workspace.staff||[]).length
+    ? workspace.staff.map(s=>"<div class='item'><div class='itemTop'><div><strong>"+esc(s.email||"Staff account")+"</strong><br><small>"+esc(s.role)+"</small></div><span class='status'>"+(s.active?"ACTIVE":"INACTIVE")+"</span></div></div>").join("")
+    : "<div class='empty'>No staff accounts yet.</div>";
+
+  $("pendingInviteList").innerHTML=(workspace.pending_invites||[]).length
+    ? workspace.pending_invites.map(i=>"<div class='item'><strong>"+esc(i.email||"Unassigned email")+"</strong><br><small>"+esc(i.role)+" · expires "+new Date(i.expires_at).toLocaleDateString()+"</small></div>").join("")
+    : "<div class='empty'>No pending invite codes.</div>";
+}
+
+$("createStaffInviteButton").onclick=async()=>{
+  const role=$("staffRole").value;
+  const facility_ids=[...$("staffFacilityChoices").querySelectorAll('input[type="checkbox"]:checked')].map(x=>x.value);
+  const email=$("staffEmail").value.trim();
+
+  $("staffInviteResult").classList.add("hidden");
+  try{
+    const r=await api({action:"create_staff_invite",email,role,facility_ids});
+    $("staffInviteResult").innerHTML="<strong>One-time staff code</strong><span class='inviteCode'>"+esc(r.invite.code)+"</span><small>"+esc(r.invite.role)+" · expires "+new Date(r.invite.expires_at).toLocaleString()+"</small>";
+    $("staffInviteResult").classList.remove("hidden");
+    $("staffEmail").value="";
+    await loadWorkspace();
+    document.querySelector('[data-tab="staff"]').click();
+  }catch(e){
+    alert(e.message||String(e));
+  }
+};
 
 function renderReceiveControls(){
   const customers=workspace?.customers||[],facilities=workspace?.facilities||[];
