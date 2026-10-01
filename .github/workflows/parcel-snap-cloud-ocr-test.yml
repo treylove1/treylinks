@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate browser JavaScript syntax
+        run: node --check parcel-snap-owner-preview/app.js
+
       - name: Install OCR tools
         run: |
           sudo apt-get update
