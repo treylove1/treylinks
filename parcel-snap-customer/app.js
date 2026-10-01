@@ -228,7 +228,7 @@ async function resizeDataUrl(original,maxDimension,quality){
   return canvas.toDataURL("image/jpeg",quality);
 }
 
-function drawImageRegion(img,rect,maxDimension,quality){
+function drawImageRegionCanvas(img,rect,maxDimension){
   const source=rect||{x:0,y:0,w:img.width,h:img.height};
   const scale=Math.min(1,maxDimension/Math.max(source.w,source.h));
   const canvas=document.createElement("canvas");
@@ -240,7 +240,11 @@ function drawImageRegion(img,rect,maxDimension,quality){
     source.x,source.y,source.w,source.h,
     0,0,canvas.width,canvas.height
   );
-  return canvas.toDataURL("image/jpeg",quality);
+  return canvas;
+}
+
+function drawImageRegion(img,rect,maxDimension,quality){
+  return drawImageRegionCanvas(img,rect,maxDimension).toDataURL("image/jpeg",quality);
 }
 
 function detectBrightLabelRegion(img){
@@ -254,21 +258,44 @@ function detectBrightLabelRegion(img){
   ctx.drawImage(img,0,0,w,h);
 
   const data=ctx.getImageData(0,0,w,h).data;
-  const mask=new Uint8Array(w*h);
-  let mean=0;
-  for(let i=0;i<data.length;i+=4){
-    mean+=(data[i]*.299+data[i+1]*.587+data[i+2]*.114);
-  }
-  mean/=Math.max(1,w*h);
-  const threshold=Math.max(165,Math.min(225,mean+32));
+  const lum=new Uint8Array(w*h);
+  const histogram=new Uint32Array(256);
+  let sum=0;
 
+  for(let p=0,i=0;i<data.length;i+=4,p++){
+    const value=Math.max(0,Math.min(255,Math.round(data[i]*.299+data[i+1]*.587+data[i+2]*.114)));
+    lum[p]=value;
+    histogram[value]++;
+    sum+=value;
+  }
+
+  const mean=sum/Math.max(1,w*h);
+  const target=Math.floor(w*h*.70);
+  let running=0,p70=0;
+  for(let value=0;value<256;value++){
+    running+=histogram[value];
+    if(running>=target){p70=value;break}
+  }
+
+  const threshold=Math.min(210,Math.max(mean+18,p70));
+  let mask=new Uint8Array(w*h);
+  for(let i=0;i<lum.length;i++)mask[i]=lum[i]>=threshold?1:0;
+
+  // Bridge dark text holes so the paper label remains one region.
+  const dilated=mask.slice();
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
-      const i=(y*w+x)*4;
-      const lum=data[i]*.299+data[i+1]*.587+data[i+2]*.114;
-      mask[y*w+x]=lum>=threshold?1:0;
+      const p=y*w+x;
+      if(!mask[p])continue;
+      for(let dy=-1;dy<=1;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          const nx=x+dx,ny=y+dy;
+          if(nx>=0&&nx<w&&ny>=0&&ny<h)dilated[ny*w+nx]=1;
+        }
+      }
     }
   }
+  mask=dilated;
 
   const seen=new Uint8Array(w*h);
   const stack=[];
@@ -308,22 +335,20 @@ function detectBrightLabelRegion(img){
       const aspect=bw/bh;
 
       if(
-        areaFraction>=.045&&areaFraction<=.82&&
-        aspect>=.45&&aspect<=2.6&&
-        fill>=.35
+        areaFraction>=.035&&areaFraction<=.88&&
+        aspect>=.35&&aspect<=3.2&&
+        fill>=.30
       ){
         const score=boxArea*fill;
-        if(!best||score>best.score){
-          best={minX,maxX,minY,maxY,score};
-        }
+        if(!best||score>best.score)best={minX,maxX,minY,maxY,score};
       }
     }
   }
 
   if(!best)return null;
 
-  const padX=Math.round((best.maxX-best.minX+1)*.08);
-  const padY=Math.round((best.maxY-best.minY+1)*.08);
+  const padX=Math.round((best.maxX-best.minX+1)*.06);
+  const padY=Math.round((best.maxY-best.minY+1)*.06);
   const x1=Math.max(0,best.minX-padX);
   const y1=Math.max(0,best.minY-padY);
   const x2=Math.min(w-1,best.maxX+padX);
@@ -342,12 +367,15 @@ async function preparePackageImages(file){
   const original=await readFileDataUrl(file);
   const img=await loadImage(original);
   const labelRect=detectBrightLabelRegion(img);
+  const ocrCanvas=drawImageRegionCanvas(img,labelRect,1350);
 
   return {
     preview:drawImageRegion(img,null,1600,.82),
-    ocr:drawImageRegion(img,labelRect,1500,.92),
+    ocrCanvas,
     vision:drawImageRegion(img,labelRect||null,1600,.90),
-    label_crop_used:Boolean(labelRect)
+    label_crop_used:Boolean(labelRect),
+    crop_width:ocrCanvas.width,
+    crop_height:ocrCanvas.height
   };
 }
 
@@ -375,30 +403,32 @@ async function rotateDataUrl(dataUrl,degrees){
   return canvas.toDataURL("image/jpeg",.94);
 }
 
-async function enhanceForReading(dataUrl){
-  const img=await loadImage(dataUrl);
-  const scale=Math.min(2,Math.max(1,2200/Math.max(img.width,img.height)));
+async function enhanceForReading(source){
+  const img=typeof source==="string" ? await loadImage(source) : source;
+  const width=img.width||img.videoWidth||img.naturalWidth;
+  const height=img.height||img.videoHeight||img.naturalHeight;
+  const scale=Math.min(1.65,Math.max(1,1800/Math.max(width,height)));
   const canvas=document.createElement("canvas");
-  canvas.width=Math.round(img.width*scale);
-  canvas.height=Math.round(img.height*scale);
+  canvas.width=Math.round(width*scale);
+  canvas.height=Math.round(height*scale);
   const ctx=canvas.getContext("2d",{willReadFrequently:true});
   ctx.drawImage(img,0,0,canvas.width,canvas.height);
   const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data;
   for(let i=0;i<d.length;i+=4){
     const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
-    const v=Math.max(0,Math.min(255,(g-128)*1.7+150));
+    const v=Math.max(0,Math.min(255,(g-128)*1.55+148));
     d[i]=d[i+1]=d[i+2]=v;
   }
   ctx.putImageData(im,0,0);
-  return canvas.toDataURL("image/jpeg",.95);
+  return canvas;
 }
 
-async function detectBarcode(dataUrl){
+async function detectBarcode(source){
   if(!("BarcodeDetector" in window))return "";
   try{
-    const img=await loadImage(dataUrl);
+    const target=typeof source==="string" ? await loadImage(source) : source;
     const detector=new BarcodeDetector({formats:["qr_code","code_128","code_39","ean_13","ean_8","upc_a","upc_e","itf","codabar"]});
-    const codes=await detector.detect(img);
+    const codes=await detector.detect(target);
     return (codes||[]).map(x=>String(x.rawValue||"").trim()).find(v=>v.length>=6&&v.length<=80)||"";
   }catch{return ""}
 }
