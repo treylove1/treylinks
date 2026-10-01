@@ -1,0 +1,507 @@
+PARCEL SNAP — OCR / KNOWN-CUSTOMER / VISION INDEPENDENT REVIEW BUNDLE
+Generated: 2026-10-01
+
+PURPOSE
+Parcel Snap is warehouse software. A worker photographs a package label. The software must:
+1. identify a known customer/person/business if possible,
+2. capture tracking/carrier/address,
+3. save the package/photo,
+4. notify the correct customer,
+5. NEVER invent a customer identity from OCR noise.
+
+CURRENT DESIGN
+A. KNOWN-CUSTOMER MATCHER (primary truth check)
+- The company's directory is the list of identities Parcel Snap is allowed to auto-match.
+- Each customer can be PERSON or BUSINESS.
+- Each customer can have aliases: PERSON_NAME, BUSINESS_NAME, LABEL, CUSTOMER_CODE.
+- OCR/vision output is searched for those known identities.
+- Exact, compact, partial, and fuzzy evidence are scored.
+- Return-address context is penalized.
+- Destination/business+person context is boosted.
+- Business alias alone is not enough to turn a PERSON account into a match.
+- Low confidence => REVIEW or NO_MATCH, not invented identity.
+
+B. VISION LAYER
+- Server-side multimodal endpoint is designed to inspect the whole image.
+- It must distinguish carrier, sender/return address, recipient, destination, tracking.
+- It must return structured JSON and needs_review.
+- It must not invent a full person name when text is incomplete.
+- Vision endpoint currently requires external model credentials before real inference can run.
+
+C. OCR FALLBACK
+- Browser Tesseract remains supporting evidence / fallback.
+- Real Roadie package OCR was poor:
+  "Your electconic needs Trevor"
+  "16600 Ni S4TH AVE UNIT 9"
+  "HIALEAH FL 33014-6110"
+- Directory-first matching still resolves that to known customer "Trevon Humes"
+  because the same line contains a strong fuzzy business anchor "Your Electronic Needs"
+  plus a fuzzy known first-name match "Trevor" ~= "Trevon".
+- This exact case is now a regression test.
+
+D. SAFETY / FAILURE RULE
+When no known identity is sufficiently supported:
+- do not auto-select a customer,
+- show manual Name + Email + Phone/WhatsApp fields,
+- worker confirms/creates the customer,
+- that customer becomes available for future matching.
+
+IMPORTANT QUESTIONS FOR INDEPENDENT REVIEW
+1. Can the matcher false-match two customers who share the same business prefix?
+2. Are the 0.90 auto-match / 0.72 review / 0.08 margin thresholds appropriate?
+3. Is business+known-first-name enough for automatic selection, or should it be REVIEW?
+4. How should suite/unit/customer codes be weighted versus names?
+5. Should destination-address evidence be used more strongly?
+6. How should labels with no human name but only business name be handled?
+7. How should multilingual names / accents / OCR confusions be normalized safely?
+8. Is browser-side Tesseract too slow for a 100-package warehouse line?
+9. Should the multimodal model be given the entire known-customer directory, or only likely candidates?
+10. What adversarial label cases could cause one customer's package to be assigned to another?
+
+================================================================================
+FILE: parcel-snap-customer/known-customer-matcher.js
+================================================================================
+(function(g){
+"use strict";
+const N=s=>String(s||"").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+const C=s=>N(s).replace(/ /g,"");
+function lev(a,b){a=String(a||"");b=String(b||"");const d=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));for(let i=0;i<=a.length;i++)d[i][0]=i;for(let j=0;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length];}
+function sim(a,b){a=C(a);b=C(b);return !a||!b?0:1-lev(a,b)/Math.max(a.length,b.length);}
+function prefixScore(alias,text,minCoverage=.58){alias=C(alias);text=C(text);let best=0;for(let i=0;i<text.length;i++){let k=0;while(k<alias.length&&i+k<text.length&&alias[k]===text[i+k])k++;best=Math.max(best,k);}if(best<7||best/alias.length<minCoverage)return 0;return Math.min(.96,.72+(best/alias.length)*.25);}
+function aliases(customer){const primaryType=(customer.customer_type||"PERSON")==="BUSINESS"?"BUSINESS_NAME":"PERSON_NAME";const out=[{alias:customer.name,alias_type:primaryType}];for(const x of (customer.aliases||[])){if(x?.alias&&!out.some(y=>N(y.alias)===N(x.alias)))out.push(x);}return out;}
+function typeWeight(customer,type){type=String(type||"LABEL");const ct=customer.customer_type||"PERSON";if(type==="CUSTOMER_CODE"||type==="LABEL")return 1.05;if(type==="PERSON_NAME")return ct==="PERSON"?1.03:.85;if(type==="BUSINESS_NAME")return ct==="BUSINESS"?1.03:.68;return 1;}
+function lineContext(lines,index){const senderStart=lines.findIndex(x=>/return\s+address/i.test(x));let senderEnd=-1;if(senderStart>=0){senderEnd=Math.min(lines.length-1,senderStart+4);for(let i=senderStart+1;i<Math.min(lines.length,senderStart+6);i++){if(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i.test(lines[i])){senderEnd=i;break;}}}if(senderStart>=0&&index>=senderStart&&index<=senderEnd)return .45;const line=lines[index]||"";if(/electr.*needs|\byen\b/i.test(line)&&/[\/|:-]/.test(line))return 1.08;const next=lines[index+1]||"";if(/^\d{3,6}\s+/.test(next)&&/\b(ave|avenue|st|street|rd|road|blvd|dr|lane|ln)\b/i.test(next))return 1.08;return 1;}
+function tokenSim(a,b){return sim(a,b);}
+function phraseCoverage(alias,line){const at=N(alias).split(" ").filter(Boolean),lt=N(line).split(" ").filter(Boolean);if(!at.length||!lt.length)return 0;let total=0;for(const a of at){let best=0;for(const t of lt)best=Math.max(best,tokenSim(a,t));total+=best;}return total/at.length;}
+function compoundPersonHit(customer,lines){if((customer.customer_type||"PERSON")!=="PERSON")return null;const nameTokens=N(customer.name).split(" ").filter(Boolean);if(!nameTokens.length)return null;const first=nameTokens[0],last=nameTokens[nameTokens.length-1];const business=(customer.aliases||[]).filter(x=>x.alias_type==="BUSINESS_NAME"&&x.alias);if(!business.length)return null;let best=null;for(let i=0;i<lines.length;i++){const line=lines[i]+" "+(lines[i+1]||"");for(const b of business){const bs=phraseCoverage(b.alias,line);if(bs<.82)continue;const lt=N(line).split(" ").filter(Boolean);let fs=0,ls=0;for(const t of lt){fs=Math.max(fs,tokenSim(first,t));ls=Math.max(ls,tokenSim(last,t));}if(fs<.80)continue;let score=.90+Math.min(.05,(fs-.80)*.25)+Math.min(.03,Math.max(0,ls-.72)*.12);score=Math.min(.98,score*lineContext(lines,i));const hit={score,evidence:line.trim(),reason:"business-plus-known-person",alias:b.alias+" + "+customer.name,alias_type:"COMPOUND"};if(!best||score>best.score)best=hit;}}return best;}
+function scoreAlias(customer,a,lines){const ac=C(a.alias);if(!ac)return null;let best={score:0,evidence:"",reason:""};for(let i=0;i<lines.length;i++){const windows=[lines[i],lines[i]+" "+(lines[i+1]||"")];for(const w of windows){const wc=C(w);let s=0,reason="";if(N(w)===N(a.alias)){s=1;reason="exact-line";}else if(N(w).includes(N(a.alias))){s=.995;reason="exact-phrase";}else if(wc.includes(ac)){s=.98;reason="compact-exact";}else{const type=String(a.alias_type||"LABEL");const ct=customer.customer_type||"PERSON";let minCoverage=1.1;if(type==="PERSON_NAME")minCoverage=.58;else if(type==="LABEL")minCoverage=.82;else if(type==="BUSINESS_NAME"&&ct==="BUSINESS")minCoverage=.75;s=minCoverage<=1?prefixScore(a.alias,w,minCoverage):0;reason=s?"known-target-partial":"";if(!s&&type==="PERSON_NAME"&&Math.abs(wc.length-ac.length)<=8){const f=sim(a.alias,w);if(f>=.82){s=Math.min(.94,f);reason="fuzzy-window";}}}if(!s)continue;s=Math.min(1,s*typeWeight(customer,a.alias_type)*lineContext(lines,i));if(s>best.score)best={score:s,evidence:w.trim(),reason};}}return best.score?{...best,alias:a.alias,alias_type:a.alias_type}:null;}
+function matchDirectory(customers,rawText){const lines=String(rawText||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);const ranked=[];for(const customer of (customers||[])){const hits=aliases(customer).map(a=>scoreAlias(customer,a,lines)).filter(Boolean);const compound=compoundPersonHit(customer,lines);if(compound)hits.push(compound);hits.sort((a,b)=>b.score-a.score);if(!hits.length)continue;const strong=hits.find(h=>h.alias_type!=="BUSINESS_NAME"||(customer.customer_type||"PERSON")==="BUSINESS");const score=strong?Math.max(hits[0].score,strong.score):Math.min(hits[0].score,.69);ranked.push({customer,score,evidence:hits[0],hits:hits.slice(0,4)});}ranked.sort((a,b)=>b.score-a.score);const best=ranked[0],second=ranked[1];if(!best)return {status:"NO_MATCH",customer:null,score:0,ranked:[]};const margin=best.score-(second?.score||0);let status="NO_MATCH";if(best.score>=.90&&margin>=.08)status="MATCHED";else if(best.score>=.72)status=margin<.08?"AMBIGUOUS":"REVIEW";return {status,customer:status==="MATCHED"?best.customer:null,candidate:best.customer,score:best.score,margin,evidence:best.evidence,ranked:ranked.slice(0,5)};}
+g.ParcelSnapKnownMatcher={matchDirectory,normalize:N,compact:C};
+})(typeof window!=="undefined"?window:globalThis);
+
+
+================================================================================
+FILE: parcel-snap-customer/tests/known-customer-matcher-test.mjs
+================================================================================
+await import("../known-customer-matcher.js");
+const M=globalThis.ParcelSnapKnownMatcher;
+if(!M)throw new Error("Matcher failed to load");
+
+const customers=[
+  {
+    id:"trevon",
+    name:"Trevon Humes",
+    customer_type:"PERSON",
+    aliases:[
+      {alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"},
+      {alias:"Your Electronic Needs / Trevon Humes",alias_type:"LABEL"}
+    ]
+  },
+  {
+    id:"jane",
+    name:"Jane Doe",
+    customer_type:"PERSON",
+    aliases:[]
+  },
+  {
+    id:"abc",
+    name:"ABC Hardware",
+    customer_type:"BUSINESS",
+    aliases:[{alias:"ABC Hardware Ltd",alias_type:"BUSINESS_NAME"}]
+  }
+];
+
+function expect(label,condition,detail){
+  if(!condition)throw new Error(label+" FAILED: "+JSON.stringify(detail));
+  console.log(label,"PASS",detail||"");
+}
+
+const roadie=[
+  "ROADIE",
+  "Return Address",
+  "BBY-1502",
+  "10760 NW 17th St",
+  "Sweetwater FL 33172",
+  "Your electronic needs/TrevonHu",
+  "16600 NW 54TH AVE UNIT 9",
+  "HIALEAH FL 33014-6110",
+  "PACKAGE TRACKING CODE"
+].join("\n");
+
+let r=M.matchDirectory(customers,roadie);
+expect("partial known recipient",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+
+r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10760 NW 17th St\nSweetwater FL 33172\nPACKAGE TRACKING CODE");
+expect("return address does not identify recipient",r.status!=="MATCHED",r);
+
+r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110");
+expect("business prefix alone does not become person",r.status!=="MATCHED",r);
+
+r=M.matchDirectory(customers,"ROADIE\nA Aaa Freded Was\nPACKAGE TRACKING CODE\n998877665544");
+expect("OCR garbage rejected",r.status==="NO_MATCH",r);
+
+r=M.matchDirectory(customers,"ABC Hardware Ltd\n55 MARKET STREET\nNASSAU BAHAMAS");
+expect("business customer recognized",r.status==="MATCHED"&&r.customer?.id==="abc",r);
+
+const realRoadieOcr=[
+  "Sweetwater FL 33172",
+  "Your electconic needs Trevor",
+  "16600 Ni S4TH AVE UNIT 9",
+  "HIALEAH FL 33014-6110"
+].join("\n");
+
+r=M.matchDirectory(customers,realRoadieOcr);
+expect("real Roadie image OCR",r.status==="MATCHED"&&r.customer?.id==="trevon",r);
+
+console.log("known customer matcher regression tests passed");
+
+
+================================================================================
+FILE: parcel-snap-customer/vision-client.js
+================================================================================
+(() => {
+  const VISION_API = SUPABASE_URL + "/functions/v1/parcel-snap-vision";
+
+  async function analyzePackageWithVision(imageDataUrl) {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return null;
+
+    const response = await fetch(VISION_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + session.access_token,
+        "apikey": SUPABASE_KEY
+      },
+      body: JSON.stringify({ image_data_url: imageDataUrl })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 503 && data.error === "VISION_NOT_CONFIGURED") return null;
+    if (!response.ok) throw new Error(data.error || "Vision analysis failed");
+    return data.result || null;
+  }
+
+  function bestDirectoryMatch(name, confidence) {
+    if (!name || !workspace?.customers?.length || Number(confidence || 0) < 0.65) return null;
+
+    const ranked = workspace.customers
+      .map(customer => ({
+        customer,
+        score: candidateScore(customer.name, name)
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const best = ranked[0];
+    const second = ranked[1];
+    if (!best) return null;
+
+    const threshold = confidence >= 0.85 ? 0.76 : 0.86;
+    return best.score >= threshold && (!second || best.score - second.score >= 0.07)
+      ? best.customer
+      : null;
+  }
+
+  function applyVision(result) {
+    if (!result) return false;
+
+    const confidence = Number(result.confidence || 0);
+    const match = bestDirectoryMatch(result.recipient_name, confidence);
+
+    if (result.carrier && !$("receiveCarrier").value) $("receiveCarrier").value = result.carrier;
+    if (result.tracking_code) $("receiveTracking").value = result.tracking_code;
+    if (result.recipient_address) intakeOcrAddress = result.recipient_address;
+
+    if (match && !result.needs_review) {
+      $("receiveCustomer").value = match.id;
+      hideInlineCustomer();
+      intakeOcrName = match.name;
+      $("processingText").textContent = match.name;
+      $("processingDetail").textContent = result.tracking_code
+        ? "Vision matched customer · tracking captured"
+        : "Vision matched customer";
+      return true;
+    }
+
+    $("receiveCustomer").value = "";
+    const safeName = confidence >= 0.65 ? String(result.recipient_name || "").trim() : "";
+    intakeOcrName = safeName;
+    showInlineCustomer(safeName);
+    $("processingText").textContent = safeName || "Name not clear";
+    $("processingDetail").textContent = result.tracking_code
+      ? "Review customer · tracking captured"
+      : "Review customer before saving";
+    return true;
+  }
+
+  const input = $("packagePhoto");
+  if (!input) return;
+
+  input.onchange = async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    $("receiveResult").textContent = "";
+    $("receiveNewCustomerEmail").value = "";
+    $("receiveNewCustomerPhone").value = "";
+    intakeOcrText = "";
+    intakeOcrName = "";
+    intakeOcrAddress = "";
+
+    try {
+      $("processingBox").classList.remove("hidden");
+      $("processingText").textContent = "Reading package…";
+      $("processingDetail").textContent = "";
+
+      const original = await readFileDataUrl(file);
+      const uploadImage = await resizeDataUrl(original, 1600, .82);
+      const visionImage = await resizeDataUrl(original, 1800, .90);
+      const ocrImage = await resizeDataUrl(original, 2800, .96);
+
+      intakePhotoDataUrl = uploadImage;
+      $("packagePhotoPreview").innerHTML =
+        '<img src="' + intakePhotoDataUrl + '" alt="Package photo">';
+
+      let visionResult = null;
+      try {
+        visionResult = await analyzePackageWithVision(visionImage);
+      } catch (error) {
+        console.warn("Vision engine unavailable", error);
+      }
+
+      if (visionResult) {
+        applyVision(visionResult);
+
+        const support = await readPackagePhoto(ocrImage);
+
+        if (visionResult.carrier) $("receiveCarrier").value = visionResult.carrier;
+        if (visionResult.tracking_code) $("receiveTracking").value = visionResult.tracking_code;
+        if (visionResult.recipient_address) intakeOcrAddress = visionResult.recipient_address;
+
+        if (visionResult.needs_review || Number(visionResult.confidence || 0) < .78) {
+          $("receiveCustomer").value = "";
+          const safe = Number(visionResult.confidence || 0) >= .65
+            ? String(visionResult.recipient_name || "").trim()
+            : "";
+          showInlineCustomer(safe);
+          $("processingText").textContent = safe || "Name not clear";
+          $("processingDetail").textContent = $("receiveTracking").value
+            ? "Review customer · tracking captured"
+            : "Review customer before saving";
+        } else if (!support.match && !$("receiveCustomer").value) {
+          showInlineCustomer(intakeOcrName);
+        }
+      } else {
+        const support = await readPackagePhoto(ocrImage);
+        intakeOcrAddress = support.address || "";
+        if (!support.match && !support.candidate) {
+          $("processingText").textContent = "Name not clear";
+          $("processingDetail").textContent = $("receiveTracking").value
+            ? "Vision not connected · tracking captured"
+            : "Vision not connected · enter customer";
+          showInlineCustomer("");
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      $("processingBox").classList.remove("hidden");
+      $("processingText").textContent = "Name not clear";
+      $("processingDetail").textContent = "Enter customer name and email";
+      showInlineCustomer("");
+    }
+  };
+})();
+
+================================================================================
+SERVER FUNCTION: parcel-snap-vision
+================================================================================
+import postgres from "npm:postgres@3.4.7";
+
+const DB_URL = Deno.env.get("SUPABASE_DB_URL")!;
+const sql = postgres(DB_URL, { prepare: false, max: 1 });
+
+const ALLOWED_ORIGINS = new Set([
+  "https://www.yourelectronicneeds.org",
+  "https://yourelectronicneeds.org",
+  "https://treylove1.github.io"
+]);
+
+function cors(req: Request) {
+  const origin=req.headers.get("origin")||"";
+  const allow=ALLOWED_ORIGINS.has(origin)?origin:"https://www.yourelectronicneeds.org";
+  return {
+    "Access-Control-Allow-Origin":allow,
+    "Access-Control-Allow-Headers":"authorization, apikey, content-type",
+    "Access-Control-Allow-Methods":"POST, OPTIONS",
+    "Vary":"Origin"
+  };
+}
+
+function json(req: Request, data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", ...cors(req) }
+  });
+}
+
+async function secret(name: string) {
+  const rows = await sql.unsafe(
+    "select secret_value from parcel_snap.integration_secrets where name=$1 limit 1",
+    [name]
+  );
+  return rows[0]?.secret_value ? String(rows[0].secret_value) : "";
+}
+
+function stripCodeFence(value: string) {
+  return value
+    .replace(/^\s*```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+}
+
+function normalizeResult(obj: any) {
+  const base = {
+    readable: Boolean(obj?.readable),
+    carrier: String(obj?.carrier || "").trim(),
+    return_address: String(obj?.return_address || "").trim(),
+    recipient_name: String(obj?.recipient_name || "").trim(),
+    recipient_business: String(obj?.recipient_business || "").trim(),
+    recipient_address: String(obj?.recipient_address || "").trim(),
+    tracking_code: String(obj?.tracking_code || "").trim(),
+    confidence: Number(obj?.confidence || 0),
+    needs_review: Boolean(obj?.needs_review),
+    evidence: {
+      carrier: String(obj?.evidence?.carrier || "").trim(),
+      recipient: String(obj?.evidence?.recipient || "").trim(),
+      destination: String(obj?.evidence?.destination || "").trim(),
+      tracking: String(obj?.evidence?.tracking || "").trim()
+    }
+  };
+
+  if (!Number.isFinite(base.confidence)) base.confidence = 0;
+  base.confidence = Math.max(0, Math.min(1, base.confidence));
+
+  if (base.confidence < 0.78) base.needs_review = true;
+  if (!base.recipient_name) base.needs_review = true;
+
+  return base;
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok",{headers:cors(req)});
+  if (req.method !== "POST") return json(req,{ error: "Method not allowed" }, 405);
+
+  try {
+    const auth = req.headers.get("authorization") || "";
+    if (!auth.startsWith("Bearer ")) return json(req,{ error: "Authentication required" }, 401);
+
+    const body = await req.json();
+    const image = String(body?.image_data_url || "");
+    if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(image)) {
+      return json(req,{ error: "A package image is required." }, 400);
+    }
+
+    const accountId = await secret("cloudflare_account_id");
+    const apiToken = await secret("cloudflare_api_token");
+
+    if (!accountId || !apiToken) {
+      return json(req,{
+        configured: false,
+        error: "VISION_NOT_CONFIGURED"
+      }, 503);
+    }
+
+    const prompt = `
+You are the visual intake engine for Parcel Snap, a warehouse package-processing system.
+
+Look at the ENTIRE shipping-label image as a human warehouse worker would. Do not treat OCR lines independently. Determine semantic roles from layout and labels.
+
+Rules:
+- Carrier/company branding such as ROADIE, UPS, FEDEX, USPS, AMAZON is NOT the recipient.
+- Anything explicitly under "Return Address" is sender/return information, NOT the recipient.
+- The delivery/destination address block is the block that identifies where the package is being delivered.
+- The recipient/account/customer name is normally immediately above or attached to that destination address block.
+- A pattern such as "Your Electronic Needs / Trevon..." means the text after the slash is likely the individual recipient/account name and "Your Electronic Needs" is a business/account marker.
+- Never invent a person's name. If the visible name is partial, return the visible partial text and set needs_review=true unless there is enough evidence to identify it confidently.
+- Do not infer a full surname from an incomplete image unless the visible text supports it.
+- Distinguish sender address from recipient address.
+- Read QR/barcode text only if visibly decoded from the image; otherwise leave tracking_code blank.
+- If the image is blurry, skewed, cropped, or ambiguous, say so through confidence and needs_review.
+- Return JSON only. No prose outside JSON.
+
+Required JSON:
+{
+  "readable": true,
+  "carrier": "",
+  "return_address": "",
+  "recipient_name": "",
+  "recipient_business": "",
+  "recipient_address": "",
+  "tracking_code": "",
+  "confidence": 0.0,
+  "needs_review": true,
+  "evidence": {
+    "carrier": "short visible evidence",
+    "recipient": "short visible evidence",
+    "destination": "short visible evidence",
+    "tracking": "short visible evidence"
+  }
+}
+`;
+
+    const cf = await fetch(
+      "https://api.cloudflare.com/client/v4/accounts/" +
+        encodeURIComponent(accountId) +
+        "/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + apiToken,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: "You analyze package labels and return strict structured JSON." },
+            { role: "user", content: prompt }
+          ],
+          image
+        })
+      }
+    );
+
+    const raw = await cf.json().catch(() => ({}));
+
+    if (!cf.ok || raw?.success === false) {
+      console.error("Cloudflare vision error", raw);
+      return json(req,{
+        configured: true,
+        error: "VISION_PROVIDER_ERROR"
+      }, 502);
+    }
+
+    const responseText =
+      raw?.result?.response ??
+      raw?.result?.text ??
+      raw?.response ??
+      raw?.result ??
+      "";
+
+    let parsed: any;
+    if (typeof responseText === "string") {
+      parsed = JSON.parse(stripCodeFence(responseText));
+    } else {
+      parsed = responseText;
+    }
+
+    return json(req,{
+      configured: true,
+      provider: "cloudflare-workers-ai",
+      model: "@cf/meta/llama-3.2-11b-vision-instruct",
+      result: normalizeResult(parsed)
+    });
+  } catch (err) {
+    console.error(err);
+    return json(req,{ error: "VISION_PROCESSING_FAILED" }, 500);
+  }
+});
+
