@@ -494,6 +494,101 @@ function hideInlineCustomer(){
   $("receiveNewCustomer").classList.add("hidden");
 }
 
+function rotateCanvas(source,degrees){
+  const rad=degrees*Math.PI/180;
+  const sin=Math.abs(Math.sin(rad)),cos=Math.abs(Math.cos(rad));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.ceil(source.width*cos+source.height*sin);
+  canvas.height=Math.ceil(source.width*sin+source.height*cos);
+  const ctx=canvas.getContext("2d");
+  ctx.translate(canvas.width/2,canvas.height/2);
+  ctx.rotate(rad);
+  ctx.drawImage(source,-source.width/2,-source.height/2);
+  return canvas;
+}
+
+function deepRecoveryCanvas(source){
+  const scale=Math.min(2.2,Math.max(1.35,2000/Math.max(source.width,source.height)));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(source.width*scale);
+  canvas.height=Math.round(source.height*scale);
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(source,0,0,canvas.width,canvas.height);
+
+  const im=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const d=im.data;
+  for(let i=0;i<d.length;i+=4){
+    const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+    const v=Math.max(0,Math.min(255,(g-128)*1.65+145));
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(im,0,0);
+  return canvas;
+}
+
+function canBackgroundReplaceCustomer(){
+  return !$("receiveCustomer").value
+    && !$("receiveNewCustomerName").value.trim()
+    && !$("receiveNewCustomerEmail").value.trim();
+}
+
+function applyRecoveredCustomer(recovered,combined){
+  if(!recovered||!canBackgroundReplaceCustomer())return false;
+
+  intakeOcrText=combined;
+  intakeOcrName=recovered.customer.name;
+  $("receiveCustomer").value=recovered.customer.id;
+  hideInlineCustomer();
+
+  if(!$("receiveTracking").value){
+    const recoveredTracking=guessTracking(combined);
+    if(recoveredTracking)$("receiveTracking").value=recoveredTracking;
+  }
+  if(!$("receiveCarrier").value){
+    const recoveredCarrier=guessCarrier(combined);
+    if(recoveredCarrier)$("receiveCarrier").value=recoveredCarrier;
+  }
+
+  $("processingText").textContent=recovered.customer.name;
+  $("processingDetail").textContent=$("receiveTracking").value
+    ?"Customer matched in background · tracking captured"
+    :"Customer matched in background";
+  return true;
+}
+
+async function runDeepRecovery(source,token,initialText){
+  let combined=initialText||"";
+  const enhanced=deepRecoveryCanvas(source);
+  const passes=[
+    enhanced,
+    rotateCanvas(enhanced,-6),
+    rotateCanvas(enhanced,6),
+    rotateCanvas(enhanced,-10),
+    rotateCanvas(enhanced,10),
+    source
+  ];
+
+  for(let i=0;i<passes.length;i++){
+    if(token!==intakeReadToken||!canBackgroundReplaceCustomer())return null;
+
+    // Yield between attempts so the warehouse UI remains responsive.
+    await new Promise(resolve=>setTimeout(resolve,0));
+
+    const text=await fastOcrRecognize(passes[i]);
+    if(token!==intakeReadToken)return null;
+    if(text)combined+="\n"+text;
+
+    const recovered=bestCustomerFromText(combined);
+    if(recovered){
+      applyRecoveredCustomer(recovered,combined);
+      return recovered;
+    }
+  }
+
+  intakeOcrText=combined;
+  return null;
+}
+
 async function readPackagePhoto(source){
   const processing=$("processingBox");
   $("processingText").textContent="Reading package…";
@@ -545,42 +640,10 @@ async function readPackagePhoto(source){
       ?"Enter customer name/email · tracking captured · "+elapsed+"s"
       :"Enter customer name and email · "+elapsed+"s";
 
-    // Recovery is non-blocking. The worker can already continue using the screen.
+    // Old robust OCR behavior restored as a NON-BLOCKING recovery path.
+    // The employee already has control of the screen while this runs.
     if((workspace?.customers||[]).length){
-      Promise.resolve()
-        .then(()=>enhanceForReading(source))
-        .then(enhanced=>fastOcrRecognize(enhanced))
-        .then(recoveryText=>{
-          if(token!==intakeReadToken||!recoveryText)return;
-
-          const combined=merged+"\n"+recoveryText;
-          const recovered=bestCustomerFromText(combined);
-          intakeOcrText=combined;
-
-          if(!recovered)return;
-          if($("receiveCustomer").value)return;
-          if($("receiveNewCustomerName").value.trim()||$("receiveNewCustomerEmail").value.trim())return;
-
-          match=recovered;
-          intakeOcrName=recovered.customer.name;
-          $("receiveCustomer").value=recovered.customer.id;
-          hideInlineCustomer();
-
-          if(!$("receiveTracking").value){
-            const recoveredTracking=guessTracking(combined);
-            if(recoveredTracking)$("receiveTracking").value=recoveredTracking;
-          }
-
-          if(!$("receiveCarrier").value){
-            const recoveredCarrier=guessCarrier(combined);
-            if(recoveredCarrier)$("receiveCarrier").value=recoveredCarrier;
-          }
-
-          $("processingText").textContent=recovered.customer.name;
-          $("processingDetail").textContent=$("receiveTracking").value
-            ?"Customer matched in background · tracking captured"
-            :"Customer matched in background";
-        })
+      runDeepRecovery(source,token,merged)
         .catch(err=>console.warn("Background OCR recovery failed",err));
     }
   }
