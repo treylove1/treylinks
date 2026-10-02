@@ -1,6 +1,7 @@
 (() => {
   const VISION_API = SUPABASE_URL + "/functions/v1/parcel-snap-vision";
   let visionUnavailableForSession=false;
+  let packageSelectionGeneration=0;
 
   async function analyzePackageWithVision(imageDataUrl) {
     if(visionUnavailableForSession) return null;
@@ -146,6 +147,9 @@
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const selectionGeneration=++packageSelectionGeneration;
+    stopRecoveryOcr();
+
     $("receiveResult").textContent = "";
     $("receiveNewCustomerEmail").value = "";
     $("receiveNewCustomerPhone").value = "";
@@ -165,8 +169,10 @@
 
       // Yield one frame so the employee sees the photo immediately.
       await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+      if(selectionGeneration!==packageSelectionGeneration){URL.revokeObjectURL(instantUrl);return;}
 
       const prepared=await preparePackageImages(file);
+      if(selectionGeneration!==packageSelectionGeneration){URL.revokeObjectURL(instantUrl);return;}
       intakePhotoDataUrl=prepared.preview;
 
       const visionPromise=analyzePackageWithVision(prepared.vision)
@@ -177,11 +183,12 @@
 
       // Do not wait for remote vision. Local OCR owns the fast path.
       const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas});
-      intakeOcrAddress=local.address||"";
       URL.revokeObjectURL(instantUrl);
+      if(selectionGeneration!==packageSelectionGeneration||local?.superseded)return;
+      intakeOcrAddress=local.address||"";
 
       visionPromise.then(result=>{
-        if(result&&!local?.superseded&&local?.read_token===intakeReadToken){
+        if(result&&selectionGeneration===packageSelectionGeneration&&!local?.superseded&&local?.read_token===intakeReadToken){
           refineFromVision(result,local);
         }
       });
