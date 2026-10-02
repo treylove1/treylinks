@@ -13,34 +13,78 @@ let transferPhotoDataUrl=null;
 let businessSetupStep=1;
 let businessSetupLocations=[];
 let businessSetupPreviewMode=false;
-let parcelSnapOcrWorkerPromise=null;
+let intakeReadToken=0;
 
-async function getParcelSnapOcrWorker(){
-  if(!parcelSnapOcrWorkerPromise){
-    parcelSnapOcrWorkerPromise=(async()=>{
-      const worker=await Tesseract.createWorker("eng");
+const PARCEL_SNAP_OCR_LANG="eng";
+const PARCEL_SNAP_OCR_OEM=1;
+const PARCEL_SNAP_FAST_PSM="6";
+
+const parcelSnapOcrSlots={
+  fast:{promise:null,busy:false,psm:null,gen:0},
+  recovery:{promise:null,busy:false,psm:null,gen:0}
+};
+
+function getSlotWorker(slot){
+  if(!slot.promise){
+    const gen=++slot.gen;
+    slot.psm=null;
+    slot.promise=(async()=>{
+      const worker=await Tesseract.createWorker(PARCEL_SNAP_OCR_LANG,PARCEL_SNAP_OCR_OEM);
       await worker.setParameters({
-        tessedit_pageseg_mode:"3",
-        preserve_interword_spaces:"1"
+        tessedit_pageseg_mode:PARCEL_SNAP_FAST_PSM,
+        preserve_interword_spaces:"1",
+        user_defined_dpi:"300"
       });
+      if(slot.gen===gen)slot.psm=PARCEL_SNAP_FAST_PSM;
       return worker;
     })().catch(err=>{
-      parcelSnapOcrWorkerPromise=null;
+      if(slot.gen===gen)slot.promise=null;
       throw err;
     });
   }
-  return await parcelSnapOcrWorkerPromise;
+  return slot.promise;
+}
+
+async function ocrWithSlot(slot,image,psm=PARCEL_SNAP_FAST_PSM){
+  const workerPromise=getSlotWorker(slot);
+  const gen=slot.gen;
+  slot.busy=true;
+  try{
+    const worker=await workerPromise;
+    if(slot.gen!==gen)throw new Error("OCR worker was stopped");
+    if(slot.psm!==psm){
+      await worker.setParameters({tessedit_pageseg_mode:psm});
+      slot.psm=psm;
+    }
+    const result=await worker.recognize(image);
+    return result?.data?.text||"";
+  }finally{
+    if(slot.gen===gen)slot.busy=false;
+  }
+}
+
+function stopRecoveryOcr(){
+  const slot=parcelSnapOcrSlots.recovery;
+  if(!slot.promise||!slot.busy)return;
+  const old=slot.promise;
+  slot.promise=null;
+  slot.busy=false;
+  slot.psm=null;
+  slot.gen++;
+  old.then(w=>w.terminate()).catch(()=>{});
+}
+
+async function getParcelSnapOcrWorker(){
+  return await getSlotWorker(parcelSnapOcrSlots.fast);
 }
 
 function warmParcelSnapOcr(){
   if(typeof Tesseract==="undefined")return;
-  getParcelSnapOcrWorker().catch(err=>console.warn("OCR warmup failed",err));
+  getSlotWorker(parcelSnapOcrSlots.fast).catch(err=>console.warn("OCR warmup failed",err));
 }
 
 async function fastOcrRecognize(image){
-  const worker=await getParcelSnapOcrWorker();
-  const result=await worker.recognize(image);
-  return result?.data?.text||"";
+  return await ocrWithSlot(parcelSnapOcrSlots.fast,image,PARCEL_SNAP_FAST_PSM);
 }
 
 const $=id=>document.getElementById(id);
