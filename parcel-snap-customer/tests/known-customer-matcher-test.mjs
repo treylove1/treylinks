@@ -189,3 +189,22 @@ expect(
   r.status==="MATCHED"&&r.customer?.id==="yen-business",
   r
 );
+
+
+r=M.matchDirectory(customers,
+  "ROADIE\nNour electoonic needs\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110"
+);
+expect(
+  "OCR-damaged business name matches generically",
+  r.status==="MATCHED"&&r.customer?.id==="yen-business",
+  r
+);
+
+r=M.matchDirectory(customers,
+  "SHIP FROM\nYour Electronic Needs\n10760 NW 17TH ST\nSWEETWATER FL 33172\nUNKNOWN RECIPIENT\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014"
+);
+expect(
+  "sender business is not mistaken for recipient",
+  !(r.status==="MATCHED"&&r.customer?.id==="yen-business"),
+  r
+);
