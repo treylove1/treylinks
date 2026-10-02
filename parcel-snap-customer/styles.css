@@ -61,3 +61,5 @@ textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #304d72;bac
 
 .headerActions{display:flex;gap:8px;align-items:center}
 @media(max-width:760px){.headerActions{flex-direction:column;align-items:stretch}}
+
+#processingBox.bg-matched{outline:3px solid #f5a623;outline-offset:2px}
