@@ -25,7 +25,7 @@ expect("recovery worker can be stopped",app.includes("stopRecoveryOcr"));
 expect("fast first-pass OCR preprocessing exists",app.includes("prepareFastOcrCanvas"));
 expect("browser OCR upgraded to Tesseract v6",html.includes("tesseract.js@6"));
 expect("instant package preview exists",vision.includes("URL.createObjectURL(file)"));
-expect("local OCR uses cropped canvas",vision.includes("readPackagePhoto(prepared.ocrCanvas)"));
+expect("local OCR uses cropped canvas",vision.includes("readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas})"));
 expect("vision is started before local OCR completes",vision.indexOf("visionPromise=analyzePackageWithVision") < vision.indexOf("const local=await readPackagePhoto"));
 expect("remote vision is not awaited before local OCR",!vision.includes("await analyzePackageWithVision(prepared.vision)"));
 
