@@ -229,3 +229,41 @@ expect(
   r.status==="MATCHED"&&r.customer?.id==="trevon-alias-map",
   r
 );
+
+
+const noisyAliasCustomer=[{
+  id:"trevon-noisy-alias",
+  name:"Trevon Humes",
+  customer_type:"PERSON",
+  aliases:[
+    {alias:"Trevon Humes",alias_type:"PERSON_NAME"},
+    {alias:"Your Electronic Needs",alias_type:"LABEL"}
+  ]
+}];
+
+r=M.matchDirectory(noisyAliasCustomer,
+  "ROADIE\nY0ur electr0nic\nneed5\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014"
+);
+expect(
+  "broken-space label alias matches known customer",
+  r.status==="MATCHED"&&r.customer?.id==="trevon-noisy-alias",
+  r
+);
+
+r=M.matchDirectory(noisyAliasCustomer,
+  "ROADIE\nYour electonic neads\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014"
+);
+expect(
+  "misspelled label alias matches known customer",
+  r.status==="MATCHED"&&r.customer?.id==="trevon-noisy-alias",
+  r
+);
+
+r=M.matchDirectory(noisyAliasCustomer,
+  "ROADIE\nCompletely Different Company\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014"
+);
+expect(
+  "unrelated company does not fuzzy-match label alias",
+  r.status!=="MATCHED",
+  r
+);
