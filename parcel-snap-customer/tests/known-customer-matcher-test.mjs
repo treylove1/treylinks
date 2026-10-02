@@ -18,6 +18,15 @@ const customers=[
   {id:"brenda-forbes",name:"Brenda Forbes",customer_type:"PERSON",aliases:[]},
   {id:"brenda-ford",name:"Brenda Ford",customer_type:"PERSON",aliases:[]},
   {
+    id:"yen-business",
+    name:"Your Electronic Needs",
+    customer_type:"BUSINESS",
+    aliases:[
+      {alias:"Your Electronic Needs",alias_type:"BUSINESS_NAME"},
+      {alias:"YEN",alias_type:"CUSTOMER_CODE"}
+    ]
+  },
+  {
     id:"abc",
     name:"ABC Hardware",
     customer_type:"BUSINESS",
@@ -152,3 +161,31 @@ r=M.matchDirectory(scaleCustomers,"Unknown Walk-In Customer\n404 TEST STREET\nMI
 expect("250-customer unknown stays unmatched",r.status!=="MATCHED",r);
 
 console.log("250-customer directory regression tests passed");
+
+
+r=M.matchDirectory(customers,
+  "ROADIE\nReturn Address\nBBY-1502\n10760 NW 17th St\nSweetwater FL 33172\nYour Electronic Needs\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110\nPACKAGE TRACKING CODE"
+);
+expect(
+  "business fallback when person unreadable",
+  r.status==="MATCHED"&&r.customer?.id==="yen-business",
+  r
+);
+
+r=M.matchDirectory(customers,
+  "ROADIE\nYour Electronic Needs/TrevonHu\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110"
+);
+expect(
+  "business plus known partial person prefers person",
+  r.status==="MATCHED"&&r.customer?.id==="trevon",
+  r
+);
+
+r=M.matchDirectory(customers,
+  "ROADIE\nYour Electronic Needs / A Aaa Freded Was\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014-6110"
+);
+expect(
+  "clear business survives garbage person text",
+  r.status==="MATCHED"&&r.customer?.id==="yen-business",
+  r
+);
