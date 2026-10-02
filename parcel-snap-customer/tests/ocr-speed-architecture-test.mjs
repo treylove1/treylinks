@@ -9,14 +9,19 @@ function expect(label,condition){
   console.log(label,"PASS");
 }
 
-expect("persistent OCR worker exists",app.includes("getParcelSnapOcrWorker"));
+expect("two-slot OCR engine exists",app.includes("parcelSnapOcrSlots"));
 expect("worker recognize is reused",app.includes("worker.recognize(image)"));
-expect("Tesseract worker uses automatic page segmentation for shipping labels",app.includes('tessedit_pageseg_mode:"3"'));
+expect("fast OCR uses PSM 6",app.includes('PARCEL_SNAP_FAST_PSM="6"'));
 expect("no direct Tesseract.recognize in live app",!app.includes("Tesseract.recognize("));
 expect("old package rotation OCR loop removed",!app.includes("for(const angle of [-5,5,-9,9])"));
 expect("old transfer three-pass OCR array removed",!app.includes("passes=[enhanced,await rotateDataUrl(enhanced,-5),await rotateDataUrl(enhanced,5)]"));
 expect("label region detector exists",app.includes("detectBrightLabelRegion"));
 expect("OCR uses canvas-native crop",app.includes("ocrCanvas"));
+expect("vision passes true raw crop to OCR recovery",vision.includes("raw:prepared.rawOcrCanvas"));
+expect("matcher decision is authoritative",app.includes("function decideCustomer"));
+expect("adaptive binarization exists",app.includes("adaptiveBinarizeCanvas"));
+expect("deskew estimator exists",app.includes("estimateSkewDegrees"));
+expect("recovery worker can be stopped",app.includes("stopRecoveryOcr"));
 expect("fast first-pass OCR preprocessing exists",app.includes("prepareFastOcrCanvas"));
 expect("browser OCR upgraded to Tesseract v6",html.includes("tesseract.js@6"));
 expect("instant package preview exists",vision.includes("URL.createObjectURL(file)"));
