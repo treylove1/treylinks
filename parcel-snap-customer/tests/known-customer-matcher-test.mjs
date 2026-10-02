@@ -208,3 +208,24 @@ expect(
   !(r.status==="MATCHED"&&r.customer?.id==="yen-business"),
   r
 );
+
+
+const aliasMappedPerson=[{
+  id:"trevon-alias-map",
+  name:"Trevon Humes",
+  customer_type:"PERSON",
+  email:"humestrevon@gmail.com",
+  aliases:[
+    {alias:"Trevon Humes",alias_type:"PERSON_NAME"},
+    {alias:"Your Electronic Needs",alias_type:"LABEL"}
+  ]
+}];
+
+r=M.matchDirectory(aliasMappedPerson,
+  "ROADIE\nYour Electronic Needs\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014"
+);
+expect(
+  "business label alias routes to person customer",
+  r.status==="MATCHED"&&r.customer?.id==="trevon-alias-map",
+  r
+);
