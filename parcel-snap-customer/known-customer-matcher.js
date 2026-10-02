@@ -66,6 +66,9 @@ function compoundPersonHit(customer,lines){if((customer.customer_type||"PERSON")
 function scoreAlias(customer,a,lines){const ac=C(a.alias);if(!ac)return null;let best={score:0,evidence:"",reason:""};for(let i=0;i<lines.length;i++){const windows=[lines[i],lines[i]+" "+(lines[i+1]||"")];for(const w of windows){const wc=C(w),wn=N(w),an=N(a.alias);const type=String(a.alias_type||"LABEL"),ct=customer.customer_type||"PERSON";const phrase=(" "+wn+" ").includes(" "+an+" ");let s=0,reason="";if(wn===an){s=1;reason="exact-line";}else if(phrase){s=.985;reason="word-boundary-phrase";}else if(type!=="PERSON_NAME"&&wc.includes(ac)){s=.97;reason="compact-exact";}else{let minCoverage=1.1;if(type==="PERSON_NAME")minCoverage=.58;else if(type==="LABEL")minCoverage=.82;else if(type==="BUSINESS_NAME"&&ct==="BUSINESS")minCoverage=.75;s=minCoverage<=1?prefixScore(a.alias,w,minCoverage):0;reason=s?"known-target-partial":"";if(!s&&type==="PERSON_NAME"&&Math.abs(wc.length-ac.length)<=8){const f=sim(a.alias,w);if(f>=.82){s=Math.min(.88,f);reason="fuzzy-window";}}if(!s&&type==="BUSINESS_NAME"&&ct==="BUSINESS"){const coverage=phraseCoverage(a.alias,w);if(coverage>=.88){s=Math.min(.92,.84+(coverage-.88)*.65);reason="fuzzy-business";}}}if(!s)continue;s=s*typeWeight(customer,a.alias_type)*lineContext(lines,i);if(reason==="known-target-partial")s=Math.min(.89,s);else if(reason==="fuzzy-window")s=Math.min(.88,s);else if(reason==="word-boundary-phrase")s=Math.min(.90,s);else if(reason==="compact-exact")s=Math.min(.92,s);else if(reason==="fuzzy-business")s=Math.min(.92,s);else s=Math.min(1,s);if(s>best.score)best={score:s,evidence:w.trim(),reason};}}return best.score?{...best,alias:a.alias,alias_type:a.alias_type}:null;}
 function matchDirectory(customers,rawText){
   const lines=String(rawText||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const recipientSearchText=lines
+    .filter((line,index)=>lineContext(lines,index)>=.9)
+    .join("\n");
   const ranked=[];
 
   for(const customer of (customers||[])){
@@ -73,7 +76,7 @@ function matchDirectory(customers,rawText){
     const hits=identityAliases.map(a=>scoreAlias(customer,a,lines)).filter(Boolean);
 
     for(const a of identityAliases){
-      const global=globalAliasHit(customer,a,rawText);
+      const global=globalAliasHit(customer,a,recipientSearchText);
       if(global)hits.push(global);
     }
 
