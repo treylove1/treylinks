@@ -82,7 +82,21 @@
   if (!input) return;
 
   function visionDirectoryMatch(result){
-    if(!result?.recipient_name)return null;
+    if(!result||!workspace?.customers?.length)return null;
+
+    const evidence=[
+      result.recipient_business,
+      result.recipient_name,
+      result.recipient_address
+    ].filter(Boolean).join("\n");
+
+    if(window.ParcelSnapKnownMatcher&&evidence){
+      const matched=window.ParcelSnapKnownMatcher.matchDirectory(workspace.customers,evidence);
+      if(matched.status==="MATCHED"&&matched.customer)return matched.customer;
+      return null;
+    }
+
+    if(!result.recipient_name)return null;
     return bestDirectoryMatch(result.recipient_name,Number(result.confidence||0));
   }
 
@@ -162,12 +176,14 @@
         });
 
       // Do not wait for remote vision. Local OCR owns the fast path.
-      const local=await readPackagePhoto(prepared.ocrCanvas);
+      const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas});
       intakeOcrAddress=local.address||"";
       URL.revokeObjectURL(instantUrl);
 
       visionPromise.then(result=>{
-        if(result) refineFromVision(result,local);
+        if(result&&!local?.superseded&&local?.read_token===intakeReadToken){
+          refineFromVision(result,local);
+        }
       });
 
       if(prepared.label_crop_used){
