@@ -105,9 +105,15 @@ function matchDirectory(customers,rawText){
     second?.customer?.customer_type==="BUSINESS"&&
     best.score>=.94&&margin>=.04
   );
+  const exactOverFuzzy=Boolean(
+    best.score>=.97&&
+    ["exact-line","compact-exact"].includes(best.evidence?.reason)&&
+    margin>=.04&&
+    (!second||["global-fuzzy-alias","fuzzy-business","known-target-partial","fuzzy-window"].includes(second.evidence?.reason))
+  );
 
   let status="NO_MATCH";
-  if((best.score>=.90&&margin>=.08)||personOverBusiness)status="MATCHED";
+  if((best.score>=.90&&margin>=.08)||personOverBusiness||exactOverFuzzy)status="MATCHED";
   else if(best.score>=.84&&margin>=.10&&best.evidence?.reason==="global-fuzzy-alias")status="MATCHED";
   else if(best.score>=.72)status=margin<.08?"AMBIGUOUS":"REVIEW";
 
