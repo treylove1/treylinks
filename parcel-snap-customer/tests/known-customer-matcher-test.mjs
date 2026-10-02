@@ -66,7 +66,7 @@ r=M.matchDirectory(customers,"ROADIE\nReturn Address\nTrevon Humes\n10000 NW 10t
 expect("return address does not identify recipient",r.status!=="MATCHED",r);
 
 r=M.matchDirectory(customers,"ROADIE\nYour Electronic Needs\n20000 NW 20TH AVE UNIT 1\nHIALEAH FL 33014-6110");
-expect("business prefix alone does not become person",r.status!=="MATCHED",r);
+expect("business prefix alone becomes business account",r.status==="MATCHED"&&r.customer?.id==="yen-business",r);
 
 r=M.matchDirectory(customers,"ROADIE\nA Aaa Freded Was\nPACKAGE TRACKING CODE\n998877665544");
 expect("OCR garbage rejected",r.status==="NO_MATCH",r);
