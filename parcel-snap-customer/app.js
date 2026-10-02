@@ -407,61 +407,177 @@ function detectBrightLabelRegion(img){
   return {x:rx,y:ry,w:rw,h:rh};
 }
 
-function prepareFastOcrCanvas(source){
+async function toCanvas(source){
+  if(source&&typeof source.getContext==="function")return source;
+  const img=typeof source==="string"?await loadImage(source):source;
+  const w=img.naturalWidth||img.videoWidth||img.width;
+  const h=img.naturalHeight||img.videoHeight||img.height;
+  const canvas=document.createElement("canvas");
+  canvas.width=w;canvas.height=h;
+  canvas.getContext("2d").drawImage(img,0,0,w,h);
+  return canvas;
+}
+
+function scaleCanvas(source,factor){
+  if(factor===1)return source;
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(source.width*factor));
+  canvas.height=Math.max(1,Math.round(source.height*factor));
+  const ctx=canvas.getContext("2d");
+  ctx.imageSmoothingQuality="high";
+  ctx.drawImage(source,0,0,canvas.width,canvas.height);
+  return canvas;
+}
+
+function fitForOcr(source,minLong=1100,maxLong=1500){
+  const long=Math.max(source.width,source.height);
+  let factor=1;
+  if(minLong>0&&long<minLong)factor=minLong/long;
+  else if(maxLong>0&&long>maxLong)factor=maxLong/long;
+  return factor===1?source:scaleCanvas(source,factor);
+}
+
+function canvasGray(source){
   const w=source.width,h=source.height;
-  const srcCtx=source.getContext("2d",{willReadFrequently:true});
-  const im=srcCtx.getImageData(0,0,w,h);
-  const d=im.data;
+  const ctx=source.getContext("2d",{willReadFrequently:true});
+  const d=ctx.getImageData(0,0,w,h).data;
   const gray=new Uint8ClampedArray(w*h);
-
-  let sum=0;
   for(let p=0,i=0;i<d.length;i+=4,p++){
-    const g=Math.max(0,Math.min(255,Math.round(d[i]*.299+d[i+1]*.587+d[i+2]*.114)));
-    gray[p]=g;
-    sum+=g;
+    gray[p]=d[i+3]<128?255:Math.round(d[i]*.299+d[i+1]*.587+d[i+2]*.114);
   }
+  return {w,h,gray};
+}
 
-  const mean=sum/Math.max(1,gray.length);
-  const contrast=new Uint8ClampedArray(gray.length);
-  for(let i=0;i<gray.length;i++){
-    contrast[i]=Math.max(0,Math.min(255,Math.round(mean+2*(gray[i]-mean))));
-  }
-
-  const outCanvas=document.createElement("canvas");
-  outCanvas.width=w; outCanvas.height=h;
-  const outCtx=outCanvas.getContext("2d");
-  const out=outCtx.createImageData(w,h);
+function grayToCanvas(w,h,gray){
+  const canvas=document.createElement("canvas");
+  canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext("2d");
+  const out=ctx.createImageData(w,h);
   const od=out.data;
+  for(let p=0,i=0;p<gray.length;p++,i+=4){
+    od[i]=od[i+1]=od[i+2]=gray[p];
+    od[i+3]=255;
+  }
+  ctx.putImageData(out,0,0);
+  return canvas;
+}
 
-  for(let y=0;y<h;y++){
-    for(let x=0;x<w;x++){
-      const p=y*w+x;
-      let v=contrast[p];
+function prepareFastOcrCanvas(source){
+  const {w,h,gray}=canvasGray(source);
+  const hist=new Uint32Array(256);
+  for(let i=0;i<gray.length;i++)hist[gray[i]]++;
 
-      if(x>0&&x<w-1&&y>0&&y<h-1){
-        const smooth=(
-          contrast[p-w-1]+contrast[p-w]+contrast[p-w+1]+
-          contrast[p-1]+5*contrast[p]+contrast[p+1]+
-          contrast[p+w-1]+contrast[p+w]+contrast[p+w+1]
-        )/13;
-        v=Math.max(0,Math.min(255,Math.round(2*contrast[p]-smooth)));
-      }
+  const percentile=f=>{
+    const target=Math.floor(gray.length*f);
+    let run=0;
+    for(let v=0;v<256;v++){run+=hist[v];if(run>=target)return v}
+    return 255;
+  };
 
-      const i=p*4;
-      od[i]=od[i+1]=od[i+2]=v;
-      od[i+3]=255;
+  const lo=percentile(.01);
+  const hi=percentile(.92);
+  if(hi-lo<40)return grayToCanvas(w,h,gray);
+
+  const range=hi-lo;
+  const out=new Uint8ClampedArray(gray.length);
+  for(let i=0;i<gray.length;i++){
+    out[i]=Math.max(0,Math.min(255,Math.round((gray[i]-lo)*255/range)));
+  }
+  return grayToCanvas(w,h,out);
+}
+
+function adaptiveBinarizeCanvas(source,t=.15){
+  const {w,h,gray}=canvasGray(source);
+  const W=w+1;
+  const integral=new Float64Array(W*(h+1));
+  for(let y=1;y<=h;y++){
+    let row=0;
+    for(let x=1;x<=w;x++){
+      row+=gray[(y-1)*w+x-1];
+      integral[y*W+x]=integral[(y-1)*W+x]+row;
     }
   }
 
-  outCtx.putImageData(out,0,0);
-  return outCanvas;
+  const half=Math.max(8,Math.round(Math.max(w,h)/28));
+  const out=new Uint8ClampedArray(w*h);
+
+  for(let y=0;y<h;y++){
+    const y1=Math.max(0,y-half),y2=Math.min(h-1,y+half);
+    for(let x=0;x<w;x++){
+      const x1=Math.max(0,x-half),x2=Math.min(w-1,x+half);
+      const count=(x2-x1+1)*(y2-y1+1);
+      const sum=integral[(y2+1)*W+x2+1]-integral[y1*W+x2+1]
+               -integral[(y2+1)*W+x1]+integral[y1*W+x1];
+      out[y*w+x]=gray[y*w+x]*count<=sum*(1-t)?0:255;
+    }
+  }
+  return grayToCanvas(w,h,out);
+}
+
+function estimateSkewDegrees(source,maxAngle=12){
+  const maxSide=480;
+  const scale=Math.min(1,maxSide/Math.max(source.width,source.height));
+  const w=Math.max(1,Math.round(source.width*scale));
+  const h=Math.max(1,Math.round(source.height*scale));
+  const small=scaleCanvas(source,scale);
+  const {gray}=canvasGray(small);
+
+  let sum=0;
+  for(let i=0;i<gray.length;i++)sum+=gray[i];
+  const threshold=Math.min(150,(sum/gray.length)*.72);
+
+  const xs=[],ys=[];
+  const cx=w/2,cy=h/2;
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      if(gray[y*w+x]<threshold){xs.push(x-cx);ys.push(y-cy)}
+    }
+  }
+
+  const n=xs.length;
+  if(n<150||n>w*h*.5)return 0;
+
+  const step=Math.max(1,Math.floor(n/12000));
+  const diag=Math.ceil(Math.hypot(w,h)/2)+2;
+  const bins=new Int32Array(diag*2+1);
+
+  const scoreAt=deg=>{
+    const r=deg*Math.PI/180,s=Math.sin(r),co=Math.cos(r);
+    bins.fill(0);
+    for(let i=0;i<n;i+=step){
+      bins[Math.round(-xs[i]*s+ys[i]*co)+diag]++;
+    }
+    let score=0;
+    for(let i=0;i<bins.length;i++)score+=bins[i]*bins[i];
+    return score;
+  };
+
+  const base=scoreAt(0);
+  let best=0,bestScore=base;
+  for(let a=-maxAngle;a<=maxAngle;a+=1){
+    const s=scoreAt(a);
+    if(s>bestScore){bestScore=s;best=a}
+  }
+  const coarse=best;
+  for(let a=coarse-.75;a<=coarse+.75;a+=.25){
+    const s=scoreAt(a);
+    if(s>bestScore){bestScore=s;best=a}
+  }
+
+  if(bestScore<base*1.03)return 0;
+  return Math.round(best*4)/4;
+}
+
+function deskewCanvas(source,skewDegrees){
+  if(!skewDegrees||Math.abs(skewDegrees)<1.5)return source;
+  return rotateCanvas(source,-skewDegrees);
 }
 
 async function preparePackageImages(file){
   const original=await readFileDataUrl(file);
   const img=await loadImage(original);
   const labelRect=detectBrightLabelRegion(img);
-  const rawOcrCanvas=drawImageRegionCanvas(img,labelRect,1350);
+  const rawOcrCanvas=fitForOcr(drawImageRegionCanvas(img,labelRect,2400),1100,1500);
   const ocrCanvas=prepareFastOcrCanvas(rawOcrCanvas);
 
   return {
