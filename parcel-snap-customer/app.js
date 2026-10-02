@@ -1406,10 +1406,25 @@ async function createReceiveCustomer(){
   const name=$("receiveNewCustomerName").value.trim();
   const email=$("receiveNewCustomerEmail").value.trim();
   const phone=$("receiveNewCustomerPhone").value.trim();
+  const labelAlias=$("receiveNewCustomerAlias")?.value.trim()||"";
+
   if(!name)throw new Error("Enter the customer name.");
   if(!email)throw new Error("Enter the customer email so Parcel Snap can send the arrival notice.");
 
-  const result=await api({action:"create_customer",name,email,phone});
+  const aliases=[];
+  if(labelAlias&&normText(labelAlias)!==normText(name)){
+    aliases.push({alias:labelAlias,alias_type:"LABEL"});
+  }
+
+  const result=await api({
+    action:"create_customer",
+    name,
+    email,
+    phone,
+    customer_type:"PERSON",
+    aliases
+  });
+
   const customer=result.customer;
   workspace.customers=workspace.customers||[];
   workspace.customers.push(customer);
@@ -1424,7 +1439,9 @@ $("saveReceiveCustomer").onclick=async()=>{
     const customerId=await createReceiveCustomer();
     $("receiveCustomer").value=customerId;
     $("processingText").textContent=$("receiveNewCustomerName").value.trim()||"Customer saved";
-    $("processingDetail").textContent="Email saved for future package notices";
+    $("processingDetail").textContent=$("receiveNewCustomerAlias")?.value.trim()
+      ?"Customer + label name saved for future automatic matching"
+      :"Email saved for future package notices";
   }catch(e){
     alert(e.message||String(e));
   }
