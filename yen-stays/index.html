@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>YEN Stays | Bahamas Vacation Rentals & Host Test Run</title>
+<meta name="description" content="YEN Stays is a Bahamas-focused vacation rental marketplace. Property owners can try our host tools with a 30-day test run."/>
+<style>
+:root{--ink:#12313b;--muted:#61777d;--sea:#0d8f9b;--sea2:#076d78;--sand:#fff8ea;--coral:#ec745f;--card:#fff;--line:#dce7e8;--bg:#f7fbfb;--ok:#17785b;--warn:#b56a12;--bad:#a43e3e;--shadow:0 16px 45px rgba(18,49,59,.12)}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}a{color:inherit}.wrap{max-width:1120px;margin:auto;padding:0 18px}.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}.nav{height:72px;display:flex;align-items:center;gap:14px}.brand{font-size:22px;font-weight:900;letter-spacing:-.03em;margin-right:auto}.brand span{color:var(--sea)}.nav a,.nav button{border:0;background:none;font:inherit;font-weight:700;cursor:pointer;text-decoration:none}.nav .pill,.btn{border-radius:999px;padding:11px 17px;border:0;cursor:pointer;font-weight:800}.btn{background:var(--sea);color:#fff}.btn:hover{background:var(--sea2)}.btn.alt{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn.coral{background:var(--coral)}.btn.small{padding:8px 12px;font-size:13px}.btn:disabled{opacity:.5;cursor:not-allowed}.hero{background:linear-gradient(110deg,rgba(6,72,83,.92),rgba(13,143,155,.72)),url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80') center/cover;min-height:500px;color:#fff;display:flex;align-items:center}.hero h1{font-size:clamp(42px,8vw,78px);line-height:.95;max-width:760px;margin:0 0 20px;letter-spacing:-.055em}.hero p{font-size:19px;line-height:1.6;max-width:650px}.heroBtns{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}.hero .btn.alt{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.12);color:#fff}.section{padding:70px 0}.section h2{font-size:clamp(30px,5vw,48px);letter-spacing:-.04em;margin:0 0 12px}.lead{color:var(--muted);font-size:18px;max-width:760px;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:28px}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 8px 24px rgba(18,49,59,.06)}.card .pad{padding:20px}.card img{width:100%;height:210px;object-fit:cover;display:block}.card h3{margin:0 0 8px;font-size:20px}.card p{color:var(--muted);line-height:1.5}.trial{background:var(--sand)}.offer{background:#fff;border:1px solid #f1ddbb;border-radius:28px;padding:32px;box-shadow:var(--shadow);display:grid;grid-template-columns:1.3fr .7fr;gap:24px;align-items:center}.big30{font-size:82px;font-weight:950;color:var(--coral);line-height:.8;text-align:center}.big30 small{display:block;font-size:15px;color:var(--ink);letter-spacing:.15em;margin-top:12px}.hidden{display:none!important}.panel{background:#fff;border:1px solid var(--line);border-radius:24px;padding:26px;box-shadow:var(--shadow)}.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{margin:0 0 15px}.field label{display:block;font-size:13px;font-weight:800;margin-bottom:7px}.field input,.field select,.field textarea{width:100%;padding:12px 13px;border:1px solid #cfdcde;border-radius:12px;font:inherit;background:#fff}.field textarea{min-height:96px;resize:vertical}.tabs{display:flex;gap:8px;margin-bottom:18px}.tab{padding:10px 14px;border:1px solid var(--line);border-radius:999px;background:#fff;font-weight:800;cursor:pointer}.tab.on{background:var(--ink);color:#fff}.note{padding:13px 15px;border-radius:14px;background:#eef8f8;color:#2f5c63;font-size:14px;line-height:1.5}.status{display:inline-flex;padding:5px 9px;border-radius:999px;font-size:12px;font-weight:900;text-transform:capitalize;background:#edf4f5}.status.approved{background:#e7f7ef;color:var(--ok)}.status.changes_requested{background:#fff0df;color:var(--warn)}.status.rejected{background:#fbe9e9;color:var(--bad)}.listing{border:1px solid var(--line);border-radius:16px;padding:15px;margin-top:12px}.listingTop{display:flex;gap:10px;justify-content:space-between;align-items:flex-start}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.dashboardHead{display:flex;gap:18px;justify-content:space-between;align-items:center;flex-wrap:wrap}.countdown{background:var(--sand);border:1px solid #f0ddba;border-radius:16px;padding:16px}.countdown strong{font-size:26px;color:var(--coral)}.admin{border:2px solid #cfe2e4}.footer{background:#102f38;color:#d9e8ea;padding:38px 0;margin-top:30px}.footer a{color:#fff}.msg{margin:10px 0;padding:12px;border-radius:12px;background:#eef8f8}.msg.err{background:#fdecec;color:#8b3636}.imgstrip{display:flex;gap:8px;overflow:auto}.imgstrip img{width:100px;height:75px;object-fit:cover;border-radius:10px}.kicker{font-size:13px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:var(--sea)}.muted{color:var(--muted)}.hostBenefits{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.benefit{padding:20px;border:1px solid var(--line);border-radius:18px;background:#fff}.benefit b{display:block;margin-bottom:8px}.approvedWrap{margin-top:22px}
+@media(max-width:850px){.nav a{display:none}.grid,.hostBenefits{grid-template-columns:1fr 1fr}.offer{grid-template-columns:1fr}.row{grid-template-columns:1fr}.hero{min-height:560px}}
+@media(max-width:560px){.grid,.hostBenefits{grid-template-columns:1fr}.section{padding:52px 0}.panel{padding:18px}.nav{height:64px}.brand{font-size:19px}.nav .pill{padding:9px 12px;font-size:13px}.hero h1{font-size:48px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap nav">
+  <div class="brand">YEN <span>Stays</span></div>
+  <a href="#browse">Find a Stay</a>
+  <a href="#host-offer">30-Day Test Run</a>
+  <button onclick="showHostArea('signup')">List Your Property</button>
+  <button class="pill" style="background:#12313b;color:#fff" onclick="showHostArea('login')">Host Login</button>
+</div></header>
+
+<section class="hero"><div class="wrap">
+  <div class="kicker" style="color:#bfeff2">Bahamas-focused vacation rentals</div>
+  <h1>More ways for guests to find your island stay.</h1>
+  <p>YEN Stays helps Bahamas property owners showcase their vacation rentals, manage their listing information, and try a simple host portal before committing to a paid plan.</p>
+  <div class="heroBtns">
+    <button class="btn coral" onclick="showHostArea('signup')">Start 30-Day Test Run</button>
+    <a class="btn alt" href="#browse">Browse Stays</a>
+  </div>
+</div></section>
+
+<section class="section" id="host-offer"><div class="wrap">
+  <div class="offer">
+    <div>
+      <div class="kicker">For Airbnb & vacation-rental owners</div>
+      <h2>Try YEN Stays for 30 days.</h2>
+      <p class="lead">List your property and try the host tools for the first month. If you like the service, continue with a paid plan after the test run. Paid hosts can also request additional features tailored to their property or business.</p>
+      <button class="btn" onclick="showHostArea('signup')">List Your Property</button>
+    </div>
+    <div class="big30">30<small>DAY TEST RUN</small></div>
+  </div>
+</div></section>
+
+<section class="section"><div class="wrap">
+  <div class="kicker">Why owners can use it</div>
+  <h2>Built around Bahamas hosts.</h2>
+  <div class="hostBenefits">
+    <div class="benefit"><b>Bahamas-focused exposure</b><span class="muted">Present your stay in a marketplace designed around island travel.</span></div>
+    <div class="benefit"><b>Simple listing management</b><span class="muted">Update your property details, pricing, availability notes and photos.</span></div>
+    <div class="benefit"><b>You control your information</b><span class="muted">Your submitted listing stays under your host account.</span></div>
+    <div class="benefit"><b>Request custom features</b><span class="muted">After the test run, paid hosts can request tools that better fit their business.</span></div>
+  </div>
+</div></section>
+
+<section class="section hidden" id="hostArea"><div class="wrap">
+  <div class="panel" id="authPanel">
+    <div class="tabs"><button id="signupTab" class="tab on" onclick="authTab('signup')">Create Host Account</button><button id="loginTab" class="tab" onclick="authTab('login')">Host Login</button></div>
+    <div id="authMessage"></div>
+    <form id="signupForm">
+      <div class="row"><div class="field"><label>Contact name</label><input id="suName" required></div><div class="field"><label>Company or property name</label><input id="suCompany" required></div></div>
+      <div class="row"><div class="field"><label>Phone / WhatsApp</label><input id="suPhone" required></div><div class="field"><label>Email</label><input id="suEmail" type="email" required></div></div>
+      <div class="field"><label>Password (at least 6 characters)</label><input id="suPassword" type="password" minlength="6" required></div>
+      <div class="note">YEN Stays never asks for your Airbnb password. You can optionally provide your public Airbnb/VRBO listing link later as a reference.</div>
+      <br><button class="btn" type="submit">Create Host Account & Start Test Run</button>
+    </form>
+    <form id="loginForm" class="hidden">
+      <div class="field"><label>Email</label><input id="liEmail" type="email" required></div>
+      <div class="field"><label>Password</label><input id="liPassword" type="password" required></div>
+      <button class="btn" type="submit">Log In</button>
+    </form>
+  </div>
+
+  <div class="panel hidden" id="dashboard">
+    <div class="dashboardHead">
+      <div><div class="kicker">Host Portal</div><h2 style="font-size:34px;margin:6px 0" id="hostWelcome">Your YEN Stays dashboard</h2><div class="muted" id="hostEmail"></div></div>
+      <div class="actions"><button class="btn alt" onclick="openListingForm()">+ Add Property</button><button class="btn alt" onclick="logout()">Log Out</button></div>
+    </div>
+    <div class="countdown" style="margin-top:20px"><div class="muted">30-Day Test Run</div><strong id="daysRemaining">—</strong><span id="daysLabel"> days remaining</span><div class="muted" id="trialEnds"></div><button id="continueBtn" class="btn coral small hidden" style="margin-top:10px" onclick="requestContinuation()">Continue After Test Run</button><div id="continuationMsg"></div></div>
+
+    <div style="margin-top:26px"><div class="listingTop"><h3 style="margin:0">Your Properties</h3><button class="btn small" onclick="openListingForm()">List Another Property</button></div><div id="hostListings"></div></div>
+
+    <div id="listingFormWrap" class="hidden" style="margin-top:30px;border-top:1px solid var(--line);padding-top:24px">
+      <h3 id="listingFormTitle">List Your Property</h3>
+      <form id="listingForm">
+        <input type="hidden" id="editingId">
+        <div class="row"><div class="field"><label>Property name</label><input id="pName" required></div><div class="field"><label>Bahamas island / location</label><input id="pLocation" placeholder="e.g. Cable Beach, Nassau" required></div></div>
+        <div class="row"><div class="field"><label>Property type</label><select id="pType"><option>Villa</option><option>Apartment</option><option>Condo</option><option>House</option><option>Cottage</option><option>Guest suite</option><option>Other</option></select></div><div class="field"><label>Nightly price (BSD/USD)</label><input id="pPrice" type="number" min="0" step="0.01" required></div></div>
+        <div class="row"><div class="field"><label>Bedrooms</label><input id="pBeds" type="number" min="0" value="1" required></div><div class="field"><label>Bathrooms</label><input id="pBaths" type="number" min="0" step=".5" value="1" required></div></div>
+        <div class="row"><div class="field"><label>Guest capacity</label><input id="pGuests" type="number" min="1" value="2" required></div><div class="field"><label>Existing Airbnb / VRBO / public listing link (optional)</label><input id="pExisting" type="url" placeholder="https://..."></div></div>
+        <div class="field"><label>Description</label><textarea id="pDescription" required></textarea></div>
+        <div class="field"><label>Amenities (separate with commas)</label><input id="pAmenities" placeholder="Wi-Fi, pool, beach access, parking"></div>
+        <div class="field"><label>House rules</label><textarea id="pRules"></textarea></div>
+        <div class="row"><div class="field"><label>Check-in details</label><textarea id="pCheckin"></textarea></div><div class="field"><label>Check-out details</label><textarea id="pCheckout"></textarea></div></div>
+        <div class="field"><label>Availability notes</label><textarea id="pAvailability" placeholder="Any blocked dates, minimum stay, seasonal notes..."></textarea></div>
+        <div class="field"><label>Property photos (up to 6)</label><input id="pPhotos" type="file" accept="image/*" multiple><div class="muted" style="font-size:12px">New uploads are added to any photos already saved to this listing.</div></div>
+        <div class="field"><label>Ownership / control verification (optional for test submission)</label><input id="pVerify" type="file" accept="image/*,.pdf" multiple><div class="muted" style="font-size:12px">Use documents or images that help confirm you control the property. These files are kept private from guests.</div></div>
+        <div class="field"><label>Note for YEN Stays review (optional)</label><textarea id="pOwnerNotes"></textarea></div>
+        <div class="note">Submitting does not automatically make the property public. YEN Stays reviews the listing first. Statuses include Submitted, Under Review, Approved and Changes Requested.</div>
+        <br><div class="actions"><button class="btn" id="listingSubmitBtn" type="submit">Submit for Review</button><button type="button" class="btn alt" onclick="closeListingForm()">Cancel</button></div>
+        <div id="listingMsg"></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel admin hidden" id="adminPanel" style="margin-top:22px">
+    <div class="kicker">Private Owner/Admin</div><h2 style="font-size:34px">YEN Stays Review Queue</h2>
+    <p class="muted">This section is only shown to the authorized YEN Stays admin account.</p>
+    <div id="adminListings"></div>
+    <h3 style="margin-top:30px">Continue-after-test-run requests</h3><div id="adminRequests"></div>
+  </div>
+</div></section>
+
+<section class="section" id="browse"><div class="wrap">
+  <div class="kicker">Find a Stay</div><h2>Explore the Bahamas.</h2>
+  <p class="lead">Approved host listings will appear here. The sample cards below are clearly marked demo inventory while YEN Stays onboards its first property owners.</p>
+  <div class="approvedWrap" id="approvedReal"></div>
+  <div class="grid" id="demoGrid"></div>
+</div></section>
+
+<footer class="footer"><div class="wrap">
+  <div class="brand">YEN <span>Stays</span></div>
+  <p>Independent Bahamas vacation-rental marketplace. Third-party booking providers have their own terms, fees and cancellation policies.</p>
+  <p><a href="https://www.yourelectronicneeds.org/" target="_blank" rel="noopener">Your Electronic Needs</a></p>
+</div></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const sb = supabase.createClient('https://evjoitqnogmpedrulepv.supabase.co','sb_publishable_wv2cDeErfEorwoGCLl9rMA_yo01I01X');
+const ADMIN_EMAIL='humestrevon@gmail.com';
+let currentUser=null,currentHost=null,currentProperties=[];
+
+const demo=[
+['Cable Beach Breeze','Nassau, New Providence',275,'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=75'],
+['Exuma Blue Cottage','Great Exuma',220,'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=900&q=75'],
+['Palm Cay Family Villa','Nassau, New Providence',395,'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=900&q=75'],
+['Harbour Island Hideaway','Eleuthera',340,'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=75'],
+['Paradise Island Retreat','Paradise Island',450,'https://images.unsplash.com/photo-1600607688969-a5bfcd646154?auto=format&fit=crop&w=900&q=75'],
+['Abaco Sea House','Abaco',285,'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=75']
+];
+document.getElementById('demoGrid').innerHTML=demo.map(function(d){return '<article class="card"><img src="'+d[3]+'" alt=""><div class="pad"><span class="status">Demo inventory</span><h3 style="margin-top:10px">'+d[0]+'</h3><p>'+d[1]+'</p><b>$'+d[2]+' / night</b><p style="font-size:12px">Preview listing — not bookable yet.</p></div></article>'}).join('');
+
+function message(el,text,err){document.getElementById(el).innerHTML='<div class="msg'+(err?' err':'')+'">'+escapeHtml(text)+'</div>'}
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,function(m){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[m]})}
+function authTab(which){
+  const signup=which==='signup';
+  document.getElementById('signupForm').classList.toggle('hidden',!signup);
+  document.getElementById('loginForm').classList.toggle('hidden',signup);
+  document.getElementById('signupTab').classList.toggle('on',signup);
+  document.getElementById('loginTab').classList.toggle('on',!signup);
+}
+function showHostArea(which){
+  document.getElementById('hostArea').classList.remove('hidden');
+  document.getElementById('hostArea').scrollIntoView({behavior:'smooth'});
+  if(!currentUser){document.getElementById('authPanel').classList.remove('hidden');authTab(which||'signup')}
+}
+window.showHostArea=showHostArea;window.authTab=authTab;
+
+document.getElementById('signupForm').addEventListener('submit',async function(e){
+  e.preventDefault();message('authMessage','Creating your host account...');
+  const payload={email:suEmail.value.trim(),password:suPassword.value,options:{data:{contact_name:suName.value.trim(),company_name:suCompany.value.trim(),phone:suPhone.value.trim()}}};
+  const res=await sb.auth.signUp(payload);
+  if(res.error){message('authMessage',res.error.message,true);return}
+  if(res.data.session){await afterLogin(res.data.user);message('authMessage','Account created. Your 30-day test run has started.')}
+  else message('authMessage','Account created. Check your email to confirm the account, then return here and use Host Login. If the confirmation opens another page, simply come back to this YEN Stays link afterward.');
+});
+document.getElementById('loginForm').addEventListener('submit',async function(e){
+  e.preventDefault();message('authMessage','Logging in...');
+  const res=await sb.auth.signInWithPassword({email:liEmail.value.trim(),password:liPassword.value});
+  if(res.error){message('authMessage',res.error.message,true);return}
+  await afterLogin(res.data.user);
+});
+async function logout(){await sb.auth.signOut();currentUser=null;currentHost=null;currentProperties=[];document.getElementById('dashboard').classList.add('hidden');document.getElementById('adminPanel').classList.add('hidden');document.getElementById('authPanel').classList.remove('hidden');authTab('login')}
+window.logout=logout;
+
+async function afterLogin(user){
+  currentUser=user;
+  const md=user.user_metadata||{};
+  let q=await sb.from('yen_stays_hosts').select('*').eq('user_id',user.id).maybeSingle();
+  if(!q.data){
+    const ins=await sb.from('yen_stays_hosts').insert({user_id:user.id,contact_name:md.contact_name||'',company_name:md.company_name||'',phone:md.phone||'',preferred_contact:'WhatsApp'}).select().single();
+    if(ins.error){message('authMessage','Login worked, but the host profile could not be created: '+ins.error.message,true);return}
+    currentHost=ins.data;
+  } else currentHost=q.data;
+  document.getElementById('authPanel').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+  document.getElementById('hostWelcome').textContent=(currentHost.company_name||currentHost.contact_name||'Your')+' dashboard';
+  document.getElementById('hostEmail').textContent=user.email||'';
+  updateTrial();
+  await loadMyProperties();
+  if((user.email||'').toLowerCase()===ADMIN_EMAIL){document.getElementById('adminPanel').classList.remove('hidden');await loadAdmin()}
+}
+function updateTrial(){
+  if(!currentHost)return;
+  const start=new Date(currentHost.trial_started_at).getTime(),end=start+30*86400000,days=Math.max(0,Math.ceil((end-Date.now())/86400000));
+  daysRemaining.textContent=days;daysLabel.textContent=days===1?' day remaining':' days remaining';trialEnds.textContent='Test run ends '+new Date(end).toLocaleDateString();
+  continueBtn.classList.toggle('hidden',days>0);
+}
+async function requestContinuation(){
+  const existing=await sb.from('yen_stays_continuation_requests').select('id').eq('user_id',currentUser.id).eq('status','new').limit(1);
+  if(existing.data&&existing.data.length){message('continuationMsg','Your continuation request is already on file. YEN Stays will follow up with you.');return}
+  const propertyId=currentProperties.length?currentProperties[0].id:null;
+  const r=await sb.from('yen_stays_continuation_requests').insert({user_id:currentUser.id,property_id:propertyId});
+  if(r.error)message('continuationMsg',r.error.message,true);else message('continuationMsg','Request sent. YEN Stays will contact you about continuing on a paid plan and any additional features you want.');
+}
+window.requestContinuation=requestContinuation;
+
+async function loadMyProperties(){
+  const r=await sb.from('yen_stays_properties').select('*').eq('user_id',currentUser.id).order('created_at',{ascending:false});
+  if(r.error){hostListings.innerHTML='<div class="msg err">'+escapeHtml(r.error.message)+'</div>';return}
+  currentProperties=r.data||[];
+  if(!currentProperties.length){hostListings.innerHTML='<div class="note" style="margin-top:12px">No properties yet. Use “List Your Property” to submit your first stay.</div>';return}
+  hostListings.innerHTML=currentProperties.map(function(p){
+    const photos=(p.image_urls||[]).slice(0,4).map(function(x){return '<img src="'+escapeHtml(x)+'" alt="">'}).join('');
+    return '<div class="listing"><div class="listingTop"><div><b>'+escapeHtml(p.property_name)+'</b><div class="muted">'+escapeHtml(p.island_location)+'</div></div><span class="status '+p.status+'">'+escapeHtml(p.status.replace('_',' '))+'</span></div>'+
+      (photos?'<div class="imgstrip" style="margin-top:10px">'+photos+'</div>':'')+
+      (p.admin_notes?'<div class="note" style="margin-top:10px"><b>YEN Stays note:</b> '+escapeHtml(p.admin_notes)+'</div>':'')+
+      '<div class="actions"><button class="btn alt small" onclick="editProperty(\''+p.id+'\')">Edit / Resubmit</button></div></div>'
+  }).join('');
+}
+function openListingForm(){editingId.value='';listingForm.reset();pBeds.value=1;pBaths.value=1;pGuests.value=2;listingFormTitle.textContent='List Your Property';listingFormWrap.classList.remove('hidden');listingFormWrap.scrollIntoView({behavior:'smooth'})}
+function closeListingForm(){listingFormWrap.classList.add('hidden')}
+window.openListingForm=openListingForm;window.closeListingForm=closeListingForm;
+function editProperty(id){
+  const p=currentProperties.find(function(x){return x.id===id});if(!p)return;
+  editingId.value=p.id;pName.value=p.property_name;pLocation.value=p.island_location;pType.value=p.property_type;pPrice.value=p.nightly_price;pBeds.value=p.bedrooms;pBaths.value=p.bathrooms;pGuests.value=p.guest_capacity;pExisting.value=p.existing_listing_url||'';pDescription.value=p.description||'';pAmenities.value=(p.amenities||[]).join(', ');pRules.value=p.house_rules||'';pCheckin.value=p.checkin_details||'';pCheckout.value=p.checkout_details||'';pAvailability.value=p.availability_notes||'';pOwnerNotes.value=p.owner_notes||'';listingFormTitle.textContent='Edit & Resubmit: '+p.property_name;listingFormWrap.classList.remove('hidden');listingFormWrap.scrollIntoView({behavior:'smooth'})
+}
+window.editProperty=editProperty;
+
+async function uploadFiles(input,bucket,maxCount){
+  const files=Array.from(input.files||[]).slice(0,maxCount),out=[];
+  for(const file of files){
+    const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'-'),path=currentUser.id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+safe;
+    const up=await sb.storage.from(bucket).upload(path,file,{upsert:false});
+    if(up.error)throw up.error;
+    if(bucket==='yen-stays-photos'){out.push(sb.storage.from(bucket).getPublicUrl(path).data.publicUrl)}else out.push(path);
+  }return out;
+}
+document.getElementById('listingForm').addEventListener('submit',async function(e){
+  e.preventDefault();listingSubmitBtn.disabled=true;message('listingMsg','Uploading and submitting your listing...');
+  try{
+    const id=editingId.value||null,existing=id?currentProperties.find(function(x){return x.id===id}):null;
+    const newPhotos=await uploadFiles(pPhotos,'yen-stays-photos',6),newVerify=await uploadFiles(pVerify,'yen-stays-verification',4);
+    const data={user_id:currentUser.id,property_name:pName.value.trim(),island_location:pLocation.value.trim(),property_type:pType.value,bedrooms:Number(pBeds.value),bathrooms:Number(pBaths.value),guest_capacity:Number(pGuests.value),nightly_price:Number(pPrice.value),amenities:pAmenities.value.split(',').map(function(x){return x.trim()}).filter(Boolean),house_rules:pRules.value.trim(),checkin_details:pCheckin.value.trim(),checkout_details:pCheckout.value.trim(),description:pDescription.value.trim(),image_urls:(existing&&existing.image_urls||[]).concat(newPhotos),existing_listing_url:pExisting.value.trim()||null,verification_paths:(existing&&existing.verification_paths||[]).concat(newVerify),availability_notes:pAvailability.value.trim(),owner_notes:pOwnerNotes.value.trim(),status:'submitted',submitted_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+    const r=id?await sb.from('yen_stays_properties').update(data).eq('id',id):await sb.from('yen_stays_properties').insert(data);
+    if(r.error)throw r.error;
+    message('listingMsg','Submitted successfully. YEN Stays will review the property before it can go public.');
+    await loadMyProperties();setTimeout(closeListingForm,900);
+    if((currentUser.email||'').toLowerCase()===ADMIN_EMAIL)await loadAdmin();
+  }catch(err){message('listingMsg',err.message||String(err),true)}finally{listingSubmitBtn.disabled=false}
+});
+
+async function loadAdmin(){
+  const [p,h,r]=await Promise.all([
+    sb.from('yen_stays_properties').select('*').order('created_at',{ascending:false}),
+    sb.from('yen_stays_hosts').select('*'),
+    sb.from('yen_stays_continuation_requests').select('*').order('created_at',{ascending:false})
+  ]);
+  const hostMap={};(h.data||[]).forEach(function(x){hostMap[x.user_id]=x});
+  adminListings.innerHTML=(p.data||[]).length?(p.data||[]).map(function(x){
+    const host=hostMap[x.user_id]||{};
+    return '<div class="listing"><div class="listingTop"><div><b>'+escapeHtml(x.property_name)+'</b><div class="muted">'+escapeHtml(x.island_location)+' · '+escapeHtml(host.company_name||host.contact_name||x.user_id)+'</div></div><span class="status '+x.status+'">'+escapeHtml(x.status.replace('_',' '))+'</span></div>'+
+    '<div class="actions"><button class="btn alt small" onclick="adminStatus(\''+x.id+'\',\'under_review\')">Under Review</button><button class="btn small" onclick="adminStatus(\''+x.id+'\',\'approved\')">Approve</button><button class="btn alt small" onclick="adminStatus(\''+x.id+'\',\'changes_requested\')">Request Changes</button><button class="btn alt small" onclick="adminStatus(\''+x.id+'\',\'rejected\')">Reject</button></div>'+
+    (x.existing_listing_url?'<p><a href="'+escapeHtml(x.existing_listing_url)+'" target="_blank" rel="noopener">View existing public listing reference</a></p>':'')+'</div>'
+  }).join(''):'<div class="note">No host submissions yet.</div>';
+  adminRequests.innerHTML=(r.data||[]).length?(r.data||[]).map(function(x){const host=hostMap[x.user_id]||{};return '<div class="listing"><b>'+escapeHtml(host.company_name||host.contact_name||x.user_id)+'</b><div class="muted">'+new Date(x.created_at).toLocaleString()+' · '+escapeHtml(x.status)+'</div><div class="actions"><button class="btn small" onclick="requestStatus(\''+x.id+'\',\'contacted\')">Mark Contacted</button><button class="btn alt small" onclick="requestStatus(\''+x.id+'\',\'closed\')">Close</button></div></div>'}).join(''):'<div class="note">No continuation requests yet.</div>';
+}
+async function adminStatus(id,status){
+  let note='';if(status==='changes_requested'||status==='rejected')note=prompt('Add a note for the host:')||'';
+  const r=await sb.from('yen_stays_properties').update({status:status,admin_notes:note,updated_at:new Date().toISOString()}).eq('id',id);
+  if(r.error)alert(r.error.message);else{await loadAdmin();await loadApproved();if(currentUser)await loadMyProperties()}
+}
+async function requestStatus(id,status){const r=await sb.from('yen_stays_continuation_requests').update({status:status}).eq('id',id);if(r.error)alert(r.error.message);else await loadAdmin()}
+window.adminStatus=adminStatus;window.requestStatus=requestStatus;
+
+async function loadApproved(){
+  const r=await sb.from('yen_stays_properties').select('*').eq('status','approved').order('created_at',{ascending:false}).limit(24);
+  if(r.error||!r.data||!r.data.length){approvedReal.innerHTML='';return}
+  approvedReal.innerHTML='<h3>Approved YEN Stays listings</h3><div class="grid">'+r.data.map(function(p){const img=(p.image_urls&&p.image_urls[0])||'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=75';return '<article class="card"><img src="'+escapeHtml(img)+'" alt=""><div class="pad"><span class="status approved">Approved host listing</span><h3 style="margin-top:10px">'+escapeHtml(p.property_name)+'</h3><p>'+escapeHtml(p.island_location)+'</p><b>$'+Number(p.nightly_price).toFixed(0)+' / night</b><p>'+escapeHtml((p.description||'').slice(0,140))+'</p></div></article>'}).join('')+'</div>';
+}
+
+(async function init(){
+  await loadApproved();
+  const sess=await sb.auth.getSession();
+  if(sess.data.session){document.getElementById('hostArea').classList.remove('hidden');await afterLogin(sess.data.session.user)}
+})();
+sb.auth.onAuthStateChange(function(event,session){if(event==='SIGNED_IN'&&session&&(!currentUser||currentUser.id!==session.user.id)){document.getElementById('hostArea').classList.remove('hidden');afterLogin(session.user)}})
+</script>
+</body>
+</html>
