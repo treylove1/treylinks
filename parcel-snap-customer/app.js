@@ -87,6 +87,28 @@ async function fastOcrRecognize(image){
   return await ocrWithSlot(parcelSnapOcrSlots.fast,image,PARCEL_SNAP_FAST_PSM);
 }
 
+async function fastOcrRecognizeDetailed(image){
+  const slot=parcelSnapOcrSlots.fast;
+  const workerPromise=getSlotWorker(slot);
+  const gen=slot.gen;
+  slot.busy=true;
+  try{
+    const worker=await workerPromise;
+    if(slot.gen!==gen)throw new Error("OCR worker was stopped");
+    if(slot.psm!==PARCEL_SNAP_FAST_PSM){
+      await worker.setParameters({tessedit_pageseg_mode:PARCEL_SNAP_FAST_PSM});
+      slot.psm=PARCEL_SNAP_FAST_PSM;
+    }
+    const result=await worker.recognize(image,{}, {text:true,blocks:true});
+    return {
+      text:result?.data?.text||"",
+      blocks:Array.isArray(result?.data?.blocks)?result.data.blocks:[]
+    };
+  }finally{
+    if(slot.gen===gen)slot.busy=false;
+  }
+}
+
 const $=id=>document.getElementById(id);
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 
@@ -573,6 +595,92 @@ function deskewCanvas(source,skewDegrees){
   return rotateCanvas(source,-skewDegrees);
 }
 
+function flattenOcrLines(blocks){
+  const out=[];
+  for(const block of (blocks||[])){
+    for(const paragraph of (block?.paragraphs||[])){
+      for(const line of (paragraph?.lines||[])){
+        const text=String(line?.text||"").trim();
+        const b=line?.bbox;
+        if(!text||!b)continue;
+        out.push({
+          text,
+          bbox:{
+            x0:Number(b.x0||0),
+            y0:Number(b.y0||0),
+            x1:Number(b.x1||0),
+            y1:Number(b.y1||0)
+          }
+        });
+      }
+    }
+  }
+  return out.sort((a,b)=>a.bbox.y0-b.bbox.y0);
+}
+
+function recipientFocusRectFromLines(lines,source){
+  if(!Array.isArray(lines)||!lines.length)return null;
+
+  const street=/^\s*\d{3,6}\s+.*\b(?:NW|NE|SW|SE)?\s*(?:AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|DRIVE|LANE|LN|HWY|HIGHWAY)\b/i;
+  const cityZip=/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i;
+
+  let senderEndY=-1;
+  for(let i=0;i<lines.length;i++){
+    if(/return\s+address|^\s*(?:ship\s*from|sender|from)\b/i.test(lines[i].text)){
+      senderEndY=lines[i].bbox.y1;
+      for(let j=i+1;j<Math.min(lines.length,i+6);j++){
+        senderEndY=Math.max(senderEndY,lines[j].bbox.y1);
+        if(cityZip.test(lines[j].text))break;
+      }
+      break;
+    }
+  }
+
+  const candidates=[];
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    if(!street.test(line.text))continue;
+    if(senderEndY>=0&&line.bbox.y0<=senderEndY+4)continue;
+
+    const next=lines[i+1]?.text||"";
+    const hasCityAfter=cityZip.test(next);
+    candidates.push({line,index:i,score:(hasCityAfter?3:1)+line.bbox.y0/source.height});
+  }
+
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>b.score-a.score);
+  const chosen=candidates[0].line;
+
+  const lineH=Math.max(16,chosen.bbox.y1-chosen.bbox.y0);
+  const top=Math.max(0,Math.round(chosen.bbox.y0-lineH*2.4));
+  const bottom=Math.min(source.height,Math.round(chosen.bbox.y0+lineH*.2));
+
+  if(bottom-top<20)return null;
+
+  return {
+    x:0,
+    y:top,
+    w:source.width,
+    h:bottom-top
+  };
+}
+
+function cropCanvasRect(source,rect){
+  if(!rect)return null;
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(rect.w));
+  canvas.height=Math.max(1,Math.round(rect.h));
+  const ctx=canvas.getContext("2d");
+  ctx.fillStyle="#fff";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(
+    source,
+    rect.x,rect.y,rect.w,rect.h,
+    0,0,canvas.width,canvas.height
+  );
+  return canvas;
+}
+
 async function preparePackageImages(file){
   const original=await readFileDataUrl(file);
   const img=await loadImage(original);
@@ -749,8 +857,11 @@ async function runDeepRecovery(source,token,initialText,options={}){
   const skew=typeof options.skew==="number"?options.skew:estimateSkewDegrees(source);
   const straight=deskewCanvas(source,skew);
   const rawStraight=deskewCanvas(raw,skew);
+  const recipientRect=recipientFocusRectFromLines(options.lines||[],rawStraight);
+  const recipientFocus=cropCanvasRect(rawStraight,recipientRect);
 
   const passes=[
+    ...(recipientFocus?[{psm:"7",build:()=>fitForOcr(recipientFocus,700,1200)}]:[]),
     {psm:"6",build:()=>adaptiveBinarizeCanvas(rawStraight)},
     {psm:"11",build:()=>straight},
     {psm:"4",build:()=>adaptiveBinarizeCanvas(fitForOcr(scaleCanvas(rawStraight,1.5),0,2200))},
@@ -810,7 +921,9 @@ async function readPackagePhoto(source,options={}){
   const skew=estimateSkewDegrees(ocrSource);
   const fastImage=deskewCanvas(ocrSource,skew);
 
-  const merged=await fastOcrRecognize(fastImage);
+  const firstRead=await fastOcrRecognizeDetailed(fastImage);
+  const merged=firstRead.text;
+  const layoutLines=flattenOcrLines(firstRead.blocks);
 
   if(token!==intakeReadToken){
     return {
@@ -872,7 +985,7 @@ async function readPackagePhoto(source,options={}){
       :"Enter customer name and email · "+elapsed+"s");
 
     if(customers.length){
-      runDeepRecovery(ocrSource,token,merged,{raw:rawSource,skew})
+      runDeepRecovery(ocrSource,token,merged,{raw:rawSource,skew,lines:layoutLines})
         .catch(err=>console.warn("Background OCR recovery failed",err));
     }
   }
@@ -888,7 +1001,8 @@ async function readPackagePhoto(source,options={}){
     address:intakeOcrAddress,
     elapsed_seconds:Number(elapsed),
     skew_degrees:skew,
-    recovery_pending:!decision.customer&&customers.length>0
+    recovery_pending:!decision.customer&&customers.length>0,
+    layout_line_count:layoutLines.length
   };
 }
 
