@@ -6,9 +6,15 @@ figure{margin:16px 0 24px}figcaption{font-size:14px;font-weight:700;margin-botto
 /* Rotating business backgrounds */
 body{background:#07111d;position:relative;overflow-x:hidden}
 .bgRotator{position:fixed;inset:0;z-index:0;overflow:hidden;background:#07111d}
-.bgRotator .bgSlide{position:absolute;inset:-2%;background-size:cover;background-position:center;opacity:0;transform:scale(1.03);transition:opacity 1.5s ease,transform 8s ease}
-.bgRotator .bgSlide.on{opacity:1;transform:scale(1.08)}
-.bgRotator .bgShade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,9,20,.42),rgba(6,16,31,.70) 45%,rgba(4,10,18,.92))}
+.bgRotator .bgSlide{position:absolute;inset:-2%;background-size:cover;background-position:center;opacity:0;transform:scale(1.03);filter:blur(8px) brightness(.55);transition:opacity 1.2s ease;will-change:opacity,filter,transform}
+.bgRotator .bgSlide.on{opacity:1;animation:bgFocusThenBlur 6.5s linear forwards}
+.bgRotator .bgShade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,9,20,.18),rgba(6,16,31,.52) 42%,rgba(4,10,18,.78))}
+@keyframes bgFocusThenBlur{
+0%{filter:blur(0px) brightness(1);transform:scale(1)}
+18%{filter:blur(0px) brightness(1);transform:scale(1.01)}
+38%{filter:blur(3px) brightness(.78);transform:scale(1.04)}
+100%{filter:blur(8px) brightness(.55);transform:scale(1.08)}
+}
 main{position:relative;z-index:1}
 .card,figure{background:rgba(7,17,29,.76);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 figure{padding:12px;border:1px solid #ffffff17;border-radius:18px}
@@ -16,7 +22,7 @@ figure{padding:12px;border:1px solid #ffffff17;border-radius:18px}
 .bgDot{width:7px;height:7px;border-radius:20px;background:#ffffff55;transition:.25s}
 .bgDot.on{width:20px;background:#edc67f}
 .bgHint{font-size:10px;color:#adbed0;margin-top:8px}
-@media(prefers-reduced-motion:reduce){.bgRotator .bgSlide,.bgDot{transition:none}}
+@media(prefers-reduced-motion:reduce){.bgRotator .bgSlide,.bgDot{transition:none;animation:none}}
 </style></head><body><div class="bgRotator" aria-hidden="true">
 <div class="bgSlide on" style="background-image:url('background-electronics.svg')"></div>
 <div class="bgSlide" style="background-image:url('background-tv.svg')"></div>
@@ -36,4 +42,4 @@ figure{padding:12px;border:1px solid #ffffff17;border-radius:18px}
 <figure><figcaption>CIBC · Trevon Humes</figcaption><a href="IMG-20250404-WA0027.jpg"><img src="IMG-20250404-WA0027.jpg" alt="CIBC bank transfer details for Trevon Humes" width="1600" height="920" loading="lazy"></a></figure>
 <figure><figcaption>Scotiabank · Trevon Humes</figcaption><a href="IMG-20250404-WA0028.jpg"><img src="IMG-20250404-WA0028.jpg" alt="Scotiabank bank transfer details for Trevon Humes" width="1600" height="920" loading="lazy"></a></figure>
 </section>
-<footer>Trevon Humes · Nassau, Bahamas</footer></main><script>(function(){const s=[...document.querySelectorAll('.bgSlide')],d=[...document.querySelectorAll('.bgDot')];let i=0,t;function show(n){i=(n+s.length)%s.length;s.forEach((x,j)=>x.classList.toggle('on',j===i));d.forEach((x,j)=>x.classList.toggle('on',j===i))}function next(){show(i+1)}function start(){clearInterval(t);t=setInterval(next,6500)}document.addEventListener('click',e=>{if(!e.target.closest('a,button,figure')){next();start()}});if(!matchMedia('(prefers-reduced-motion: reduce)').matches)start()})();</script></body></html>
+<footer>Trevon Humes · Nassau, Bahamas</footer></main><script>(function(){const slides=[...document.querySelectorAll('.bgSlide')],dots=[...document.querySelectorAll('.bgDot')];let index=0,timer=null;const duration=6500;function showSlide(nextIndex){index=(nextIndex+slides.length)%slides.length;slides.forEach((slide,i)=>{slide.classList.remove('on');if(i===index){void slide.offsetWidth;slide.classList.add('on')}});dots.forEach((dot,i)=>dot.classList.toggle('on',i===index))}function nextSlide(){showSlide(index+1)}function startRotation(){clearInterval(timer);timer=setInterval(nextSlide,duration)}document.addEventListener('click',e=>{if(!e.target.closest('a,button,figure')){nextSlide();startRotation()}});showSlide(0);if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)startRotation()})();</script></body></html>
