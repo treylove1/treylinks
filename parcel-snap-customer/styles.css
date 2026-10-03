@@ -63,3 +63,5 @@ textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #304d72;bac
 @media(max-width:760px){.headerActions{flex-direction:column;align-items:stretch}}
 
 #processingBox.bg-matched{outline:3px solid #f5a623;outline-offset:2px}
+
+.routeSummary{margin:10px 0 14px;padding:10px 12px;border:1px solid #29486f;border-radius:10px;background:#0a1628;color:#bcd0ea;font-weight:700}
