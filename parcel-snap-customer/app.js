@@ -685,8 +685,11 @@ async function preparePackageImages(file){
   const original=await readFileDataUrl(file);
   const img=await loadImage(original);
   const labelRect=detectBrightLabelRegion(img);
+
+  // Keep a higher-resolution crop for recovery, but make the blocking read small.
   const rawOcrCanvas=fitForOcr(drawImageRegionCanvas(img,labelRect,2400),1100,1500);
-  const ocrCanvas=prepareFastOcrCanvas(rawOcrCanvas);
+  const quickBase=fitForOcr(rawOcrCanvas,0,900);
+  const ocrCanvas=prepareFastOcrCanvas(quickBase);
 
   return {
     preview:drawImageRegion(img,null,1600,.82),
@@ -695,7 +698,9 @@ async function preparePackageImages(file){
     vision:drawImageRegion(img,labelRect||null,1600,.90),
     label_crop_used:Boolean(labelRect),
     crop_width:ocrCanvas.width,
-    crop_height:ocrCanvas.height
+    crop_height:ocrCanvas.height,
+    raw_crop_width:rawOcrCanvas.width,
+    raw_crop_height:rawOcrCanvas.height
   };
 }
 
@@ -857,7 +862,17 @@ async function runDeepRecovery(source,token,initialText,options={}){
   const skew=typeof options.skew==="number"?options.skew:estimateSkewDegrees(source);
   const straight=deskewCanvas(source,skew);
   const rawStraight=deskewCanvas(raw,skew);
-  const recipientRect=recipientFocusRectFromLines(options.lines||[],rawStraight);
+  const lineSpace={
+    width:Number(options.line_source_width||source.width),
+    height:Number(options.line_source_height||source.height)
+  };
+  const quickRect=recipientFocusRectFromLines(options.lines||[],lineSpace);
+  const recipientRect=quickRect?{
+    x:quickRect.x*rawStraight.width/lineSpace.width,
+    y:quickRect.y*rawStraight.height/lineSpace.height,
+    w:quickRect.w*rawStraight.width/lineSpace.width,
+    h:quickRect.h*rawStraight.height/lineSpace.height
+  }:null;
   const recipientFocus=cropCanvasRect(rawStraight,recipientRect);
 
   const passes=[
@@ -985,7 +1000,13 @@ async function readPackagePhoto(source,options={}){
       :"Enter customer name and email · "+elapsed+"s");
 
     if(customers.length){
-      runDeepRecovery(ocrSource,token,merged,{raw:rawSource,skew,lines:layoutLines})
+      runDeepRecovery(ocrSource,token,merged,{
+        raw:rawSource,
+        skew,
+        lines:layoutLines,
+        line_source_width:fastImage.width,
+        line_source_height:fastImage.height
+      })
         .catch(err=>console.warn("Background OCR recovery failed",err));
     }
   }
