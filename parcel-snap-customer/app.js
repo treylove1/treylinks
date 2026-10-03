@@ -1345,7 +1345,11 @@ function facilitySort(items){
 
 function renderReceiveControls(){
   const customers=workspace?.customers||[];
-  const facilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
+  const assignedFacilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
+  const routeDestinations=facilitySort(
+    (workspace?.route_destinations||assignedFacilities)
+      .filter(f=>f.active!==false)
+  );
 
   const currentCustomer=$("receiveCustomer").value;
   const currentOrigin=$("receiveOrigin").value;
@@ -1355,18 +1359,46 @@ function renderReceiveControls(){
     customers.map(c=>'<option value="'+c.id+'">'+esc(c.name)+(c.email?" — "+esc(c.email):"")+'</option>').join("");
   if(customers.some(c=>c.id===currentCustomer))$("receiveCustomer").value=currentCustomer;
 
-  const allFacilityOptions=facilities.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("");
-  $("receiveOrigin").innerHTML=allFacilityOptions||'<option value="">No warehouse configured</option>';
-  $("receiveDestination").innerHTML='<option value="">No next warehouse selected</option>'+allFacilityOptions;
+  let origins=assignedFacilities.filter(f=>["ORIGIN","TRANSIT"].includes(f.facility_type));
+  if(!origins.length)origins=assignedFacilities;
 
-  if(facilities.length){
-    const miami=facilities.find(f=>f.code==="MIA");
-    const nassau=facilities.find(f=>f.code==="NAS");
-    if(facilities.some(f=>f.id===currentOrigin))$("receiveOrigin").value=currentOrigin;
-    else if(miami)$("receiveOrigin").value=miami.id;
+  let destinations=routeDestinations.filter(f=>["DESTINATION","TRANSIT"].includes(f.facility_type));
+  if(!destinations.length)destinations=routeDestinations.filter(f=>!origins.some(o=>o.id===f.id));
 
-    if(facilities.some(f=>f.id===currentDestination))$("receiveDestination").value=currentDestination;
-    else if(nassau)$("receiveDestination").value=nassau.id;
+  $("receiveOrigin").innerHTML=origins.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("")||
+    '<option value="">No receiving warehouse configured</option>';
+
+  $("receiveDestination").innerHTML='<option value="">No next warehouse selected</option>'+
+    destinations.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("");
+
+  if(origins.length){
+    if(origins.some(f=>f.id===currentOrigin))$("receiveOrigin").value=currentOrigin;
+    else $("receiveOrigin").value=origins[0].id;
+  }
+
+  if(destinations.length){
+    if(destinations.some(f=>f.id===currentDestination))$("receiveDestination").value=currentDestination;
+    else if(destinations.length===1)$("receiveDestination").value=destinations[0].id;
+  }
+
+  const originAuto=origins.length===1;
+  const destinationAuto=destinations.length===1;
+
+  $("receiveOriginWrap").classList.toggle("hidden",originAuto);
+  $("receiveDestinationWrap").classList.toggle("hidden",destinationAuto);
+
+  const originName=origins.find(f=>f.id===$("receiveOrigin").value)?.name||"";
+  const destinationName=destinations.find(f=>f.id===$("receiveDestination").value)?.name||"";
+
+  if(originAuto||destinationAuto){
+    const parts=[];
+    if(originName)parts.push("Receiving: "+originName);
+    if(destinationName)parts.push("Next: "+destinationName);
+    $("receiveRouteSummary").textContent=parts.join(" → ");
+    $("receiveRouteSummary").classList.remove("hidden");
+  }else{
+    $("receiveRouteSummary").classList.add("hidden");
+    $("receiveRouteSummary").textContent="";
   }
 
   if(!$("receiveCustomer").value)showInlineCustomer(intakeOcrName);
