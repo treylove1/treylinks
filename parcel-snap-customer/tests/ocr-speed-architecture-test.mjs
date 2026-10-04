@@ -22,6 +22,10 @@ expect("matcher decision is authoritative",app.includes("function decideCustomer
 expect("adaptive binarization exists",app.includes("adaptiveBinarizeCanvas"));
 expect("deskew estimator exists",app.includes("estimateSkewDegrees"));
 expect("recovery worker can be stopped",app.includes("stopRecoveryOcr"));
+expect("new package invalidates prior recovery",app.includes("const token=++intakeReadToken;")&&app.includes("if(token!==intakeReadToken||!canBackgroundReplaceCustomer())return null;"));
+expect("first-result latency is recorded",app.includes("first_result_seconds"));
+expect("background-recovery latency is recorded",app.includes("background_recovery_seconds"));
+expect("phone test surfaces OCR timing",app.includes("intakeTimingSummary()"));
 expect("fast first-pass OCR preprocessing exists",app.includes("prepareFastOcrCanvas"));
 expect("blocking OCR crop is capped near 900px",app.includes("fitForOcr(rawOcrCanvas,0,900)"));
 expect("recipient focus runs before full recovery passes",app.includes('...(recipientFocus?[{psm:"7"'));
