@@ -24,3 +24,6 @@ jobs:
 
       - name: OCR speed architecture regression
         run: node parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
+
+      - name: Tenant onboarding architecture regression
+        run: node parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
