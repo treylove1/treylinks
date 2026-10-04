@@ -11,7 +11,7 @@
     <section class="authCard">
       <div class="brand">PARCEL SNAP</div>
       <h1>Business Portal</h1>
-      <p>Private package intake, warehouse organization, and customer notifications.</p>
+      <p>Private package intake, recipient recognition, courier operations, and customer notifications tailored to each business.</p>
 
       <div class="segmented three">
         <button id="signInMode" class="active">Sign in</button>
@@ -65,7 +65,7 @@
       <section id="onboardingState" class="card hidden">
         <span class="eyebrow">SETUP</span>
         <h2>Create your company workspace</h2>
-        <p>Enter the company name that should own this private Parcel Snap workspace.</p>
+        <p>Start with your company name. Next, tell us how your courier or logistics operation works. Payment comes after the business assessment.</p>
         <label>Company name
           <input id="onboardingCompany" placeholder="Company name">
         </label>
@@ -75,7 +75,7 @@
       <section id="billingState" class="card hidden">
         <span class="eyebrow">ACCOUNT ACCESS</span>
         <h2>Activate Parcel Snap</h2>
-        <p>Your workspace is protected until the ParcelSnap Business Subscription is active.</p>
+        <p>Your business assessment is saved. Activate the subscription to open the private Parcel Snap workspace built from your locations, staff, package flow, and selected features.</p>
         <div class="billingBox">
           <strong>ParcelSnap Business Subscription</strong>
           <span>$100 / month</span>
@@ -94,7 +94,7 @@
             </div>
             <button id="exitBusinessSetupPreview" class="ghost hidden">Back to My Workspace</button>
           </div>
-          <p>We use these answers to build your company workspace. We do not assume your warehouses, staff roles, storage areas, or workflow.</p>
+          <p>We use these answers to build your private courier workspace. Parcel Snap does not assume Miami, Orlando, Nassau, or any other location. Only the locations and workflows your business provides are configured.</p>
 
           <div class="setupProgress">
             <span data-setup-dot="1" class="active">1</span>
@@ -130,7 +130,7 @@
 
           <div id="businessSetupStep2" class="setupStep hidden">
             <h3>2. Your locations</h3>
-            <p>Add every warehouse, storage building, pickup point, or office that matters to your operation.</p>
+            <p>Add only the real locations used by your business. Parcel Snap will build receiving, transfer, storage, pickup, and staff choices from these answers.</p>
 
             <div class="formGrid">
               <label>Location name
@@ -218,7 +218,7 @@
             </label>
             <div class="setupNav">
               <button class="ghost" data-setup-back="3">Back</button>
-              <button id="saveBusinessSetup" class="primary">Build My Parcel Snap Workspace</button>
+              <button id="saveBusinessSetup" class="primary">Save Business Setup & Continue</button>
             </div>
             <div id="businessSetupMessage" class="message"></div>
             <div id="businessSetupPreviewResult" class="hidden"></div>
