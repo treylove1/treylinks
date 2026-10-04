@@ -134,3 +134,79 @@ Owner test customer:
 
 ## Stop condition
 Do not call Parcel Snap OCR production-ready until multiple real labels from different people/businesses pass on the actual phone at warehouse-usable speed.
+
+
+---
+
+# Update — 2026-10-04 Resume
+
+## Work completed
+- Resumed from the saved 2026-10-03 night checkpoint on the existing `main` source.
+- Added visible real-phone OCR timing:
+  - first-result latency
+  - total background-recovery latency
+  - timing remains visible in the receive result after save
+- Preserved stale-read protection:
+  - a new package increments the read token
+  - prior recovery OCR is stopped
+  - prior-package recovery cannot replace package 2
+- Locked the owner-specific Roadie recognition cases:
+  - `Your Electronic Needs` LABEL alias only -> Trevon Humes
+  - `Your Electronic Needs / TrevonHu` -> Trevon Humes
+  - unknown identity -> no invented customer
+- Re-ran the live matcher/architecture gates from the current GitHub source; all checked cases passed.
+- Added `.github/workflows/parcel-snap-customer-regression.yml` so customer matcher and OCR architecture regressions run automatically on Parcel Snap customer-app changes.
+- Fixed the Pages deployment trigger so `parcel-snap-customer/**` changes are included instead of leaving the Android test on stale code.
+
+## Live Supabase verification
+- `parcel-snap-portal` is active.
+- The saved owner customer has:
+  - PERSON record
+  - active `Your Electronic Needs` LABEL alias
+  - active `Your Electronic Needs / Trevon Humes` LABEL alias
+  - saved email present
+- Customer notifications are enabled for EMAIL.
+- Resend API configuration exists.
+- Resend sending domain is verified and sending is enabled.
+- The package-photo storage bucket exists.
+- Receive backend currently performs:
+  1. package row insert
+  2. photo upload + package photo row
+  3. package event
+  4. suggested-location assignment
+  5. arrival email when enabled and customer email exists
+- There are currently no live package rows, package-photo rows, or notification rows, so the real end-to-end receive/save/email path has NOT yet been honestly verified.
+
+## Backend fix applied
+- Generalized `parcel_snap.assign_suggested_location`:
+  - `DESTINATION_RECEIVED` now promotes to `WAREHOUSED` when a location is assigned.
+  - storage timing can begin from generic `DESTINATION_RECEIVED`, not only the legacy `NASSAU_RECEIVED` stage.
+
+## Current blocker
+The live database has zero active warehouse shelf/bin locations at:
+- Miami
+- Fort Lauderdale
+- Orlando
+- Nassau
+
+Therefore `assigned_location_id` must remain null until real storage locations are configured. Do not invent warehouse shelf/bin names.
+
+## Exact next test
+1. Configure at least one real receiving/storage location for the warehouse being tested, using the owner's actual shelf/bin naming.
+2. Open the freshly deployed Parcel Snap customer app on the real Android phone.
+3. Photograph the Roadie label.
+4. Record the visible first-result and recovery timing.
+5. Confirm the label alias maps to Trevon Humes.
+6. Save the package.
+7. Verify:
+   - package row exists
+   - tracking/QR value is correct
+   - selected/current facility is correct
+   - photo row/storage object exists
+   - assigned shelf/bin is correct
+   - notification row reports SENT
+   - arrival email actually arrives
+8. Immediately photograph package 2 and verify package 1 recovery never blocks or overwrites it.
+
+## Stop condition remains
+Do not call Parcel Snap production-ready until multiple real labels from different people/businesses pass on the actual Android phone at warehouse-usable speed and the complete save/photo/location/email flow succeeds.
