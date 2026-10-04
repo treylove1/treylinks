@@ -210,3 +210,78 @@ Therefore `assigned_location_id` must remain null until real storage locations a
 
 ## Stop condition remains
 Do not call Parcel Snap production-ready until multiple real labels from different people/businesses pass on the actual Android phone at warehouse-usable speed and the complete save/photo/location/email flow succeeds.
+
+
+---
+
+# Update — 2026-10-04 Courier Entrance / Tenant Tailoring
+
+## Customer entrance corrected
+New courier/business flow is now:
+1. Create/sign in to company account.
+2. Complete business needs assessment BEFORE payment.
+3. Enter only the courier's real locations and operating roles.
+4. Save the assessment.
+5. Continue to payment.
+6. After payment is active, Parcel Snap automatically materializes that saved assessment into the courier's private workspace.
+7. The courier then sees only its own facilities, workflow choices, staff scope, and enabled features.
+
+## Pre-payment assessment persistence
+`parcel_snap.portal_onboarding` now stores:
+- `business_profile` JSON
+- `business_locations` JSON
+- `business_setup_complete`
+- `business_setup_completed_at`
+
+The live portal exposes `BUSINESS_SETUP_PREPAY` and `save_prepaid_business_profile`.
+
+## Location assumptions removed
+Customer app no longer hardcodes or prioritizes:
+- MIA
+- FLL
+- ORL
+- NAS
+- Miami
+- Orlando
+- Fort Lauderdale
+- Nassau
+
+Facility sorting is now generic by operational role and business-provided name.
+Transfer arrival does not default to Nassau.
+New locations are generated only from the courier's assessment.
+
+## Live backend generalized
+- New package receipt uses generic `origin_received_at` / `last_arrived_at`.
+- Destination receipt uses generic `DESTINATION_RECEIVED`.
+- Warehouse assignment functions no longer depend on Miami/Nassau stage names.
+- Warehouse-location `site` defaults to that courier's actual facility city/name rather than Nassau.
+- Arrival email footer uses the tenant company's own name and `Powered by Parcel Snap`.
+- The generic customer portal no longer sends Your Electronic Needs / Alpha Omega branding for another courier.
+
+## OCR isolation
+The OCR/matching engine was not replaced during this onboarding change.
+Retained:
+- two-worker fast/recovery OCR
+- recipient-line targeted recovery
+- known-recipient/alias matching
+- stale-package cancellation
+- first-result and background-recovery timing
+- unknown-recipient safety behavior
+
+Static validation after the onboarding changes passed:
+- saved label -> matching tenant customer
+- unknown identity -> no invented customer
+- tenant onboarding state/hooks present
+- fixed-location routing codes absent from customer app
+- city-specific package timestamp fields absent from live portal
+
+## Architecture rule
+Do not build a separate independent OCR codebase per courier.
+Use one tested multi-tenant Parcel Snap application and recognition engine.
+Each courier gets an isolated private workspace generated from its own assessment, payment status, directory, locations, staff, and workflow configuration.
+
+## Remaining OCR acceptance condition
+These onboarding changes do NOT change the OCR stop condition:
+- real Android Roadie test still required
+- full receive/photo/location/email test still required
+- multiple labels from different people/businesses must pass at warehouse-usable speed before calling OCR production-ready
