@@ -59,3 +59,78 @@ Example:
 
 ## Important rule
 Do not claim the OCR is finished or production-ready until the real Roadie photo and multiple different customer/business labels pass on the actual phone at acceptable speed.
+
+
+---
+
+# Update — 2026-10-03 Night Stop
+
+## Work completed today
+- Researched PackageX public architecture and documented the key design correction:
+  - Parcel Snap is not "an OCR app".
+  - Photo/vision/OCR/barcode are evidence.
+  - The real engine is: evidence -> match known recipient/customer/business -> run the tenant's configured workflow.
+- Saved architecture notes:
+  - `parcel-snap-customer/PACKAGEX-ARCHITECTURE-NOTES-2026-10-03.md`
+- Changed package intake routing so warehouse/destination selectors are hidden when the logged-in employee/company profile already determines the route.
+  - Single valid receiving facility -> auto-selected.
+  - Single valid destination -> auto-selected.
+  - Dropdowns appear only when there is a genuine operational choice.
+- Updated Supabase portal workspace response to provide destination-route options separately from worker facility scope.
+- Added fuzzy known-alias matching across noisy OCR text while excluding sender/return-address blocks.
+- Added safety logic so exact longer business identities beat fuzzy shorter ones.
+- Added support for mapping a label alias such as "Your Electronic Needs" directly to a person record such as "Trevon Humes" and that person's saved email.
+- Confirmed customer directory model supports:
+  - person/business name
+  - email
+  - phone/WhatsApp
+  - label aliases
+  - mailbox/account/customer codes
+- Added targeted recipient-line OCR recovery:
+  - Tesseract returns layout blocks/line bounding boxes.
+  - Parcel Snap locates a likely destination street-address line.
+  - It then OCRs the narrow strip immediately above that address, where recipient/business text normally appears.
+  - This is intended to be faster and more logistics-specific than rereading the whole label repeatedly.
+- Latest OCR test for the targeted recipient-line change passed.
+
+## Current intended tenant workflow
+1. Business completes needs assessment before operational use.
+2. Parcel Snap creates the business's tailored locations, roles, staff access, and enabled features.
+3. Employee login already knows assigned facility/permissions.
+4. Employee takes a package photo.
+5. Parcel Snap reads barcode/QR/OCR/vision evidence.
+6. Parcel Snap matches against the business's known recipient directory.
+7. MATCHED -> customer selected automatically.
+8. REVIEW/AMBIGUOUS -> suggestion shown; employee confirms.
+9. NO_MATCH -> ask name/email once and save label alias for next time.
+10. Package photo/tracking/facility/storage location saved.
+11. Arrival email is sent to the matched customer's saved email.
+
+## Important known test case
+Owner test customer:
+- Customer: Trevon Humes
+- Saved label alias: Your Electronic Needs
+- Expected behavior: OCR does not need to read the full personal name. If "Your Electronic Needs" is recognized confidently as that customer's saved LABEL alias, route the package to Trevon Humes and use Trevon's saved email.
+
+## Where to resume tomorrow
+1. Verify the latest recipient-line OCR change on the real Android phone.
+2. Re-test the Roadie label:
+   - Your Electronic Needs only -> Trevon Humes
+   - Your Electronic Needs + partial Trevon -> Trevon Humes
+   - unknown identity -> no invented match
+3. Measure:
+   - first-result latency
+   - background-recovery latency
+4. Verify actual receive/save flow:
+   - matched customer
+   - tracking/QR
+   - current facility
+   - assigned shelf/bin
+   - saved photo
+   - actual arrival email
+5. Re-test a second package immediately after the first to ensure recovery from package 1 never blocks package 2.
+6. Continue simplifying toward the PackageX-style architecture rather than adding more generic OCR complexity.
+7. If the real-phone Roadie test still fails, stop quickly and send the isolated OCR code + failure evidence for independent review instead of spending hours stacking patches.
+
+## Stop condition
+Do not call Parcel Snap OCR production-ready until multiple real labels from different people/businesses pass on the actual phone at warehouse-usable speed.
