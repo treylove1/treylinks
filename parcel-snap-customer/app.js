@@ -14,6 +14,46 @@ let businessSetupStep=1;
 let businessSetupLocations=[];
 let businessSetupPreviewMode=false;
 let intakeReadToken=0;
+let intakeTiming={
+  read_token:0,
+  started_at_ms:0,
+  first_result_seconds:null,
+  background_recovery_seconds:null,
+  background_extra_seconds:null
+};
+
+function resetIntakeTiming(readToken=0,startedAt=0){
+  intakeTiming={
+    read_token:readToken,
+    started_at_ms:startedAt,
+    first_result_seconds:null,
+    background_recovery_seconds:null,
+    background_extra_seconds:null
+  };
+}
+
+function recordBackgroundRecoveryTiming(readToken,startedAt){
+  if(intakeTiming.read_token!==readToken||!startedAt)return;
+  const total=Number(Math.max(0,(performance.now()-startedAt)/1000).toFixed(1));
+  const first=Number.isFinite(intakeTiming.first_result_seconds)
+    ? intakeTiming.first_result_seconds
+    : null;
+  intakeTiming.background_recovery_seconds=total;
+  intakeTiming.background_extra_seconds=first===null
+    ? null
+    : Number(Math.max(0,total-first).toFixed(1));
+}
+
+function intakeTimingSummary(){
+  const parts=[];
+  if(Number.isFinite(intakeTiming.first_result_seconds)){
+    parts.push("first "+intakeTiming.first_result_seconds.toFixed(1)+"s");
+  }
+  if(Number.isFinite(intakeTiming.background_recovery_seconds)){
+    parts.push("recovery "+intakeTiming.background_recovery_seconds.toFixed(1)+"s");
+  }
+  return parts.length?" · OCR "+parts.join(" · "):"";
+}
 
 const PARCEL_SNAP_OCR_LANG="eng";
 const PARCEL_SNAP_OCR_OEM=1;
@@ -849,9 +889,11 @@ function applyRecoveredCustomer(recovered,combined){
   }
 
   $("processingText").textContent=recovered.customer.name;
-  $("processingDetail").textContent=$("receiveTracking").value
-    ?"Customer matched in background · tracking captured"
-    :"Customer matched in background";
+  $("processingDetail").textContent=(
+    $("receiveTracking").value
+      ?"Customer matched in background · tracking captured"
+      :"Customer matched in background"
+  )+intakeTimingSummary();
   $("processingBox").classList.add("bg-matched");
   return true;
 }
@@ -909,12 +951,19 @@ async function runDeepRecovery(source,token,initialText,options={}){
     if(!recovered.customer)recovered=decideCustomer(combined);
 
     if(recovered.customer){
+      recordBackgroundRecoveryTiming(token,Number(options.started_at_ms||0));
       applyRecoveredCustomer(recovered,combined);
       return recovered;
     }
   }
 
-  if(token===intakeReadToken)intakeOcrText=combined;
+  if(token===intakeReadToken){
+    intakeOcrText=combined;
+    recordBackgroundRecoveryTiming(token,Number(options.started_at_ms||0));
+    if(canBackgroundReplaceCustomer()&&intakeTimingSummary()){
+      $("processingDetail").textContent+=intakeTimingSummary();
+    }
+  }
   return null;
 }
 
@@ -927,6 +976,7 @@ async function readPackagePhoto(source,options={}){
   const token=++intakeReadToken;
   stopRecoveryOcr();
   const started=performance.now();
+  resetIntakeTiming(token,started);
 
   const ocrSource=await toCanvas(source);
   const rawSource=options.raw?await toCanvas(options.raw):ocrSource;
@@ -976,6 +1026,9 @@ async function readPackagePhoto(source,options={}){
   if(carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=carrier;
 
   const elapsed=Math.max(0,(performance.now()-started)/1000).toFixed(1);
+  if(intakeTiming.read_token===token){
+    intakeTiming.first_result_seconds=Number(elapsed);
+  }
   const customers=workspace?.customers||[];
 
   if(decision.customer){
@@ -1005,7 +1058,8 @@ async function readPackagePhoto(source,options={}){
         skew,
         lines:layoutLines,
         line_source_width:fastImage.width,
-        line_source_height:fastImage.height
+        line_source_height:fastImage.height,
+        started_at_ms:started
       })
         .catch(err=>console.warn("Background OCR recovery failed",err));
     }
@@ -1023,7 +1077,8 @@ async function readPackagePhoto(source,options={}){
     elapsed_seconds:Number(elapsed),
     skew_degrees:skew,
     recovery_pending:!decision.customer&&customers.length>0,
-    layout_line_count:layoutLines.length
+    layout_line_count:layoutLines.length,
+    timing:{...intakeTiming}
   };
 }
 
@@ -1692,7 +1747,8 @@ $("receivePackageButton").onclick=async()=>{
     const emailStatus=r.email?.status||"SKIPPED";
     $("receiveResult").textContent=
       "Package received · photo saved · email "+emailStatus+
-      (r.assigned_location_id?" · location assigned":"");
+      (r.assigned_location_id?" · location assigned":"")+
+      intakeTimingSummary();
 
     intakePhotoDataUrl=null;
     intakeOcrText="";
