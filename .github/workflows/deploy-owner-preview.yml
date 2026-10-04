@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "parcel-snap-owner-preview/**"
+      - "parcel-snap-customer/**"
       - "yen-stays/**"
       - ".github/workflows/deploy-owner-preview.yml"
   workflow_dispatch:
