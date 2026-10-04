@@ -230,6 +230,24 @@ expect(
   r
 );
 
+r=M.matchDirectory(aliasMappedPerson,
+  "ROADIE\nYour Electronic Needs / TrevonHu\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014"
+);
+expect(
+  "owner Roadie alias plus partial Trevon routes to Trevon Humes",
+  r.status==="MATCHED"&&r.customer?.id==="trevon-alias-map",
+  r
+);
+
+r=M.matchDirectory(aliasMappedPerson,
+  "ROADIE\nUnknown Walk-In Recipient\n16600 NW 54TH AVE UNIT 9\nHIALEAH FL 33014"
+);
+expect(
+  "owner Roadie unknown identity does not invent a customer",
+  r.status!=="MATCHED"&&!r.customer,
+  r
+);
+
 
 const noisyAliasCustomer=[{
   id:"trevon-noisy-alias",
