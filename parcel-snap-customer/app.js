@@ -13,6 +13,7 @@ let transferPhotoDataUrl=null;
 let businessSetupStep=1;
 let businessSetupLocations=[];
 let businessSetupPreviewMode=false;
+let businessSetupPrepay=false;
 let intakeReadToken=0;
 let intakeTiming={
   read_token:0,
@@ -1190,20 +1191,30 @@ async function loadWorkspace(){
       if(workspace.onboarding?.company_name)$("onboardingCompany").value=workspace.onboarding.company_name;
       return;
     }
+    if(workspace.state==="BUSINESS_SETUP_PREPAY"){
+      businessSetupPrepay=true;
+      businessSetupPreviewMode=false;
+      prepareBusinessSetup(workspace);
+      showOnly("businessSetupState");
+      return;
+    }
     if(workspace.state==="PAYMENT_REQUIRED"){
+      businessSetupPrepay=false;
       showOnly("billingState");
-      $("companyTitle").textContent=workspace.company?.name||"Parcel Snap";
+      $("companyTitle").textContent=workspace.company?.name||workspace.company_name||"Parcel Snap";
       $("companyMeta").textContent=workspace.company?.role?"Role: "+workspace.company.role:"";
-      $("billingStatus").textContent="Status: "+(workspace.subscription?.status||"Payment required");
+      $("billingStatus").textContent="Business setup saved · payment required to activate";
       $("payLink").href=workspace.payment_link;
       return;
     }
     if(workspace.state==="BUSINESS_SETUP_REQUIRED"){
+      businessSetupPrepay=false;
       prepareBusinessSetup(workspace);
       showOnly("businessSetupState");
       return;
     }
     if(workspace.state==="ACTIVE"){
+      businessSetupPrepay=false;
       renderWorkspace();
       showOnly("activeWorkspace");
       return;
@@ -1265,6 +1276,9 @@ function prepareBusinessSetup(data){
   $("profileWorkerLogins").checked=profile.needs_worker_sublogins!==false;
   $("profileDrivers").checked=Boolean(profile.needs_driver_access);
   $("profileNotes").value=profile.notes||"";
+  $("saveBusinessSetup").textContent=businessSetupPrepay
+    ?"Save Business Setup & Continue to Payment"
+    :"Build My Parcel Snap Workspace";
   renderBusinessSetupLocations();
   setBusinessSetupStep(1);
 }
@@ -1382,6 +1396,18 @@ $("saveBusinessSetup").onclick=async()=>{
         "<h4>Recommended setup</h4><ul>"+recommendations+"</ul></article>";
       $("businessSetupPreviewResult").classList.remove("hidden");
       $("businessSetupMessage").textContent="Preview complete. Your real workspace was not changed.";
+    }else if(businessSetupPrepay){
+      const result=await api({
+        action:"save_prepaid_business_profile",
+        profile,
+        locations:businessSetupLocations
+      });
+      $("businessSetupMessage").textContent="Business setup saved. Continue to payment to activate your tailored workspace.";
+      $("companyTitle").textContent=result.company_name||profile.primary_business_name||"Parcel Snap";
+      $("companyMeta").textContent="Business setup complete";
+      $("billingStatus").textContent="Business setup saved · payment required to activate";
+      $("payLink").href=result.payment_link;
+      showOnly("billingState");
     }else{
       await api({action:"save_business_profile",profile,locations:businessSetupLocations});
       $("businessSetupMessage").textContent="Workspace created.";
@@ -1395,6 +1421,7 @@ $("saveBusinessSetup").onclick=async()=>{
 };
 
 $("testBusinessSetup").onclick=()=>{
+  businessSetupPrepay=false;
   businessSetupPreviewMode=true;
   prepareBusinessSetup({
     company:workspace.company,
@@ -1529,8 +1556,11 @@ $("createStaffInviteButton").onclick=async()=>{
 };
 
 function facilitySort(items){
-  const order={MIA:1,FLL:2,ORL:3,NAS:4};
-  return [...items].sort((a,b)=>(order[a.code]||50)-(order[b.code]||50)||String(a.name).localeCompare(String(b.name)));
+  const typeOrder={ORIGIN:1,TRANSIT:2,DESTINATION:3};
+  return [...items].sort((a,b)=>
+    (typeOrder[a.facility_type]||50)-(typeOrder[b.facility_type]||50)||
+    String(a.name||"").localeCompare(String(b.name||""))
+  );
 }
 
 function renderReceiveControls(){
@@ -1783,11 +1813,17 @@ function renderTransferControls(){
   const currentPackage=$("transferPackage")?.value||"";
 
   if($("transferFacility")){
-    $("transferFacility").innerHTML=facilities.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("")||'<option value="">No warehouse configured</option>';
-    if(facilities.some(f=>f.id===currentFacility))$("transferFacility").value=currentFacility;
-    else{
-      const nassau=facilities.find(f=>f.code==="NAS");
-      if(nassau)$("transferFacility").value=nassau.id;
+    const choose=facilities.length>1?'<option value="">Choose arriving location</option>':"";
+    $("transferFacility").innerHTML=choose+
+      facilities.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join("")||
+      '<option value="">No location configured</option>';
+
+    if(facilities.some(f=>f.id===currentFacility)){
+      $("transferFacility").value=currentFacility;
+    }else if(facilities.length===1){
+      $("transferFacility").value=facilities[0].id;
+    }else{
+      $("transferFacility").value="";
     }
   }
 
