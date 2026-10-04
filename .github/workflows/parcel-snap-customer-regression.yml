@@ -1,0 +1,26 @@
+name: Parcel Snap Customer Regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "parcel-snap-customer/**"
+      - ".github/workflows/parcel-snap-customer-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Known-customer matcher regression
+        run: node parcel-snap-customer/tests/known-customer-matcher-test.mjs
+
+      - name: OCR speed architecture regression
+        run: node parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
