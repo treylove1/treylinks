@@ -7,6 +7,7 @@ on:
       - "parcel-snap-owner-preview/**"
       - "parcel-snap-customer/**"
       - "yen-stays/**"
+      - "code-engine-test/**"
       - ".github/workflows/deploy-owner-preview.yml"
   workflow_dispatch:
 
