@@ -27,11 +27,8 @@ audio{width:100%;margin-top:10px}canvas{display:none;width:100%;height:auto;bord
       <div class="card">
         <h2>Create a website</h2>
         <textarea id="prompt" placeholder="Create a website about cats, dogs and drones"></textarea>
-        <div class="row">
-          <button id="dictate" class="secondary">DICTATE REQUEST</button>
-          <button id="stopDictate" class="ghost" disabled>STOP DICTATION</button>
-        </div>
-        <p id="dictationStatus" class="muted">Tap Dictate Request to check whether your browser supports speech-to-text.</p>
+        <button id="dictate" class="secondary">MIC / DICTATE REQUEST</button>
+        <p id="dictationStatus" class="muted">Tap MIC to dictate. Tap the same button again to stop. Confirmed words are preserved without duplicating replayed speech.</p>
         <button id="build">CREATE WEBSITE</button>
         <p id="buildStatus" class="muted">Ready.</p>
         <div id="buildLinks" class="links"></div>
@@ -167,25 +164,6 @@ document.getElementById("saved").onclick=e=>{
 };
 renderSaved();
 
-/* Dictation */
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let recognition=null;
-const dictate=document.getElementById("dictate"),stopDictate=document.getElementById("stopDictate"),dictationStatus=document.getElementById("dictationStatus");
-if(!SR){dictate.disabled=true;dictationStatus.innerHTML='<span class="warn">Speech-to-text is unavailable in this browser. Voice-note recording below can still work.</span>'}
-else{
-  dictate.onclick=()=>{
-    if(recognition)try{recognition.abort()}catch{}
-    recognition=new SR();recognition.lang="en-US";recognition.continuous=true;recognition.interimResults=true;
-    const prompt=document.getElementById("prompt"),base=prompt.value.trim();let finalText="";
-    recognition.onstart=()=>{dictate.disabled=true;stopDictate.disabled=false;dictationStatus.innerHTML='<span class="warn">Listening… speak your website request.</span>'};
-    recognition.onresult=e=>{let interim="";for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)finalText+=(finalText?" ":"")+t.trim();else interim+=t}prompt.value=[base,finalText,interim].filter(Boolean).join(" ")};
-    recognition.onerror=e=>{dictationStatus.innerHTML='<span class="warn">Dictation error: '+esc(e.error||"unknown")+'. You can type or record a voice note instead.</span>'};
-    recognition.onend=()=>{dictate.disabled=false;stopDictate.disabled=true;recognition=null;if(finalText)dictationStatus.innerHTML='<span class="ok">Dictation added to the request.</span>'};
-    try{recognition.start()}catch{dictationStatus.innerHTML='<span class="warn">Could not start dictation. Check microphone permission.</span>'}
-  };
-  stopDictate.onclick=()=>{if(recognition)recognition.stop();else dictationStatus.textContent="Dictation is not active."};
-}
-
 /* Voice note */
 let stream=null,recorder=null,chunks=[],voiceBlob=null,voiceUrl=null;
 const startVoice=document.getElementById("startVoice"),stopVoice=document.getElementById("stopVoice"),voicePlayback=document.getElementById("voicePlayback"),downloadVoice=document.getElementById("downloadVoice"),clearVoice=document.getElementById("clearVoice"),voiceStatus=document.getElementById("voiceStatus");
@@ -230,6 +208,15 @@ function controlSelfCheck(){
   document.getElementById("controlStatus").innerHTML='<span class="ok">'+enabled.length+' enabled controls wired.</span> '+disabled.length+' controls are intentionally disabled until their required input is ready.';
 }
 setTimeout(controlSelfCheck,100);
+</script>
+<script type="module">
+import { attachVoice } from "./voice.js";
+attachVoice({
+  button: document.getElementById("dictate"),
+  status: document.getElementById("dictationStatus"),
+  instruction: document.getElementById("prompt"),
+  Recognition: window.SpeechRecognition || window.webkitSpeechRecognition,
+});
 </script>
 </body>
 </html>
