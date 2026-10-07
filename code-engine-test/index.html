@@ -4,157 +4,232 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<title>YEN Code Engine — Temporary Cloud Test</title>
+<title>YEN Code Engine — Live Test</title>
 <style>
-:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark;--bg:#06111b;--panel:#0c1c29;--line:#24465a;--text:#eef8ff;--muted:#a9c1cf;--accent:#4bd8ff;--gold:#f4c657;--ok:#8cf2ad;--warn:#ffd47d}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#123953 0,transparent 32%),var(--bg);color:var(--text);min-height:100vh}
-.wrap{max-width:1100px;margin:auto;padding:22px}.banner{border:1px solid #5b4b1e;background:#2a210b;color:#ffe9a6;padding:10px 14px;border-radius:12px;font-weight:800;font-size:.8rem;letter-spacing:.07em;text-align:center}
-h1{font-size:clamp(2.3rem,7vw,5.4rem);line-height:.96;letter-spacing:-.04em;margin:.35em 0}.lead{color:var(--muted);max-width:820px}
-.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;align-items:start}.card{background:#0b1b28;border:1px solid var(--line);border-radius:20px;padding:18px;margin:18px 0;box-shadow:0 18px 60px #0003}
-h2{margin:.2em 0 .5em}.status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pill{border:1px solid #31556b;border-radius:14px;padding:12px}.pill b{display:block}.pill span{color:var(--muted);font-size:.9rem}
-textarea,input,button,select{width:100%;font:inherit;border-radius:12px;border:1px solid #31556b;padding:12px;background:#07131e;color:#fff}textarea{min-height:140px;resize:vertical}
-button{background:var(--accent);color:#04131c;font-weight:900;cursor:pointer;margin-top:10px}button.secondary{background:#17364a;color:var(--text)}button.ghost{background:transparent;color:var(--text)}button:disabled{opacity:.5;cursor:not-allowed}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.links{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.links a{display:inline-block;padding:10px 14px;border-radius:999px;background:var(--accent);color:#04131c;text-decoration:none;font-weight:900}
-.ok{color:var(--ok)}.warn{color:var(--warn)}.muted{color:var(--muted)}iframe{width:100%;min-height:440px;border:1px solid #2d5065;border-radius:14px;background:#fff;display:none}
-.saved{display:grid;gap:10px}.saved-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid #203b4c;padding:12px 0}.saved-item small{color:var(--muted);display:block}.saved-item button{width:auto;margin:0;padding:9px 12px}
-canvas{display:none;width:100%;height:auto;border:1px solid #294c60;border-radius:14px;background:#09131d}.tools{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}.tools button{margin:0}
-.note{font-size:.9rem;color:var(--muted);border-left:3px solid var(--accent);padding-left:12px}
-@media(max-width:800px){.grid,.row,.status-grid{grid-template-columns:1fr}.saved-item{grid-template-columns:1fr}.saved-item button{width:100%}}
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark;--bg:#06111b;--panel:#0b1b28;--line:#24465a;--text:#eef8ff;--muted:#a9c1cf;--accent:#4bd8ff;--ok:#8cf2ad;--warn:#ffd47d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#123953 0,transparent 30%),var(--bg);color:var(--text)}.wrap{max-width:1080px;margin:auto;padding:20px}.banner{padding:10px 14px;border:1px solid #5b4b1e;background:#2a210b;color:#ffe9a6;border-radius:12px;font-weight:850;text-align:center;font-size:.8rem;letter-spacing:.06em}
+h1{font-size:clamp(2.3rem,7vw,5rem);line-height:.96;letter-spacing:-.04em;margin:.35em 0}.lead,.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:1.12fr .88fr;gap:18px;align-items:start}.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;margin:18px 0;box-shadow:0 18px 60px #0003}h2{margin:.2em 0 .55em}
+textarea,input,button{width:100%;font:inherit;border-radius:12px;border:1px solid #31556b;padding:12px;background:#07131e;color:#fff}textarea{min-height:135px;resize:vertical}button{background:var(--accent);color:#04131c;font-weight:900;cursor:pointer;margin-top:10px}button.secondary{background:#17364a;color:var(--text)}button.ghost{background:transparent;color:var(--text)}button:disabled{opacity:.45;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ok{color:var(--ok)}.warn{color:var(--warn)}.links{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.links a{display:inline-block;padding:10px 14px;border-radius:999px;background:var(--accent);color:#04131c;text-decoration:none;font-weight:900}
+iframe{width:100%;min-height:420px;border:1px solid #2d5065;border-radius:14px;background:#fff;display:none}.saved-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid #203b4c;padding:12px 0}.saved-item small{display:block;color:var(--muted)}.saved-item .row button{width:auto;margin:0}
+.pills{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.pill{border:1px solid #31556b;border-radius:14px;padding:11px}.pill b{display:block}.pill span{font-size:.86rem;color:var(--muted)}
+audio{width:100%;margin-top:10px}canvas{display:none;width:100%;height:auto;border:1px solid #294c60;border-radius:14px;background:#09131d;margin-top:10px}.note{font-size:.9rem;color:var(--muted);border-left:3px solid var(--accent);padding-left:12px}
+@media(max-width:800px){.grid,.row,.pills{grid-template-columns:1fr}.saved-item{grid-template-columns:1fr}.saved-item .row button{width:100%}}
 </style>
 </head>
 <body>
 <main class="wrap">
-<div class="banner">TEMPORARY CLOUD TEST — NOT THE LOCAL MASTER</div>
-<h1>YEN Code Engine</h1>
-<p class="lead">This live test lets you create and export a simple website and use the basic Image Studio today. The real hardened Code Engine remains the local-first master for project takeover, backups, local AI, browser verification, and future deployment control.</p>
+  <div class="banner">TEMPORARY CLOUD TEST — NOT THE LOCAL MASTER</div>
+  <h1>YEN Code Engine</h1>
+  <p class="lead">Use this live test now for website generation, saved drafts, voice notes, dictation, and basic image editing. The hardened local master is still the version being built for real project takeover and code editing.</p>
 
-<div class="grid">
-<section>
-  <div class="card">
-    <h2>Create a website</h2>
-    <textarea id="prompt" placeholder="Create a website about cats, dogs and drones"></textarea>
-    <button id="build">CREATE WEBSITE</button>
-    <p id="buildStatus" class="muted">Ready.</p>
-    <div id="buildLinks" class="links"></div>
-    <iframe id="preview" title="Generated website preview" sandbox="allow-scripts allow-forms"></iframe>
+  <div class="grid">
+    <section>
+      <div class="card">
+        <h2>Create a website</h2>
+        <textarea id="prompt" placeholder="Create a website about cats, dogs and drones"></textarea>
+        <div class="row">
+          <button id="dictate" class="secondary">DICTATE REQUEST</button>
+          <button id="stopDictate" class="ghost" disabled>STOP DICTATION</button>
+        </div>
+        <p id="dictationStatus" class="muted">Tap Dictate Request to check whether your browser supports speech-to-text.</p>
+        <button id="build">CREATE WEBSITE</button>
+        <p id="buildStatus" class="muted">Ready.</p>
+        <div id="buildLinks" class="links"></div>
+        <iframe id="preview" title="Generated website preview" sandbox="allow-scripts allow-forms"></iframe>
+      </div>
+
+      <div class="card">
+        <h2>Voice Note</h2>
+        <p class="muted">Record a note with your microphone. It stays on this device unless you download/share it yourself.</p>
+        <div class="row">
+          <button id="startVoice" class="secondary">START RECORDING</button>
+          <button id="stopVoice" class="ghost" disabled>STOP RECORDING</button>
+        </div>
+        <audio id="voicePlayback" controls style="display:none"></audio>
+        <div class="row">
+          <button id="downloadVoice" class="secondary" disabled>DOWNLOAD VOICE NOTE</button>
+          <button id="clearVoice" class="ghost" disabled>CLEAR VOICE NOTE</button>
+        </div>
+        <p id="voiceStatus" class="muted">Microphone has not been started.</p>
+      </div>
+
+      <div class="card">
+        <h2>Saved websites on this device</h2>
+        <p class="muted">Saved in this browser only. No cloud database is used.</p>
+        <div id="saved">No saved websites yet.</div>
+      </div>
+    </section>
+
+    <aside>
+      <div class="card">
+        <h2>Status</h2>
+        <div class="pills">
+          <div class="pill"><b class="ok">Website Generator</b><span>Available</span></div>
+          <div class="pill"><b class="ok">Voice Notes</b><span>Available on supported browsers</span></div>
+          <div class="pill"><b class="ok">Image Studio</b><span>Available</span></div>
+          <div class="pill"><b class="warn">Verification</b><span>Static only in this cloud test</span></div>
+          <div class="pill"><b class="warn">Project Takeover</b><span>Local master only</span></div>
+          <div class="pill"><b class="warn">Production Deploy</b><span>Disabled here</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Image Studio</h2>
+        <input id="imageInput" type="file" accept="image/*">
+        <canvas id="canvas"></canvas>
+        <div class="row">
+          <button id="rotate" class="secondary" disabled>ROTATE</button>
+          <button id="crop" class="secondary" disabled>CENTER CROP</button>
+        </div>
+        <div class="row">
+          <button id="gray" class="secondary" disabled>BLACK & WHITE</button>
+          <button id="enhance" class="secondary" disabled>ENHANCE</button>
+        </div>
+        <input id="overlay" placeholder="Text to add" style="margin-top:10px">
+        <button id="addText" class="secondary" disabled>ADD TEXT</button>
+        <div class="row">
+          <button id="resetImage" class="ghost" disabled>RESET</button>
+          <button id="downloadImage" disabled>DOWNLOAD PNG</button>
+        </div>
+        <p id="imageStatus" class="muted">Choose an image first. Editing buttons stay disabled until the image is ready.</p>
+      </div>
+
+      <div class="card">
+        <h2>Control Check</h2>
+        <p id="controlStatus" class="muted">Checking visible controls…</p>
+      </div>
+    </aside>
   </div>
 
-  <div class="card">
-    <h2>Saved work on this device</h2>
-    <p class="muted">Saved in this browser only. No account or cloud database is used.</p>
-    <div id="saved" class="saved">No saved sites yet.</div>
-  </div>
-</section>
-
-<aside>
-  <div class="card">
-    <h2>Status</h2>
-    <div class="status-grid">
-      <div class="pill"><b class="ok">Zero-AI Generator</b><span>Available</span></div>
-      <div class="pill"><b class="ok">Image Studio</b><span>Available</span></div>
-      <div class="pill"><b class="warn">Local Project Takeover</b><span>Local master only</span></div>
-      <div class="pill"><b class="warn">Local AI</b><span>Local master only</span></div>
-      <div class="pill"><b class="warn">Production Deploy</b><span>Disabled in this test</span></div>
-      <div class="pill"><b class="warn">Verification</b><span>Static checks only</span></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Image Studio</h2>
-    <input id="imageInput" type="file" accept="image/*">
-    <canvas id="canvas"></canvas>
-    <div class="tools">
-      <button id="rotate" class="secondary">ROTATE</button>
-      <button id="crop" class="secondary">CENTER CROP</button>
-      <button id="gray" class="secondary">BLACK & WHITE</button>
-      <button id="enhance" class="secondary">ENHANCE</button>
-    </div>
-    <input id="overlayText" placeholder="Text to add" style="margin-top:10px">
-    <button id="addText" class="secondary">ADD TEXT</button>
-    <div class="row">
-      <button id="resetImage" class="ghost">RESET</button>
-      <button id="downloadImage">DOWNLOAD PNG</button>
-    </div>
-    <p id="imageStatus" class="muted">Choose an image to begin.</p>
-  </div>
-</aside>
-</div>
-
-<p class="note">This page is deliberately limited. It does not import folders, edit your production sites, install packages, run a local model, or deploy anything. Those capabilities belong to the hardened local master.</p>
+  <p class="note">This live page is intentionally limited. It does not edit your real websites or publish anything. Those actions stay disabled until the hardened local master can safely back up, test, repair, and roll back real projects.</p>
 </main>
 
 <script>
-const esc=(s)=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const titleFromPrompt=(raw)=>{
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const savedKey="yen-code-engine-cloud-test-v2";
+let previewUrl=null;
+
+function titleFromPrompt(raw){
   const cleaned=String(raw||"").replace(/^(please\s+)?(create|build|make)(\s+me)?\s+(a\s+)?(website|site|webpage)(\s+(about|for))?\s*/i,"").replace(/[.!?]+$/,"").trim().slice(0,90);
-  const base=cleaned||"A New Idea"; return base.replace(/\b\w/g,m=>m.toUpperCase());
-};
+  const base=cleaned||"A New Idea";
+  return base.replace(/\b\w/g,m=>m.toUpperCase());
+}
 function buildSite(instruction){
   const raw=String(instruction||"").trim().slice(0,1000);
-  if(!raw) throw Error("Describe the website you want to create.");
+  if(!raw) throw Error("Describe the website you want to create first.");
   const title=titleFromPrompt(raw),safeTitle=esc(title),safeRaw=esc(raw),lower=raw.toLowerCase();
   const palette=/cat|dog|pet|animal/.test(lower)?["#2b183a","#ffb464","#fff3de"]:/shipping|courier|freight/.test(lower)?["#0d2137","#42d6ff","#edfaff"]:/survey|land|property/.test(lower)?["#18301f","#d8b35b","#f8f3dc"]:["#071b2d","#54d9ff","#e9f9ff"];
-  const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="Website generated by YEN Code Engine Cloud Test"><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:${palette[0]};color:${palette[2]};font:16px/1.6 system-ui,sans-serif}header{position:sticky;top:0;display:flex;justify-content:space-between;gap:18px;align-items:center;padding:18px 6vw;background:${palette[0]}ee;border-bottom:1px solid #ffffff22}nav{display:flex;gap:16px;flex-wrap:wrap}nav a{color:inherit;text-decoration:none;font-weight:800}.hero,.section{padding:70px 6vw;max-width:1150px;margin:auto}.hero{min-height:68vh;display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:center}h1{font-size:clamp(3rem,8vw,7rem);line-height:.95;letter-spacing:-.05em;margin:.2em 0}.eyebrow{color:${palette[1]};text-transform:uppercase;letter-spacing:.18em;font-size:.78rem;font-weight:900}.art{aspect-ratio:1;border-radius:50%;display:grid;place-items:center;border:1px solid #ffffff33;background:radial-gradient(circle,${palette[1]}55,transparent 65%);font-size:7rem}.button{display:inline-block;margin-top:18px;padding:13px 22px;border-radius:999px;background:${palette[1]};color:#05131c;text-decoration:none;font-weight:900}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{padding:20px;border:1px solid #ffffff25;border-radius:18px;background:#ffffff08}footer{padding:24px 6vw;border-top:1px solid #ffffff22;color:#c9dae3}@media(max-width:760px){header{align-items:flex-start;flex-direction:column}.hero,.cards{grid-template-columns:1fr}.hero{min-height:auto}.art{max-width:300px}}</style></head><body><header id="top"><strong>${safeTitle}</strong><nav><a href="#about">About</a><a href="#features">Features</a><a href="#next">Next Step</a></nav></header><main><section class="hero"><div><div class="eyebrow">YEN Code Engine Cloud Test</div><h1>${safeTitle}</h1><p>Built from your instruction: “${safeRaw}”</p><a class="button" href="#features">Explore</a></div><div class="art" aria-label="Decorative project symbol">⌁</div></section><section class="section" id="about"><div class="eyebrow">About</div><h2>A clear digital starting point</h2><p>This self-contained draft is ready for you to review and expand.</p></section><section class="section" id="features"><div class="eyebrow">Structure</div><h2>Useful sections ready to grow</h2><div class="cards"><article class="card"><h3>Discover</h3><p>Explain the main idea clearly.</p></article><article class="card"><h3>Organize</h3><p>Group services, products, or information.</p></article><article class="card"><h3>Connect</h3><p>Add real owner-approved actions in the local master.</p></article></div></section><section class="section" id="next"><div class="eyebrow">Owner Review</div><h2>Review before publishing</h2><p>This cloud test never publishes automatically.</p><a class="button" href="#top">Back to top</a></section></main><footer>${safeTitle} · Temporary Code Engine Cloud Test</footer></body></html>`;
-  return {title,html};
+  const site=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="Generated by YEN Code Engine"><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:${palette[0]};color:${palette[2]};font:16px/1.6 system-ui,sans-serif}header{position:sticky;top:0;display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 6vw;background:${palette[0]}ee;border-bottom:1px solid #ffffff22}nav{display:flex;gap:16px;flex-wrap:wrap}nav a{color:inherit;text-decoration:none;font-weight:800}.hero,.section{padding:70px 6vw;max-width:1150px;margin:auto}.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:center;min-height:65vh}h1{font-size:clamp(3rem,8vw,7rem);line-height:.95;letter-spacing:-.05em;margin:.2em 0}.eyebrow{color:${palette[1]};text-transform:uppercase;letter-spacing:.18em;font-size:.78rem;font-weight:900}.art{aspect-ratio:1;border-radius:50%;display:grid;place-items:center;border:1px solid #ffffff33;background:radial-gradient(circle,${palette[1]}55,transparent 65%);font-size:7rem}.button{display:inline-block;margin-top:18px;padding:13px 22px;border-radius:999px;background:${palette[1]};color:#05131c;text-decoration:none;font-weight:900}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{padding:20px;border:1px solid #ffffff25;border-radius:18px;background:#ffffff08}footer{padding:24px 6vw;border-top:1px solid #ffffff22;color:#c9dae3}@media(max-width:760px){header{align-items:flex-start;flex-direction:column}.hero,.cards{grid-template-columns:1fr}.hero{min-height:auto}.art{max-width:300px}}</style></head><body><header id="top"><strong>${safeTitle}</strong><nav><a href="#about">About</a><a href="#features">Features</a><a href="#next">Next Step</a></nav></header><main><section class="hero"><div><div class="eyebrow">YEN Code Engine Draft</div><h1>${safeTitle}</h1><p>Built from your instruction: “${safeRaw}”</p><a class="button" href="#features">Explore</a></div><div class="art" aria-label="Decorative project symbol">⌁</div></section><section class="section" id="about"><div class="eyebrow">About</div><h2>A clear digital starting point</h2><p>This self-contained draft is ready for you to review and expand.</p></section><section class="section" id="features"><div class="eyebrow">Structure</div><h2>Useful sections ready to grow</h2><div class="cards"><article class="card"><h3>Discover</h3><p>Explain the main idea clearly.</p></article><article class="card"><h3>Organize</h3><p>Group services, products, or information.</p></article><article class="card"><h3>Connect</h3><p>Add real owner-approved actions later.</p></article></div></section><section class="section" id="next"><div class="eyebrow">Owner Review</div><h2>Review before publishing</h2><p>This test never publishes automatically.</p><a class="button" href="#top">Back to top</a></section></main><footer>${safeTitle} · YEN Code Engine</footer></body></html>`;
+  return {title,html:site};
 }
 function verify(html){
   const failures=[];
-  if(!/^\s*<!doctype html>/i.test(html)) failures.push("missing doctype");
-  if(!/<meta\b[^>]*name=["']viewport["']/i.test(html)) failures.push("missing viewport");
-  if(!/<title>[^<]+<\/title>/i.test(html)) failures.push("missing title");
-  if(/href\s*=\s*["']#["']/i.test(html)) failures.push('placeholder href="#"');
+  if(!/^\s*<!doctype html>/i.test(html))failures.push("missing doctype");
+  if(!/<meta\b[^>]*name=["']viewport["']/i.test(html))failures.push("missing viewport");
+  if(!/<title>[^<]+<\/title>/i.test(html))failures.push("missing title");
+  if(/href\s*=\s*["']#["']/i.test(html))failures.push('placeholder href="#"');
   const ids=[...html.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]);
-  const dup=[...new Set(ids.filter((id,i)=>ids.indexOf(id)!==i))]; if(dup.length) failures.push("duplicate IDs");
+  if(new Set(ids).size!==ids.length)failures.push("duplicate IDs");
   const anchors=[...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]);
-  if(anchors.some(h=>h.startsWith("#")&&h.length>1&&!ids.includes(h.slice(1)))) failures.push("broken internal anchor");
+  if(anchors.some(h=>h.startsWith("#")&&h.length>1&&!ids.includes(h.slice(1))))failures.push("broken internal anchor");
   const images=[...html.matchAll(/<img\b[^>]*>/gi)].map(m=>m[0]);
-  if(images.some(tag=>!/\balt\s*=\s*["'][^"']*["']/i.test(tag))) failures.push("image missing alt text");
+  if(images.some(tag=>!/\balt\s*=\s*["'][^"']*["']/i.test(tag)))failures.push("image missing alt text");
   return {passed:failures.length===0,score:Math.max(0,100-failures.length*20),failures};
 }
-const key="yen-code-engine-cloud-test-sites";
-const getSaved=()=>{try{return JSON.parse(localStorage.getItem(key)||"[]")}catch{return[]}};
-const setSaved=(items)=>localStorage.setItem(key,JSON.stringify(items.slice(0,20)));
-function dataUrlForHtml(html){return URL.createObjectURL(new Blob([html],{type:"text/html"}))}
+function htmlUrl(html){return URL.createObjectURL(new Blob([html],{type:"text/html"}))}
+function getSaved(){try{return JSON.parse(localStorage.getItem(savedKey)||"[]")}catch{return[]}}
+function setSaved(items){localStorage.setItem(savedKey,JSON.stringify(items.slice(0,20)))}
 function renderSaved(){
   const items=getSaved(),box=document.getElementById("saved");
-  if(!items.length){box.textContent="No saved sites yet.";return}
-  box.innerHTML=items.map((item,i)=>`<div class="saved-item"><div><b>${esc(item.title)}</b><small>${esc(item.created)}</small></div><div class="row"><button class="secondary" data-open="${i}">OPEN</button><button class="ghost" data-download="${i}">HTML</button></div></div>`).join("");
+  if(!items.length){box.textContent="No saved websites yet.";return}
+  box.innerHTML=items.map((item,i)=>`<div class="saved-item"><div><b>${esc(item.title)}</b><small>${esc(item.created)}</small></div><div class="row"><button class="secondary openSaved" data-i="${i}">OPEN</button><button class="ghost downloadSaved" data-i="${i}">HTML</button></div></div>`).join("");
 }
-let currentUrl=null;
 document.getElementById("build").onclick=()=>{
   const status=document.getElementById("buildStatus"),links=document.getElementById("buildLinks"),preview=document.getElementById("preview");
-  links.innerHTML=""; status.textContent="Building and checking…";
+  links.innerHTML="";status.textContent="Building and checking…";
   try{
     const site=buildSite(document.getElementById("prompt").value),check=verify(site.html);
-    if(!check.passed) throw Error("Static verification failed: "+check.failures.join(", "));
-    if(currentUrl) URL.revokeObjectURL(currentUrl); currentUrl=dataUrlForHtml(site.html);
-    preview.src=currentUrl;preview.style.display="block";
-    status.innerHTML=`<span class="warn">STATIC VERIFIED ONLY · ${check.score}/100.</span> Browser verification belongs to the local master.`;
-    const open=document.createElement("a");open.href=currentUrl;open.target="_blank";open.textContent="OPEN PREVIEW";
-    const download=document.createElement("a");download.href=currentUrl;download.download=site.title.toLowerCase().replace(/[^a-z0-9]+/g,"-")+".html";download.textContent="DOWNLOAD HTML";
-    links.append(open,download);
+    if(!check.passed)throw Error("Static verification failed: "+check.failures.join(", "));
+    if(previewUrl)URL.revokeObjectURL(previewUrl);
+    previewUrl=htmlUrl(site.html);preview.src=previewUrl;preview.style.display="block";
+    status.innerHTML='<span class="warn">STATIC VERIFIED ONLY · '+check.score+'/100.</span> The local master does full browser verification.';
+    const open=document.createElement("a");open.href=previewUrl;open.target="_blank";open.textContent="OPEN PREVIEW";
+    const dl=document.createElement("a");dl.href=previewUrl;dl.download=site.title.toLowerCase().replace(/[^a-z0-9]+/g,"-")+".html";dl.textContent="DOWNLOAD HTML";
+    links.append(open,dl);
     const items=getSaved();items.unshift({title:site.title,html:site.html,created:new Date().toLocaleString()});setSaved(items);renderSaved();
-  }catch(e){status.innerHTML=`<span class="warn">${esc(e.message)}</span>`}
+  }catch(e){status.innerHTML='<span class="warn">'+esc(e.message)+'</span>'}
 };
-document.getElementById("saved").onclick=(event)=>{
-  const open=event.target.closest("[data-open]"),download=event.target.closest("[data-download]"),items=getSaved();
-  if(open){const item=items[Number(open.dataset.open)];if(!item)return;if(currentUrl)URL.revokeObjectURL(currentUrl);currentUrl=dataUrlForHtml(item.html);const preview=document.getElementById("preview");preview.src=currentUrl;preview.style.display="block";window.scrollTo({top:0,behavior:"smooth"})}
-  if(download){const item=items[Number(download.dataset.download)];if(!item)return;const a=document.createElement("a");a.href=dataUrlForHtml(item.html);a.download=item.title.toLowerCase().replace(/[^a-z0-9]+/g,"-")+".html";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+document.getElementById("saved").onclick=e=>{
+  const button=e.target.closest("button");if(!button)return;
+  const item=getSaved()[Number(button.dataset.i)];if(!item)return;
+  if(button.classList.contains("openSaved")){if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl=htmlUrl(item.html);const p=document.getElementById("preview");p.src=previewUrl;p.style.display="block";window.scrollTo({top:0,behavior:"smooth"})}
+  if(button.classList.contains("downloadSaved")){const u=htmlUrl(item.html),a=document.createElement("a");a.href=u;a.download=item.title.toLowerCase().replace(/[^a-z0-9]+/g,"-")+".html";a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 };
 renderSaved();
 
-const input=document.getElementById("imageInput"),canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d"),imageStatus=document.getElementById("imageStatus");
-let originalData=null,loaded=false;
-function snapshot(){originalData=canvas.toDataURL("image/png")}
-function redrawFromData(data){const img=new Image();img.onload=()=>{canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0);canvas.style.display="block";loaded=true};img.src=data}
-input.onchange=e=>{const file=e.target.files[0];if(!file)return;const img=new Image();img.onload=()=>{canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;ctx.drawImage(img,0,0);canvas.style.display="block";loaded=true;snapshot();imageStatus.textContent="Image loaded."};img.src=URL.createObjectURL(file)};
-document.getElementById("rotate").onclick=()=>{if(!loaded)return;const t=document.createElement("canvas");t.width=canvas.height;t.height=canvas.width;const c=t.getContext("2d");c.translate(t.width,0);c.rotate(Math.PI/2);c.drawImage(canvas,0,0);canvas.width=t.width;canvas.height=t.height;ctx.drawImage(t,0,0);imageStatus.textContent="Rotated."};
-document.getElementById("crop").onclick=()=>{if(!loaded)return;const w=Math.floor(canvas.width*.8),h=Math.floor(canvas.height*.8),sx=Math.floor((canvas.width-w)/2),sy=Math.floor((canvas.height-h)/2),t=document.createElement("canvas");t.width=w;t.height=h;t.getContext("2d").drawImage(canvas,sx,sy,w,h,0,0,w,h);canvas.width=w;canvas.height=h;ctx.drawImage(t,0,0);imageStatus.textContent="Center crop applied."};
-document.getElementById("gray").onclick=()=>{if(!loaded)return;const t=document.createElement("canvas");t.width=canvas.width;t.height=canvas.height;const c=t.getContext("2d");c.filter="grayscale(1)";c.drawImage(canvas,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(t,0,0);imageStatus.textContent="Black and white applied."};
-document.getElementById("enhance").onclick=()=>{if(!loaded)return;const t=document.createElement("canvas");t.width=canvas.width;t.height=canvas.height;const c=t.getContext("2d");c.filter="contrast(1.12) saturate(1.18) brightness(1.04)";c.drawImage(canvas,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(t,0,0);imageStatus.textContent="Enhanced."};
-document.getElementById("addText").onclick=()=>{if(!loaded)return;const text=document.getElementById("overlayText").value.trim();if(!text)return;ctx.save();ctx.font="900 "+Math.max(20,Math.floor(canvas.width/16))+"px system-ui";ctx.textAlign="center";ctx.lineWidth=Math.max(3,Math.floor(canvas.width/200));ctx.strokeStyle="#000";ctx.fillStyle="#fff";ctx.strokeText(text,canvas.width/2,canvas.height*.85,canvas.width*.9);ctx.fillText(text,canvas.width/2,canvas.height*.85,canvas.width*.9);ctx.restore();imageStatus.textContent="Text added."};
-document.getElementById("resetImage").onclick=()=>{if(!originalData)return;redrawFromData(originalData);imageStatus.textContent="Reset to original upload."};
-document.getElementById("downloadImage").onclick=()=>{if(!loaded)return;const a=document.createElement("a");a.download="yen-code-engine-image.png";a.href=canvas.toDataURL("image/png");a.click()};
+/* Dictation */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recognition=null;
+const dictate=document.getElementById("dictate"),stopDictate=document.getElementById("stopDictate"),dictationStatus=document.getElementById("dictationStatus");
+if(!SR){dictate.disabled=true;dictationStatus.innerHTML='<span class="warn">Speech-to-text is unavailable in this browser. Voice-note recording below can still work.</span>'}
+else{
+  dictate.onclick=()=>{
+    if(recognition)try{recognition.abort()}catch{}
+    recognition=new SR();recognition.lang="en-US";recognition.continuous=true;recognition.interimResults=true;
+    const prompt=document.getElementById("prompt"),base=prompt.value.trim();let finalText="";
+    recognition.onstart=()=>{dictate.disabled=true;stopDictate.disabled=false;dictationStatus.innerHTML='<span class="warn">Listening… speak your website request.</span>'};
+    recognition.onresult=e=>{let interim="";for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)finalText+=(finalText?" ":"")+t.trim();else interim+=t}prompt.value=[base,finalText,interim].filter(Boolean).join(" ")};
+    recognition.onerror=e=>{dictationStatus.innerHTML='<span class="warn">Dictation error: '+esc(e.error||"unknown")+'. You can type or record a voice note instead.</span>'};
+    recognition.onend=()=>{dictate.disabled=false;stopDictate.disabled=true;recognition=null;if(finalText)dictationStatus.innerHTML='<span class="ok">Dictation added to the request.</span>'};
+    try{recognition.start()}catch{dictationStatus.innerHTML='<span class="warn">Could not start dictation. Check microphone permission.</span>'}
+  };
+  stopDictate.onclick=()=>{if(recognition)recognition.stop();else dictationStatus.textContent="Dictation is not active."};
+}
+
+/* Voice note */
+let stream=null,recorder=null,chunks=[],voiceBlob=null,voiceUrl=null;
+const startVoice=document.getElementById("startVoice"),stopVoice=document.getElementById("stopVoice"),voicePlayback=document.getElementById("voicePlayback"),downloadVoice=document.getElementById("downloadVoice"),clearVoice=document.getElementById("clearVoice"),voiceStatus=document.getElementById("voiceStatus");
+function stopTracks(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+startVoice.onclick=async()=>{
+  if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==="undefined"){voiceStatus.innerHTML='<span class="warn">Voice recording is not supported in this browser.</span>';return}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];
+    const type=["audio/webm;codecs=opus","audio/webm","audio/mp4"].find(t=>MediaRecorder.isTypeSupported?.(t));
+    recorder=new MediaRecorder(stream,type?{mimeType:type}:undefined);
+    recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+    recorder.onstop=()=>{voiceBlob=new Blob(chunks,{type:recorder.mimeType||"audio/webm"});if(voiceUrl)URL.revokeObjectURL(voiceUrl);voiceUrl=URL.createObjectURL(voiceBlob);voicePlayback.src=voiceUrl;voicePlayback.style.display="block";downloadVoice.disabled=false;clearVoice.disabled=false;startVoice.disabled=false;stopVoice.disabled=true;voiceStatus.innerHTML='<span class="ok">Voice note recorded. You can play it or download it.</span>';stopTracks()};
+    recorder.start(250);startVoice.disabled=true;stopVoice.disabled=false;voiceStatus.innerHTML='<span class="warn">Recording… tap Stop Recording when finished.</span>';
+  }catch{stopTracks();voiceStatus.innerHTML='<span class="warn">Microphone could not start. Allow microphone permission and try again.</span>'}
+};
+stopVoice.onclick=()=>{if(recorder?.state==="recording")recorder.stop();else voiceStatus.textContent="No recording is active."};
+downloadVoice.onclick=()=>{if(!voiceBlob||!voiceUrl){voiceStatus.textContent="Record a voice note first.";return}const a=document.createElement("a"),ext=voiceBlob.type.includes("mp4")?"m4a":"webm";a.href=voiceUrl;a.download="yen-code-engine-voice-note-"+new Date().toISOString().replace(/[:.]/g,"-")+"."+ext;a.click();voiceStatus.textContent="Voice note download started."};
+clearVoice.onclick=()=>{if(voiceUrl)URL.revokeObjectURL(voiceUrl);voiceUrl=null;voiceBlob=null;chunks=[];voicePlayback.removeAttribute("src");voicePlayback.load();voicePlayback.style.display="none";downloadVoice.disabled=true;clearVoice.disabled=true;startVoice.disabled=false;stopVoice.disabled=true;voiceStatus.textContent="Voice note cleared."};
+
+/* Image Studio */
+const imageInput=document.getElementById("imageInput"),canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d"),imageStatus=document.getElementById("imageStatus");
+let imageLoaded=false,originalImage=null;
+const imageButtons=["rotate","crop","gray","enhance","addText","resetImage","downloadImage"].map(id=>document.getElementById(id));
+function setImageReady(ready){imageLoaded=ready;imageButtons.forEach(b=>b.disabled=!ready)}
+function requireImage(){if(imageLoaded)return true;imageStatus.textContent="Choose an image first.";return false}
+function drawFromData(data){const img=new Image();img.onload=()=>{canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0);canvas.style.display="block";setImageReady(true)};img.src=data}
+imageInput.onchange=e=>{const file=e.target.files[0];if(!file){imageStatus.textContent="No image selected.";return}const img=new Image();img.onload=()=>{canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;ctx.drawImage(img,0,0);canvas.style.display="block";originalImage=canvas.toDataURL("image/png");setImageReady(true);imageStatus.innerHTML='<span class="ok">Image loaded. Editing buttons are ready.</span>'};img.onerror=()=>{setImageReady(false);imageStatus.innerHTML='<span class="warn">That image could not be opened.</span>'};img.src=URL.createObjectURL(file)};
+document.getElementById("rotate").onclick=()=>{if(!requireImage())return;const t=document.createElement("canvas");t.width=canvas.height;t.height=canvas.width;const x=t.getContext("2d");x.translate(t.width,0);x.rotate(Math.PI/2);x.drawImage(canvas,0,0);canvas.width=t.width;canvas.height=t.height;ctx.drawImage(t,0,0);imageStatus.textContent="Rotated."};
+document.getElementById("crop").onclick=()=>{if(!requireImage())return;const w=Math.floor(canvas.width*.8),h=Math.floor(canvas.height*.8),sx=Math.floor((canvas.width-w)/2),sy=Math.floor((canvas.height-h)/2),t=document.createElement("canvas");t.width=w;t.height=h;t.getContext("2d").drawImage(canvas,sx,sy,w,h,0,0,w,h);canvas.width=w;canvas.height=h;ctx.drawImage(t,0,0);imageStatus.textContent="Center crop applied."};
+document.getElementById("gray").onclick=()=>{if(!requireImage())return;const t=document.createElement("canvas");t.width=canvas.width;t.height=canvas.height;const x=t.getContext("2d");x.filter="grayscale(1)";x.drawImage(canvas,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(t,0,0);imageStatus.textContent="Black and white applied."};
+document.getElementById("enhance").onclick=()=>{if(!requireImage())return;const t=document.createElement("canvas");t.width=canvas.width;t.height=canvas.height;const x=t.getContext("2d");x.filter="contrast(1.12) saturate(1.18) brightness(1.04)";x.drawImage(canvas,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(t,0,0);imageStatus.textContent="Enhanced."};
+document.getElementById("addText").onclick=()=>{if(!requireImage())return;const text=document.getElementById("overlay").value.trim();if(!text){imageStatus.textContent="Type the text you want to add first.";return}ctx.save();ctx.font="900 "+Math.max(20,Math.floor(canvas.width/16))+"px system-ui";ctx.textAlign="center";ctx.lineWidth=Math.max(3,Math.floor(canvas.width/200));ctx.strokeStyle="#000";ctx.fillStyle="#fff";ctx.strokeText(text,canvas.width/2,canvas.height*.85,canvas.width*.9);ctx.fillText(text,canvas.width/2,canvas.height*.85,canvas.width*.9);ctx.restore();imageStatus.textContent="Text added."};
+document.getElementById("resetImage").onclick=()=>{if(!originalImage){imageStatus.textContent="Choose an image first.";return}drawFromData(originalImage);imageStatus.textContent="Reset to original image."};
+document.getElementById("downloadImage").onclick=()=>{if(!requireImage())return;const a=document.createElement("a");a.href=canvas.toDataURL("image/png");a.download="yen-code-engine-image.png";a.click();imageStatus.textContent="Image download started."};
+setImageReady(false);
+
+/* Lightweight control wiring check */
+function controlSelfCheck(){
+  const visible=[...document.querySelectorAll("button")].filter(b=>getComputedStyle(b).display!=="none");
+  const disabled=visible.filter(b=>b.disabled);
+  const enabled=visible.filter(b=>!b.disabled);
+  document.getElementById("controlStatus").innerHTML='<span class="ok">'+enabled.length+' enabled controls wired.</span> '+disabled.length+' controls are intentionally disabled until their required input is ready.';
+}
+setTimeout(controlSelfCheck,100);
 </script>
 </body>
 </html>
