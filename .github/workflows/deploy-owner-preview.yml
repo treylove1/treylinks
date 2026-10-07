@@ -29,6 +29,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Run Code Engine live voice regression tests
+        run: node --test code-engine-test/voice-regression.test.mjs
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
