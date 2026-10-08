@@ -7,9 +7,12 @@ No new dashboards, billing flows, automatic email, or automatic intake enhanceme
 - Display completed AI transcription without waiting for the independent QR/barcode decoding task.
 - Do not overwrite differing model tracking with barcode text; show a verification conflict.
 - Do not treat arbitrary QR content as a tracking number.
+- Preserve up to 2400px of full-frame image detail while keeping photo upload under the Worker size limit.
+- Correct each Cloudflare model's generation-token parameter (`max_completion_tokens` for Gemma 4, `max_tokens` for Llama 4 Scout).
+- Guard legacy local OCR too: no silent customer selection/automatic save during test mode.
 - Require human confirmation before package saving/customer notifications in the vision test intake.
 - Measure authorization time, inference time, total Worker time, and how many vision models were attempted.
-- Include repeatable mock-provider regression tests (no paid API calls, no real customer labels).
+- Include repeatable mock-provider regression tests and an automatic draft-PR GitHub Actions workflow (no paid API calls, no real customer labels).
 
 ## Ground-truth acceptance test (not yet performed)
 1. Collect at least 100 consented shipping-label photos from real phones. Include clear labels, tilted images, mixed light, partial obstruction, multiple visible barcodes, and distinct couriers.
@@ -24,6 +27,8 @@ No new dashboards, billing flows, automatic email, or automatic intake enhanceme
 ## Local tests
 `node --test parcel-snap-vision-proxy/worker.test.mjs`
 
+GitHub Actions workflow: `.github/workflows/parcel-snap-camera-readiness.yml`. The presence of CI configuration is not proof that a GitHub runner executed it.
+
 These are synthetic unit/integration-mock tests, **not** live Cloudflare inference or actual image recognition benchmarks.
 
 ## Operations / deployment
@@ -31,5 +36,5 @@ These are synthetic unit/integration-mock tests, **not** live Cloudflare inferen
 - Branch: `parcel-snap-camera-readiness-20261008`
 - Worker: `parcel-snap-vision-proxy/worker.mjs`
 - Client: `parcel-snap-vision-test/vision-client.js`
-- Do not merge or deploy before running the 100-photo benchmark and a production-safe login test.
+- Do not merge or deploy before a controlled authenticated pilot and a production-safe login test. Use 100 private photographs for the first measured baseline and a wider independent set before approving unattended operations.
 - Never commit API credentials, real addresses, customer identities, or signed access tokens.
