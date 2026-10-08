@@ -27,13 +27,13 @@ expect("first-result latency is recorded",app.includes("first_result_seconds"));
 expect("background-recovery latency is recorded",app.includes("background_recovery_seconds"));
 expect("phone test surfaces OCR timing",app.includes("intakeTimingSummary()"));
 expect("fast first-pass OCR preprocessing exists",app.includes("prepareFastOcrCanvas"));
-expect("blocking OCR crop is capped near 900px",app.includes("fitForOcr(rawOcrCanvas,0,900)"));
+expect("blocking OCR crop is capped near 900px",app.includes("fitForOcr(straightenLabelCanvas(img,labelRect),0,900)"));
 expect("recipient focus runs before full recovery passes",app.includes('...(recipientFocus?[{psm:"7"'));
 expect("recipient focus uses destination street anchor",app.includes("recipientFocusRectFromLines"));
 expect("fast pass requests OCR layout blocks",app.includes("{text:true,blocks:true}"));
 expect("browser OCR upgraded to Tesseract v6",html.includes("tesseract.js@6"));
 expect("instant package preview exists",vision.includes("URL.createObjectURL(file)"));
-expect("local OCR uses cropped canvas",vision.includes("readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas})"));
+expect("local OCR uses cropped canvas",vision.includes("readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt})"));
 expect("vision is started before local OCR completes",vision.indexOf("visionPromise=analyzePackageWithVision") < vision.indexOf("const local=await readPackagePhoto"));
 expect("remote vision is not awaited before local OCR",!vision.includes("await analyzePackageWithVision(prepared.vision)"));
 

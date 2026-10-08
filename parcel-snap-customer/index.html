@@ -271,6 +271,12 @@
               <small id="processingDetail"></small>
             </div>
 
+            <section id="labelReadout" class="notice hidden" aria-live="polite">
+              <strong>Read from photo</strong>
+              <pre id="labelFields" style="white-space:pre-wrap"></pre>
+              <details open><summary>All extracted text</summary><pre id="labelRawText" style="white-space:pre-wrap"></pre></details>
+            </section>
+
             <label>Customer
               <select id="receiveCustomer"></select>
             </label>
@@ -528,7 +534,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
   <script src="known-customer-matcher.js"></script>
-  <script src="app.js"></script>
-  <script src="vision-client.js"></script>
+  <script src="app.js?v=20261008-ocr"></script>
+  <script src="vision-client.js?v=20261008-ocr"></script>
 </body>
 </html>

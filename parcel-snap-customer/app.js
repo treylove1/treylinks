@@ -15,6 +15,9 @@ let businessSetupLocations=[];
 let businessSetupPreviewMode=false;
 let businessSetupPrepay=false;
 let intakeReadToken=0;
+let autoReceivedToken=0;
+let receiveInFlight=false;
+let intakePackageId=null;
 let intakeTiming={
   read_token:0,
   started_at_ms:0,
@@ -355,7 +358,7 @@ function drawImageRegion(img,rect,maxDimension,quality){
 }
 
 function detectBrightLabelRegion(img){
-  const maxSample=180;
+  const maxSample=320;
   const scale=Math.min(1,maxSample/Math.max(img.width,img.height));
   const w=Math.max(32,Math.round(img.width*scale));
   const h=Math.max(32,Math.round(img.height*scale));
@@ -414,6 +417,7 @@ function detectBrightLabelRegion(img){
       if(!mask[seed]||seen[seed])continue;
 
       let minX=sx,maxX=sx,minY=sy,maxY=sy,count=0;
+      let tl={x:sx,y:sy},tr={x:sx,y:sy},bl={x:sx,y:sy},br={x:sx,y:sy};
       stack.push(seed);
       seen[seed]=1;
 
@@ -421,6 +425,10 @@ function detectBrightLabelRegion(img){
         const p=stack.pop();
         const y=Math.floor(p/w),x=p-y*w;
         count++;
+        if(x+y<tl.x+tl.y)tl={x,y};
+        if(x-y>tr.x-tr.y)tr={x,y};
+        if(x-y<bl.x-bl.y)bl={x,y};
+        if(x+y>br.x+br.y)br={x,y};
         if(x<minX)minX=x;if(x>maxX)maxX=x;
         if(y<minY)minY=y;if(y>maxY)maxY=y;
 
@@ -447,7 +455,7 @@ function detectBrightLabelRegion(img){
         fill>=.30
       ){
         const score=boxArea*fill;
-        if(!best||score>best.score)best={minX,maxX,minY,maxY,score};
+        if(!best||score>best.score)best={minX,maxX,minY,maxY,score,tl,tr,bl,br};
       }
     }
   }
@@ -467,7 +475,7 @@ function detectBrightLabelRegion(img){
   const rh=(y2-y1+1)/h*img.height;
 
   if(rw<160||rh<100)return null;
-  return {x:rx,y:ry,w:rw,h:rh};
+  return {x:rx,y:ry,w:rw,h:rh,corners:[best.tl,best.tr,best.br,best.bl].map(p=>({x:p.x/w*img.width,y:p.y/h*img.height}))};
 }
 
 async function toCanvas(source){
@@ -722,6 +730,42 @@ function cropCanvasRect(source,rect){
   return canvas;
 }
 
+
+function straightenLabelCanvas(img,rect){
+  if(!rect?.corners)return drawImageRegionCanvas(img,rect,1500);
+  const [tl,tr,br,bl]=rect.corners;
+  const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const width=(distance(tl,tr)+distance(bl,br))/2;
+  const height=(distance(tl,bl)+distance(tr,br))/2;
+  // Reject collapsed/irregular components; retain original crop as fallback.
+  if(width<100||height<100||width/height<.35||width/height>3.2)return drawImageRegionCanvas(img,rect,1500);
+  const src=drawImageRegionCanvas(img,rect,1500);
+  const points=[tl,tr,br,bl].map(p=>({x:(p.x-rect.x)*src.width/rect.w,y:(p.y-rect.y)*src.height/rect.h}));
+  const output=document.createElement("canvas");
+  const scale=Math.min(2,1100/Math.max(width,height));
+  output.width=Math.round(width*scale);output.height=Math.round(height*scale);
+  const source=src.getContext("2d",{willReadFrequently:true}).getImageData(0,0,src.width,src.height).data;
+  const ctx=output.getContext("2d");const result=ctx.createImageData(output.width,output.height);
+  const [a,b,c,d]=points;
+  for(let y=0;y<output.height;y++){
+    const v=y/(output.height-1);
+    for(let x=0;x<output.width;x++){
+      const u=x/(output.width-1);
+      const sx=(1-v)*((1-u)*a.x+u*b.x)+v*((1-u)*d.x+u*c.x);
+      const sy=(1-v)*((1-u)*a.y+u*b.y)+v*((1-u)*d.y+u*c.y);
+      const ix=Math.max(0,Math.min(src.width-2,Math.floor(sx))),iy=Math.max(0,Math.min(src.height-2,Math.floor(sy)));
+      const fx=Math.max(0,Math.min(1,sx-ix)),fy=Math.max(0,Math.min(1,sy-iy));
+      const offset=(y*output.width+x)*4;
+      for(let k=0;k<3;k++){
+        const i=(iy*src.width+ix)*4+k;
+        result.data[offset+k]=(1-fy)*((1-fx)*source[i]+fx*source[i+4])+fy*((1-fx)*source[i+src.width*4]+fx*source[i+src.width*4+4]);
+      }
+      result.data[offset+3]=255;
+    }
+  }
+  ctx.putImageData(result,0,0);return output;
+}
+
 async function preparePackageImages(file){
   const original=await readFileDataUrl(file);
   const img=await loadImage(original);
@@ -729,7 +773,7 @@ async function preparePackageImages(file){
 
   // Keep a higher-resolution crop for recovery, but make the blocking read small.
   const rawOcrCanvas=fitForOcr(drawImageRegionCanvas(img,labelRect,2400),1100,1500);
-  const quickBase=fitForOcr(rawOcrCanvas,0,900);
+  const quickBase=fitForOcr(straightenLabelCanvas(img,labelRect),0,900);
   const ocrCanvas=prepareFastOcrCanvas(quickBase);
 
   return {
@@ -866,7 +910,7 @@ function deepRecoveryCanvas(source){
 
 function canBackgroundReplaceCustomer(){
   return !$("receiveCustomer").value
-    && !$("receiveNewCustomerName").value.trim()
+    && (!$("receiveNewCustomerName").value.trim() || normText($("receiveNewCustomerName").value)===normText(intakeOcrName))
     && !$("receiveNewCustomerEmail").value.trim();
 }
 
@@ -896,6 +940,8 @@ function applyRecoveredCustomer(recovered,combined){
       :"Customer matched in background"
   )+intakeTimingSummary();
   $("processingBox").classList.add("bg-matched");
+  renderLabelReadout();
+  autoReceiveMatchedPhoto({read_token:intakeReadToken,match:recovered},null).catch(err=>console.warn("Recovered intake failed",err));
   return true;
 }
 
@@ -960,6 +1006,8 @@ async function runDeepRecovery(source,token,initialText,options={}){
 
   if(token===intakeReadToken){
     intakeOcrText=combined;
+    intakeOcrName=intakeOcrName||extractNameCandidate(combined);
+    renderLabelReadout();
     recordBackgroundRecoveryTiming(token,Number(options.started_at_ms||0));
     if(canBackgroundReplaceCustomer()&&intakeTimingSummary()){
       $("processingDetail").textContent+=intakeTimingSummary();
@@ -976,7 +1024,7 @@ async function readPackagePhoto(source,options={}){
 
   const token=++intakeReadToken;
   stopRecoveryOcr();
-  const started=performance.now();
+  const started=options.startedAt||performance.now();
   resetIntakeTiming(token,started);
 
   const ocrSource=await toCanvas(source);
@@ -1018,7 +1066,7 @@ async function readPackagePhoto(source,options={}){
   if(!tracking)tracking=guessTracking(merged);
 
   intakeOcrText=merged;
-  intakeOcrName=decision.customer?.name||"";
+  intakeOcrName=decision.customer?.name||extractNameCandidate(merged)||"";
   intakeOcrAddress=guessRecipientAddress(merged)||"";
 
   $("receiveTracking").value=tracking||"";
@@ -1042,16 +1090,16 @@ async function readPackagePhoto(source,options={}){
   }else{
     $("receiveCustomer").value="";
     showInlineCustomer("");
-    $("receiveNewCustomerName").value="";
+    $("receiveNewCustomerName").value=intakeOcrName;
 
     const suggestion=decision.candidate&&(decision.status==="REVIEW"||decision.status==="AMBIGUOUS")
       ?"Possible: "+decision.candidate.name+" — please confirm · "
       :"";
 
-    $("processingText").textContent="No known customer matched";
+    $("processingText").textContent=intakeOcrName||"Name not clear";
     $("processingDetail").textContent=suggestion+(tracking
-      ?"Enter customer name/email · tracking captured · "+elapsed+"s"
-      :"Enter customer name and email · "+elapsed+"s");
+      ?"Email not listed · tracking captured · "+elapsed+"s"
+      :"Email not listed · "+elapsed+"s");
 
     if(customers.length){
       runDeepRecovery(ocrSource,token,merged,{
@@ -1065,6 +1113,9 @@ async function readPackagePhoto(source,options={}){
         .catch(err=>console.warn("Background OCR recovery failed",err));
     }
   }
+
+  renderLabelReadout();
+  if(Number(elapsed)>=1)$("processingDetail").textContent+=" · 1-second target not met";
 
   return {
     read_token:token,
@@ -1081,6 +1132,37 @@ async function readPackagePhoto(source,options={}){
     layout_line_count:layoutLines.length,
     timing:{...intakeTiming}
   };
+}
+
+
+function renderLabelReadout(){
+  const raw=$("labelRawText");
+  if(raw)raw.textContent=intakeOcrText||"No readable text found";
+  const fields=$("labelFields");
+  if(!fields)return;
+  const customer=(workspace?.customers||[]).find(c=>c.id===$("receiveCustomer").value);
+  fields.textContent=["Name: "+(intakeOcrName||"Name not clear"),
+    "Address: "+(intakeOcrAddress||"Not read"),
+    "Tracking: "+($("receiveTracking").value||"Not read"),
+    customer?.email?"Email: "+customer.email:"Email not listed"].join("\n");
+  $("labelReadout").classList.remove("hidden");
+}
+
+async function autoReceiveMatchedPhoto(local,vision){
+  const token=local?.read_token;
+  if(!token||token!==intakeReadToken||autoReceivedToken===token||receiveInFlight)return;
+  const customer=(workspace?.customers||[]).find(c=>c.id===$("receiveCustomer").value);
+  renderLabelReadout();
+  if(!customer?.email){$("receiveResult").textContent="Email not listed";return;}
+  // Only strong identities may trigger an unattended customer email.
+  const exactLocal=local?.match?.customer?.id===customer.id&&local.match.score>=.97;
+  const safeVision=vision&&!vision.needs_review&&Number(vision.confidence)>=.90&&
+    decideCustomer([vision.recipient_name,vision.recipient_business].filter(Boolean).join("\n")).customer?.id===customer.id;
+  if(!exactLocal&&!safeVision){$("receiveResult").textContent="Confirm customer before sending";return;}
+  if(vision&&vision.needs_review){$("receiveResult").textContent="Confirm customer before sending";return;}
+  if(!$("receiveOrigin").value){$("receiveResult").textContent="Choose the receiving warehouse";return;}
+  autoReceivedToken=token; // Do not retry uncertain saves or mail automatically.
+  await receivePackage();
 }
 
 function setMode(mode){
@@ -1661,7 +1743,7 @@ async function createReceiveCustomer(){
   const labelAlias=$("receiveNewCustomerAlias")?.value.trim()||"";
 
   if(!name)throw new Error("Enter the customer name.");
-  if(!email)throw new Error("Enter the customer email so Parcel Snap can send the arrival notice.");
+  // A readable name is still saved when no customer email is listed.
 
   const aliases=[];
   if(labelAlias&&normText(labelAlias)!==normText(name)){
@@ -1742,14 +1824,17 @@ $("addFacilityButton").onclick=async()=>{
   }catch(e){alert(e.message)}
 };
 
-$("receivePackageButton").onclick=async()=>{
+async function receivePackage(){
+  if(receiveInFlight)return;
+  receiveInFlight=true;
   let customer_id=$("receiveCustomer").value;
   const origin_facility_id=$("receiveOrigin").value;
 
-  if(!intakePhotoDataUrl){alert("Take a package photo first.");return}
-  if(!origin_facility_id){alert("Choose the receiving warehouse.");return}
+  if(!intakePhotoDataUrl){receiveInFlight=false;alert("Take a package photo first.");return}
+  if(!origin_facility_id){receiveInFlight=false;alert("Choose the receiving warehouse.");return}
 
   $("receivePackageButton").disabled=true;
+  $("packagePhoto").disabled=true;
   $("receiveResult").textContent="Saving package…";
 
   try{
@@ -1759,6 +1844,7 @@ $("receivePackageButton").onclick=async()=>{
 
     const r=await api({
       action:"receive_package",
+      intake_package_id:intakePackageId||(intakePackageId=crypto.randomUUID()),
       customer_id,
       origin_facility_id,
       destination_facility_id:$("receiveDestination").value||null,
@@ -1776,7 +1862,7 @@ $("receivePackageButton").onclick=async()=>{
 
     const emailStatus=r.email?.status||"SKIPPED";
     $("receiveResult").textContent=
-      "Package received · photo saved · email "+emailStatus+
+      "Package received · "+(r.photo_saved?"photo saved":"photo needs review")+" · "+(emailStatus==="EMAIL_NOT_LISTED"?"Email not listed":"email "+emailStatus)+
       (r.assigned_location_id?" · location assigned":"")+
       intakeTimingSummary();
 
@@ -1801,8 +1887,11 @@ $("receivePackageButton").onclick=async()=>{
     $("receiveResult").textContent=e.message||String(e);
   }finally{
     $("receivePackageButton").disabled=false;
+    $("packagePhoto").disabled=false;
+    receiveInFlight=false;
   }
-};
+}
+$("receivePackageButton").onclick=receivePackage;
 
 
 function renderTransferControls(){

@@ -1,0 +1,25 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const {createCanvas}=require('@napi-rs/canvas');const {createWorker}=require('tesseract.js');
+(async()=>{
+ const source=fs.readFileSync(__dirname+'/../app.js','utf8');
+ const matcher=fs.readFileSync(__dirname+'/../known-customer-matcher.js','utf8');
+ const nodes={};const node=id=>nodes[id]||(nodes[id]={value:'',textContent:'',classList:{add(){},remove(){},toggle(){}}});
+ const worker=await createWorker('eng',1,{langPath:'/usr/share/tesseract-ocr/5/tessdata',gzip:false});
+ const adapter={setParameters:p=>worker.setParameters(p),recognize:(image,...args)=>worker.recognize(image.toBuffer('image/png'),...args),terminate:()=>worker.terminate()};
+ const context={console,performance,setTimeout,window:{},document:{getElementById:node,createElement:()=>createCanvas(1,1)},supabase:{createClient:()=>({})},Tesseract:{createWorker:async()=>adapter}};
+ vm.createContext(context);vm.runInContext(matcher,context);vm.runInContext(source.slice(0,source.indexOf('function setMode(')),context);
+ vm.runInContext(`workspace={customers:Array.from({length:99},(_,i)=>({id:'test-'+i,name:'Client Number '+i,customer_type:'PERSON',email:'client@example.test'})).concat([{id:'correct',name:'Trevon Humes',customer_type:'PERSON',email:'owner@example.test'}])};`,context);
+ node('receiveOrigin').value='test-warehouse';
+ const canvas=createCanvas(800,400),c=canvas.getContext('2d');c.fillStyle='white';c.fillRect(0,0,800,400);c.fillStyle='black';c.font='32px sans-serif';c.fillText('Trevon Humes',35,100);c.fillText('16600 NW 54TH AVE UNIT 9',35,155);c.fillText('HIALEAH FL 33014',35,210);c.fillText('TRACKING: 123456789012',35,270);
+ await context.getParcelSnapOcrWorker();
+ const result=await context.readPackagePhoto(canvas);
+ assert.equal(result.match.customer.id,'correct');assert(node('labelRawText').textContent.includes('Trevon Humes'));
+ let saves=0;context.receivePackage=async()=>{saves++};
+ await context.autoReceiveMatchedPhoto(result,null);await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,1,'one save per photo');
+ vm.runInContext('autoReceivedToken=0; workspace.customers.find(c=>c.id==="correct").email="";',context);
+ await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,1);assert.equal(node('receiveResult').textContent,'Email not listed');
+ vm.runInContext('workspace.customers.find(c=>c.id==="correct").email="owner@example.test"; intakeReadToken++;',context);
+ await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,1,'stale photo must not send');
+ console.log(JSON.stringify({tests:'100-client photo matching, extracted text, one auto-save, missing email, stale-photo protection',ocr_seconds:result.elapsed_seconds,target_met:result.elapsed_seconds<1}));
+ await worker.terminate();
+})().catch(e=>{console.error(e);process.exitCode=1});

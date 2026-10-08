@@ -147,15 +147,23 @@
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if(receiveInFlight)return;
+    const startedAt=performance.now();
     const selectionGeneration=++packageSelectionGeneration;
     stopRecoveryOcr();
 
     $("receiveResult").textContent = "";
     $("receiveNewCustomerEmail").value = "";
     $("receiveNewCustomerPhone").value = "";
+    intakePackageId=crypto.randomUUID();
     intakeOcrText = "";
     intakeOcrName = "";
     intakeOcrAddress = "";
+    $("receiveCustomer").value="";
+    $("receiveTracking").value="";
+    $("receiveCarrier").value="";
+    $("receiveNewCustomerName").value="";
+    $("labelReadout").classList.add("hidden");
 
     try {
       $("processingBox").classList.remove("hidden");
@@ -182,16 +190,20 @@
         });
 
       // Do not wait for remote vision. Local OCR owns the fast path.
-      const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas});
+      const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt});
       URL.revokeObjectURL(instantUrl);
       if(selectionGeneration!==packageSelectionGeneration||local?.superseded)return;
       intakeOcrAddress=local.address||"";
 
-      visionPromise.then(result=>{
+      visionPromise.then(async result=>{
         if(result&&selectionGeneration===packageSelectionGeneration&&!local?.superseded&&local?.read_token===intakeReadToken){
           refineFromVision(result,local);
+          renderLabelReadout();
         }
-      });
+        if(selectionGeneration===packageSelectionGeneration&&local?.read_token===intakeReadToken){
+          await autoReceiveMatchedPhoto(local,result);
+        }
+      }).catch(error=>{console.warn("Automatic intake failed",error);});
 
       if(prepared.label_crop_used){
         const detail=$("processingDetail").textContent;
