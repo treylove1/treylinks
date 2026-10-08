@@ -23,9 +23,10 @@ simple = { limit = 30, period = 60 }
 # Preview bindings do not inherit production bindings. Keep this repair
 # fail-closed until a scan-only origin, auth context and free AI quota are verified.
 [previews.vars]
+STAGING_SCAN_ONLY = "true"
 VISION_PROVIDER = "cloudflare"
 CF_VISION_MODEL = "@cf/google/gemma-4-26b-a4b-it"
 CF_VISION_FALLBACK_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
-ALLOWED_ORIGIN = "https://parcel-snap-staging.invalid"
+ALLOWED_ORIGIN = "https://parcel-snap-camera-readiness-20261008-parcel-snap-vision.humestrevon.workers.dev"
 SUPABASE_URL = ""
 SUPABASE_PUBLISHABLE_KEY = ""

@@ -28,20 +28,25 @@ export async function readWithCloudflare(env,image){
  throw Object.assign(Error(error),{status:502});
 }
 
+import {renderScanHarness} from './scan-harness.mjs';
 export default {async fetch(request,env){
+ const staging=env.STAGING_SCAN_ONLY==='true',path=new URL(request.url).pathname;
+ if(staging&&request.method==='GET'&&path==='/')return new Response(renderScanHarness(env),{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://evjoitqnogmpedrulepv.supabase.co; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"}});
+ if(staging&&!['/health','/scan'].includes(path))return new Response(JSON.stringify({error:'NOT_FOUND'}),{status:404,headers:{'Content-Type':'application/json'}});
  const which=env.VISION_PROVIDER==='cloudflare'?'cloudflare':'openai';
  const ready=which==='cloudflare'?Boolean(env.AI):Boolean(env.OPENAI_API_KEY);
  const origin=request.headers.get('Origin');
  const headers={'Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin','Access-Control-Allow-Origin':env.ALLOWED_ORIGIN,'Access-Control-Allow-Headers':'Authorization, Content-Type','Access-Control-Allow-Methods':'POST, OPTIONS'};
  const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers});
- if(request.method==='GET')return reply({service:'Parcel Snap vision proxy',provider:which,model:which==='cloudflare'?env.CF_VISION_MODEL:env.OPENAI_MODEL,vision_configured:ready,auth_configured:Boolean(env.SUPABASE_URL&&env.SUPABASE_PUBLISHABLE_KEY)});
+ if(request.method==='GET')return reply({service:'Parcel Snap vision proxy',provider:which,model:which==='cloudflare'?env.CF_VISION_MODEL:env.OPENAI_MODEL,vision_configured:ready,auth_configured:Boolean(env.SUPABASE_URL&&env.SUPABASE_PUBLISHABLE_KEY),...(staging?{rate_limit_configured:Boolean(env.RATE_LIMITER)}:{})});
  if(origin!==env.ALLOWED_ORIGIN)return reply({error:'ORIGIN_DENIED'},403);
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(request.method!=='POST')return reply({error:'METHOD_NOT_ALLOWED'},405);
  const requestStarted=Date.now();
- if(!ready)return reply({error:'VISION_NOT_CONFIGURED'},503);
  const authorization=request.headers.get('Authorization');
  if(!authorization?.startsWith('Bearer '))return reply({error:'SIGN_IN_REQUIRED'},401);
+ if(!ready)return reply({error:'VISION_NOT_CONFIGURED'},503);
+ if(staging&&(!env.RATE_LIMITER||!env.SUPABASE_URL||!env.SUPABASE_PUBLISHABLE_KEY))return reply({error:'STAGING_BINDINGS_NOT_CONFIGURED'},503);
  try{
  // Verify the existing authenticated warehouse/tenant context before paid inference.
  const authorized=await fetch(env.SUPABASE_URL+'/functions/v1/parcel-snap-portal',{method:'POST',headers:{Authorization:authorization,apikey:env.SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:JSON.stringify({action:'workspace'})});
