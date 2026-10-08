@@ -1,4 +1,6 @@
 (() => {
+ // One gate shared with the older local OCR fallback, which loads before this script.
+ window.PARCEL_SNAP_REVIEW_ONLY=true;
  let generation=0;
  let lastVisionMetrics=null;
  const keys=['recipient_name','address_line','unit','city','state','zip','tracking','order_reference','partner_order','carrier'];
@@ -15,10 +17,16 @@
  async function fullPhoto(file){
   let image;
   try{image=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{image=await loadImage(await readFileDataUrl(file));}
-  const scale=Math.min(1,1600/Math.max(image.width,image.height));
-  const canvas=document.createElement('canvas');canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);
+  // Retain more characters on small labels in wide-angle package photos.
+  // Cap the JSON payload below the 4 MB Worker limit without losing the full frame.
+  const scale=Math.min(1,2400/Math.max(image.width,image.height));
+  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));
   canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);image.close?.();
-  return canvas.toDataURL('image/jpeg',.85);
+  for(const quality of [.86,.77,.66]){
+    const data=canvas.toDataURL('image/jpeg',quality);
+    if(data.length<=3500000)return data;
+  }
+  throw Error('Photo too detailed for upload — photograph the label closer');
  }
  function trackingFromBarcode(raw){
   if(!raw)return null;
