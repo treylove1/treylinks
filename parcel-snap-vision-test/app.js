@@ -180,6 +180,16 @@ function cleanRecipientCandidate(value){
   return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(" ");
 }
 
+const destinationStreetRegex=/^\s*\d{1,6}\s+.*\b(?:ave|avenue|st|street|rd|road|blvd|boulevard|dr|drive|lane|ln|hwy|highway|way|ct|court|pl|place|circle|cir|terrace|ter)\b/i;
+const destinationCityZipRegex=/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i;
+
+function explicitDestinationEvidence(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const to=/^(?:(?:ship|deliver)\s*to|recipient|consignee|to)\b\s*[:\-]?\s*(.*)$/i;
+  if(lines.filter(line=>to.test(line)).length===1)return true;
+  return lines.filter(line=>/^(?:(?:your\s+)?electr[\W_]*[o0]nic\s+needs|yen)\s*[\\/|:\-]/i.test(line)).length===1;
+}
+
 function destinationBlock(text){
   const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
   const to=/^(?:(?:ship|deliver)\s*to|recipient|consignee|to)\b\s*[:\-]?\s*(.*)$/i;
@@ -197,11 +207,21 @@ function destinationBlock(text){
   }
   // Never infer a destination from an unmarked label containing sender evidence.
   if(starts.length||lines.some(line=>from.test(line)))return "";
-  const streets=lines.filter(line=>/^\d{1,6}\s+.*\b(?:ave|avenue|st|street|rd|road|blvd|dr|drive|lane|ln|hwy)\b/i.test(line));
-  if(streets.length>1)return "";
+  const streetIndexes=lines.map((line,index)=>destinationStreetRegex.test(line)?index:-1).filter(index=>index>=0);
+  if(streetIndexes.length>1)return "";
   // Retain the established YEN/customer alias when it is the sole identity block.
   const aliases=lines.filter(line=>/^(?:(?:your\s+)?electr[\W_]*[o0]nic\s+needs|yen)\s*[\\/|:\-]/i.test(line));
   if(aliases.length===1)return lines.slice(lines.indexOf(aliases[0])).join("\n");
+  // A single unmarked name/address may be displayed as tentative evidence only.
+  // It is never enough to auto-select, save or notify a customer.
+  if(streetIndexes.length===1){
+    const streetIndex=streetIndexes[0];
+    const nameIndex=streetIndex-1;
+    const cityIndex=lines.findIndex((line,index)=>index>streetIndex&&index<=streetIndex+3&&destinationCityZipRegex.test(line));
+    if(nameIndex>=0&&cityIndex>streetIndex&&cleanRecipientCandidate(lines[nameIndex])){
+      return lines.slice(nameIndex,cityIndex+1).join("\n");
+    }
+  }
   return "";
 }
 
@@ -909,8 +929,19 @@ function decideCustomer(text){
   const customers=workspace?.customers||[];
   const identity=destinationIdentity(text);
   if(!identity)return {customer:null,status:"NEEDS_REVIEW",candidate:null,score:0,margin:0,evidence:null};
+  const tentative=!explicitDestinationEvidence(text);
   if(window.ParcelSnapKnownMatcher&&customers.length){
     const r=window.ParcelSnapKnownMatcher.matchDirectory(customers,identity);
+    if(tentative){
+      return {
+        customer:null,
+        status:"NEEDS_REVIEW",
+        candidate:r.customer||r.candidate||null,
+        score:r.score||0,
+        margin:r.margin||0,
+        evidence:r.evidence||null
+      };
+    }
     return {
       customer:r.status==="MATCHED"?r.customer:null,
       status:r.status,
@@ -923,7 +954,9 @@ function decideCustomer(text){
 
   if(typeof bestCustomerFromText==="function"){
     const m=bestCustomerFromText(text);
-    if(m?.customer)return {...m,status:"MATCHED",candidate:m.customer,legacy:true};
+    if(m?.customer)return tentative
+      ?{customer:null,status:"NEEDS_REVIEW",candidate:m.customer,score:m.score||0,margin:0,evidence:null,legacy:true}
+      :{...m,status:"MATCHED",candidate:m.customer,legacy:true};
   }
 
   return {customer:null,status:"NO_MATCH",candidate:null,score:0,margin:0,evidence:null};

@@ -103,9 +103,20 @@ test('inline destination followed by sender preserves destination only',async()=
   const h=harness('TO: Jordan Sample\n123 FICTIONAL STREET\nMiami FL 33122\nFROM: Trevon Humes\n456 RETURN ROAD\nMiami FL 33101'),r=await h.read();
   assert.equal(r.candidate,'Jordan Sample');assert.equal(r.match?.customer.id,'recipient');assert.doesNotMatch(r.address,/RETURN/);
 });
-test('single unmarked personal address remains review-only: explicit recall limitation',async()=>{
+test('single unmarked personal address is shown tentatively but never auto-selected',async()=>{
   const h=harness('Jordan Sample\n123 FICTIONAL STREET\nMiami FL 33122'),r=await h.read();
-  assert.equal(r.candidate,'');assert.equal(r.match,null);assert.equal(r.status,'NEEDS_REVIEW');
+  assert.equal(r.candidate,'Jordan Sample');assert.equal(r.match,null);assert.equal(r.status,'NEEDS_REVIEW');
+  assert.equal(r.suggestion,'Jordan Sample');assert.equal(h.elements.get('receiveCustomer').value,'');
+  assert.match(h.elements.get('processingDetail').textContent,/Possible: Jordan Sample/);
+});
+test('unmarked incomplete name is not promoted to recipient',async()=>{
+  const h=harness('J\n123 FICTIONAL STREET\nMiami FL 33122'),r=await h.read();
+  assert.equal(r.candidate,'');assert.equal(r.match,null);assert.equal(r.suggestion,'');assert.equal(r.status,'NEEDS_REVIEW');
+});
+test('single unmarked address with unit remains tentative and preserves complete address',async()=>{
+  const h=harness('Jordan Sample\n123 TEST PARCEL WAY\nUNIT 04\nMiami FL 33101'),r=await h.read();
+  assert.equal(r.candidate,'Jordan Sample');assert.equal(r.match,null);assert.equal(r.suggestion,'Jordan Sample');
+  assert.equal(r.address,'123 TEST PARCEL WAY, UNIT 04, Miami FL 33101');
 });
 
 // Actual local Tesseract --psm 6 output from the committed fictional JPEGs.
@@ -120,4 +131,12 @@ test('actual blurred JPEG OCR preserves incorrect raw street and flags unreadabl
  const h=harness(text),r=await h.read();assert.equal(r.candidate,'Jordan Sample');
  assert.equal(r.address,'423 TEST PARCEL WAY, UNIT 04, MIAMI FL 33101');assert.equal(r.tracking,'');
  assert.equal(h.elements.get('receiveTracking').dataset.needsReview,'true');
+});
+test('actual unmarked JPEG OCR shows a tentative recipient without auto-selection',async()=>{
+ const text=readFileSync(new URL('./fixtures/tesseract-psm6-unmarked-20261008.txt',import.meta.url),'utf8');
+ const h=harness(text),r=await h.read();
+ assert.equal(r.candidate,'Jordan Sample');assert.equal(r.match,null);assert.equal(r.status,'NEEDS_REVIEW');
+ assert.equal(r.suggestion,'Jordan Sample');assert.equal(h.elements.get('receiveCustomer').value,'');
+ assert.equal(r.address,'123 TEST PARCEL WAY, UNIT 04, MIAMI FL 33101');
+ assert.equal(r.tracking,'1ZTEST000000000001');
 });
