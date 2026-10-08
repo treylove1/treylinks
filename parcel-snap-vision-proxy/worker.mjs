@@ -19,7 +19,8 @@ export async function readWithCloudflare(env,image){
   const input={messages:[{role:'system',content:PROMPT},{role:'user',content:[{type:'text',text:'Read this package photo and return only JSON.'},{type:'image_url',image_url:{url:image}}]}],temperature:0};
   // Gemma 4's chat API uses max_completion_tokens; the Llama Scout binding uses max_tokens.
   if(model.includes('llama-4-scout'))input.max_tokens=600;
-  else input.max_completion_tokens=600;
+  // Direct Workers AI tests with real JPEG fixtures showed 600 tokens can truncate Gemma's valid JSON; 1400 completed the response.
+  else input.max_completion_tokens=1400;
   const out=await env.AI.run(model,input);
   return {result:normalize(out?.response??out?.choices?.[0]?.message?.content??out),provider:'cloudflare',model,model_attempts:attempts,inference_ms:Date.now()-started};
  }catch(e){last=e;console.error('Workers AI failed',model,e instanceof SyntaxError?'INVALID_MODEL_JSON':'MODEL_REQUEST_OR_VALIDATION_FAILED');}
