@@ -1,2 +1,2 @@
-// Set this public URL after deploying vision-proxy. Never put an AI key here.
-window.PARCEL_VISION_URL = '';
+// Public Cloudflare Worker endpoint. API keys remain in Worker secrets.
+window.PARCEL_VISION_URL = 'https://parcel-snap-vision.humestrevon.workers.dev';
