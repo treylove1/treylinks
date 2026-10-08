@@ -1,0 +1,15 @@
+name = "parcel-snap-vision"
+main = "worker.mjs"
+compatibility_date = "2026-10-08"
+
+[vars]
+ALLOWED_ORIGIN = "https://treylove1.github.io"
+SUPABASE_URL = "https://evjoitqnogmpedrulepv.supabase.co"
+# Copy the public SUPABASE_KEY from app.js. This is NOT the service-role key.
+SUPABASE_PUBLISHABLE_KEY = "REPLACE_WITH_EXISTING_PUBLIC_KEY"
+OPENAI_MODEL = "gpt-4o"
+
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "10808"
+simple = { limit = 30, period = 60 }

@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import fs from 'node:fs';
+import worker,{validate,fields} from '../vision-proxy/worker.mjs';
+const result={...Object.fromEntries(fields.map(k=>[k,null])),recipient_name:'Trevon Humes',address_line:'16600 NW 54TH AVE',city:'HIALEAH',state:'FL',zip:'33014-6105',confidence:.97};
+assert.equal(validate(result),result);assert.throws(()=>validate({...result,zip:33014}));assert.throws(()=>validate({...result,confidence:2}));
+const context={URL,window:{},$:()=>({}),workspace:{customers:[{id:'1',name:'Trevon Humes',address:'16600 NW 54TH AVE HIALEAH FL 33014-6105'},{id:'2',name:'Other Person'}]},candidateScore:(a,b)=>a===b?1:0};vm.createContext(context);vm.runInContext(fs.readFileSync(new URL('../vision-client.js',import.meta.url),'utf8'),context);
+assert.equal(context.window.ParcelVisionInternals.rank(result)[0].customer.id,'1');
+const parse=context.window.ParcelVisionInternals.trackingFromBarcode;
+assert.equal(parse('1r1f231d46301835'),'1r1f231d46301835');assert.equal(parse('https://example.org/?tracking=123456'),'123456');assert.equal(parse('https://example.org/random'),null);
+const req=()=>new Request('https://worker.test/',{method:'POST',headers:{Origin:'https://treylove1.github.io',Authorization:'Bearer test'},body:JSON.stringify({image_data_url:'data:image/jpeg;base64,YQ=='})});
+const env={ALLOWED_ORIGIN:'https://treylove1.github.io',OPENAI_API_KEY:'fake-test-only',SUPABASE_URL:'https://test',SUPABASE_PUBLISHABLE_KEY:'public'};
+assert.equal((await worker.fetch(req(),{...env,OPENAI_API_KEY:''})).status,503);
+let calls=0;const old=globalThis.fetch;globalThis.fetch=async()=>{calls++;return calls===1?Response.json({state:'ACTIVE',company:{role:'OWNER'}}):Response.json({choices:[{message:{content:JSON.stringify(result)}}]});};
+assert.equal((await (await worker.fetch(req(),env)).json()).result.zip,'33014-6105');
+globalThis.fetch=async()=>Response.json({state:'PAYMENT_REQUIRED',company:{role:'OWNER'}});assert.equal((await worker.fetch(req(),env)).status,403);globalThis.fetch=old;
+console.log('PASS: strict schema, name/address ranking, barcode parsing, missing key, authenticated proxy contract, inactive account denied (mock provider)');

@@ -780,7 +780,7 @@ async function preparePackageImages(file){
     preview:drawImageRegion(img,null,1600,.82),
     ocrCanvas,
     rawOcrCanvas,
-    vision:drawImageRegion(img,labelRect||null,1600,.90),
+    vision:drawImageRegion(img,null,1600,.85),
     label_crop_used:Boolean(labelRect),
     crop_width:ocrCanvas.width,
     crop_height:ocrCanvas.height,
