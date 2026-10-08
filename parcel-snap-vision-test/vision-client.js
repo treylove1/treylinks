@@ -17,16 +17,22 @@
  async function fullPhoto(file){
   let image;
   try{image=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{image=await loadImage(await readFileDataUrl(file));}
-  // Retain more characters on small labels in wide-angle package photos.
-  // Cap the JSON payload below the 4 MB Worker limit without losing the full frame.
-  const scale=Math.min(1,2400/Math.max(image.width,image.height));
-  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));
-  canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);image.close?.();
-  for(const quality of [.86,.77,.66]){
-    const data=canvas.toDataURL('image/jpeg',quality);
-    if(data.length<=3500000)return data;
-  }
-  throw Error('Photo too detailed for upload — photograph the label closer');
+  // Keep the full frame and preserve legibility before sacrificing resolution.
+  // The Worker caps incoming JSON at 4 MB, so return a JPEG well below that limit.
+  try{
+    for(const maxSide of [2400,2100,1800,1600]){
+      const scale=Math.min(1,maxSide/Math.max(image.width,image.height));
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(image.width*scale));
+      canvas.height=Math.max(1,Math.round(image.height*scale));
+      canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+      for(const quality of [.86,.77,.66]){
+        const data=canvas.toDataURL('image/jpeg',quality);
+        if(data.length<=3500000)return data;
+      }
+    }
+    throw Error('Photo exceeds upload limit — photograph the label closer');
+  }finally{image.close?.();}
  }
  function trackingFromBarcode(raw){
   if(!raw)return null;
