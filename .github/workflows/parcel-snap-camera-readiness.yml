@@ -1,0 +1,39 @@
+name: Parcel Snap Camera Readiness Checks
+
+on:
+  pull_request:
+    paths:
+      - 'parcel-snap-vision-proxy/**'
+      - 'parcel-snap-vision-test/**'
+      - '.github/workflows/parcel-snap-camera-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  camera-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout camera candidate
+        uses: actions/checkout@v4
+      - name: Select Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate browser, Worker and barcode syntax
+        run: |
+          node --check parcel-snap-vision-test/vision-client.js
+          node --check parcel-snap-vision-test/barcode-reader.js
+          node --check parcel-snap-vision-test/app.js
+          node --check parcel-snap-vision-proxy/worker.mjs
+      - name: Run Workers AI mocked contract tests
+        run: node --test parcel-snap-vision-proxy/worker.test.mjs
+      - name: Enforce human review in camera candidate
+        run: |
+          grep -Fq 'window.PARCEL_SNAP_REVIEW_ONLY=true;' parcel-snap-vision-test/vision-client.js
+          grep -Fq 'if(window.PARCEL_SNAP_REVIEW_ONLY)return;' parcel-snap-vision-test/app.js
+          if grep -Fq 'await codePromise' parcel-snap-vision-test/vision-client.js; then
+            echo 'Blocking barcode wait returned'; exit 1
+          fi
