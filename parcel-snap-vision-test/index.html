@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Parcel Snap Business Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body><p style="padding:12px;background:#ffe0a3;color:#161616">Vision test version: AI server is not configured yet. Photos currently use local OCR fallback; verify before saving.</p>
+  <div id="authView" class="screen">
+    <section class="authCard">
+      <div class="brand">PARCEL SNAP</div>
+      <h1>Business Portal</h1>
+      <p>Private package intake, recipient recognition, courier operations, and customer notifications tailored to each business.</p>
+
+      <div class="segmented three">
+        <button id="signInMode" class="active">Sign in</button>
+        <button id="signUpMode">Create company</button>
+        <button id="joinStaffMode">Join staff</button>
+      </div>
+
+      <label>Email
+        <input id="email" type="email" autocomplete="email" placeholder="you@company.com">
+      </label>
+
+      <label>Password
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
+      </label>
+
+      <div id="signupCompanyWrap" class="hidden">
+        <label>Company name
+          <input id="signupCompany" placeholder="Courier or warehouse company">
+        </label>
+      </div>
+
+      <div id="staffInviteWrap" class="hidden">
+        <label>Staff invite code
+          <input id="staffInviteCode" inputmode="text" autocomplete="one-time-code" placeholder="8-character code">
+        </label>
+      </div>
+
+      <button id="authButton" class="primary wide">Sign in</button>
+      <div id="authMessage" class="message"></div>
+    </section>
+  </div>
+
+  <div id="appView" class="hidden">
+    <header>
+      <div>
+        <div class="brand">PARCEL SNAP</div>
+        <h1 id="companyTitle">Business Portal</h1>
+        <p id="companyMeta"></p>
+      </div>
+      <div class="headerActions">
+        <button id="testBusinessSetup" class="ghost hidden">Test New Business Setup</button>
+        <button id="signOut" class="ghost">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="loadingState" class="card">
+        <h2>Loading workspace…</h2>
+      </section>
+
+      <section id="onboardingState" class="card hidden">
+        <span class="eyebrow">SETUP</span>
+        <h2>Create your company workspace</h2>
+        <p>Start with your company name. Next, tell us how your courier or logistics operation works. Payment comes after the business assessment.</p>
+        <label>Company name
+          <input id="onboardingCompany" placeholder="Company name">
+        </label>
+        <button id="saveOnboarding" class="primary wide">Continue</button>
+      </section>
+
+      <section id="billingState" class="card hidden">
+        <span class="eyebrow">ACCOUNT ACCESS</span>
+        <h2>Activate Parcel Snap</h2>
+        <p>Your business assessment is saved. Activate the subscription to open the private Parcel Snap workspace built from your locations, staff, package flow, and selected features.</p>
+        <div class="billingBox">
+          <strong>ParcelSnap Business Subscription</strong>
+          <span>$100 / month</span>
+          <small id="billingStatus">Payment required</small>
+        </div>
+        <a id="payLink" class="primary linkButton" target="_blank" rel="noopener">Continue to secure payment</a>
+        <button id="recheckAccess" class="ghost wide">I paid — recheck access</button>
+      </section>
+
+      <section id="businessSetupState" class="hidden">
+        <article class="card setupCard">
+          <div class="sectionHead">
+            <div>
+              <span class="eyebrow">BUSINESS NEEDS ASSESSMENT</span>
+              <h2>Tell Parcel Snap how your operation works</h2>
+            </div>
+            <button id="exitBusinessSetupPreview" class="ghost hidden">Back to My Workspace</button>
+          </div>
+          <p>We use these answers to build your private courier workspace. Parcel Snap does not assume any warehouse, city, country, route, or storage location. Only the locations and workflows your business provides are configured.</p>
+
+          <div class="setupProgress">
+            <span data-setup-dot="1" class="active">1</span>
+            <span data-setup-dot="2">2</span>
+            <span data-setup-dot="3">3</span>
+            <span data-setup-dot="4">4</span>
+          </div>
+
+          <div id="businessSetupStep1" class="setupStep">
+            <h3>1. Your business</h3>
+            <div class="formGrid">
+              <label>What kind of business is this?
+                <input id="profileBusinessType" placeholder="Courier, shipping company, warehouse, retailer...">
+              </label>
+              <label>Business name
+                <input id="profileBusinessName" placeholder="Company name">
+              </label>
+              <label>How many employees?
+                <input id="profileEmployees" type="number" min="0" placeholder="e.g. 12">
+              </label>
+              <label>About how many customers?
+                <input id="profileCustomers" type="number" min="0" placeholder="e.g. 250">
+              </label>
+              <label>Packages received per day
+                <input id="profilePackagesPerDay" type="number" min="0" placeholder="e.g. 100">
+              </label>
+              <label>Website <small>(optional)</small>
+                <input id="profileWebsite" placeholder="https://...">
+              </label>
+            </div>
+            <button class="primary wide" data-setup-next="2">Next: Locations</button>
+          </div>
+
+          <div id="businessSetupStep2" class="setupStep hidden">
+            <h3>2. Your locations</h3>
+            <p>Add only the real locations used by your business. Parcel Snap will build receiving, transfer, storage, pickup, and staff choices from these answers.</p>
+
+            <div class="formGrid">
+              <label>Location name
+                <input id="setupLocationLabel" placeholder="Chicago Warehouse">
+              </label>
+              <label>City
+                <input id="setupLocationCity" placeholder="Chicago">
+              </label>
+              <label>State / region
+                <input id="setupLocationRegion" placeholder="IL">
+              </label>
+              <label>Country
+                <input id="setupLocationCountry" placeholder="USA">
+              </label>
+              <label>What kind of location?
+                <select id="setupLocationUseType">
+                  <option value="WAREHOUSE">Warehouse</option>
+                  <option value="STORAGE_ONLY">Storage only</option>
+                  <option value="PICKUP_POINT">Customer pickup point</option>
+                  <option value="OFFICE">Office</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </label>
+              <label>What happens here?
+                <select id="setupLocationRole">
+                  <option value="BOTH">Receives and sends/moves packages</option>
+                  <option value="RECEIVE">Receives packages</option>
+                  <option value="DESTINATION">Destination / storage</option>
+                  <option value="NON_WAREHOUSE">No package handling</option>
+                </select>
+              </label>
+              <label>Employees at this location
+                <input id="setupLocationEmployees" type="number" min="0" placeholder="Optional">
+              </label>
+              <label>Street address <small>(optional now)</small>
+                <input id="setupLocationAddress" placeholder="Actual facility address">
+              </label>
+            </div>
+
+            <div class="facilityChoices setupChecks">
+              <label class="facilityChoice"><input id="setupLocationPickup" type="checkbox"> Customer pickup</label>
+              <label class="facilityChoice"><input id="setupLocationDispatch" type="checkbox"> Delivery dispatch</label>
+              <label class="facilityChoice"><input id="setupLocationReturns" type="checkbox"> Returns</label>
+              <label class="facilityChoice"><input id="setupLocationInspection" type="checkbox"> Inspection / open-box</label>
+            </div>
+
+            <button id="addSetupLocation" class="ghost wide">Add This Location</button>
+            <div id="setupLocationList"></div>
+
+            <div class="setupNav">
+              <button class="ghost" data-setup-back="1">Back</button>
+              <button class="primary" data-setup-next="3">Next: Freight & Storage</button>
+            </div>
+          </div>
+
+          <div id="businessSetupStep3" class="setupStep hidden">
+            <h3>3. What do you handle?</h3>
+            <div class="facilityChoices setupChecks">
+              <label class="facilityChoice"><input id="profilePallets" type="checkbox"> Pallets</label>
+              <label class="facilityChoice"><input id="profileOversize" type="checkbox"> Oversized packages</label>
+              <label class="facilityChoice"><input id="profileAppliances" type="checkbox"> Appliances / refrigerators</label>
+              <label class="facilityChoice"><input id="profileTVs" type="checkbox"> TVs / fragile electronics</label>
+              <label class="facilityChoice"><input id="profileStorage" type="checkbox"> Long-term storage</label>
+              <label class="facilityChoice"><input id="profileReturns" type="checkbox"> Customer returns</label>
+              <label class="facilityChoice"><input id="profileInspection" type="checkbox"> Inspection / verification</label>
+              <label class="facilityChoice"><input id="profileDelivery" type="checkbox"> Local delivery</label>
+            </div>
+            <div class="setupNav">
+              <button class="ghost" data-setup-back="2">Back</button>
+              <button class="primary" data-setup-next="4">Next: Staff & Alerts</button>
+            </div>
+          </div>
+
+          <div id="businessSetupStep4" class="setupStep hidden">
+            <h3>4. Staff and customer communication</h3>
+            <div class="facilityChoices setupChecks">
+              <label class="facilityChoice"><input id="profileNotifications" type="checkbox" checked> Customer arrival notifications</label>
+              <label class="facilityChoice"><input id="profileEmail" type="checkbox" checked> Email notifications</label>
+              <label class="facilityChoice"><input id="profileWhatsApp" type="checkbox"> WhatsApp desired</label>
+              <label class="facilityChoice"><input id="profileWorkerLogins" type="checkbox" checked> Worker sub-logins</label>
+              <label class="facilityChoice"><input id="profileDrivers" type="checkbox"> Driver access</label>
+            </div>
+            <label>Anything unusual about your operation?
+              <textarea id="profileNotes" rows="4" placeholder="Examples: 10 refrigerators at a time, customer-held inventory, inspection area, return cage, pallet staging..."></textarea>
+            </label>
+            <div class="setupNav">
+              <button class="ghost" data-setup-back="3">Back</button>
+              <button id="saveBusinessSetup" class="primary">Save Business Setup & Continue</button>
+            </div>
+            <div id="businessSetupMessage" class="message"></div>
+            <div id="businessSetupPreviewResult" class="hidden"></div>
+          </div>
+        </article>
+      </section>
+
+      <section id="activeWorkspace" class="hidden">
+        <section class="metrics">
+          <article class="card"><span>Packages</span><strong id="packageCount">0</strong><small>Current records</small></article>
+          <article class="card"><span>Customers</span><strong id="customerCount">0</strong><small>Directory</small></article>
+          <article class="card"><span>Warehouses</span><strong id="facilityCount">0</strong><small>Configured locations</small></article>
+          <article class="card"><span>Needs attention</span><strong id="attentionCount">0</strong><small>Action queue</small></article>
+        </section>
+
+        <nav class="tabs">
+          <button class="tab active" data-tab="receive">Receive</button>
+          <button class="tab" data-tab="transfer">Arrival / Transfer</button>
+          <button class="tab" data-tab="overview">Overview</button>
+          <button class="tab" data-tab="packages">Packages</button>
+          <button class="tab" data-tab="customers">Customers</button>
+          <button class="tab" data-tab="warehouses">Warehouses</button>
+          <button id="staffTabButton" class="tab" data-tab="staff">Staff</button>
+          <button id="billingTabButton" class="tab" data-tab="billing">Billing</button>
+        </nav>
+
+        <section id="tab-receive" class="panel">
+          <article class="card">
+            <span class="eyebrow">PACKAGE INTAKE</span>
+            <h2>Take Package Photo</h2>
+
+            <div class="formGrid">
+              <label id="receiveOriginWrap">Receiving warehouse
+                <select id="receiveOrigin"></select>
+              </label>
+              <label id="receiveDestinationWrap">Destination warehouse
+                <select id="receiveDestination"></select>
+              </label>
+            </div>
+            <div id="receiveRouteSummary" class="routeSummary hidden"></div>
+
+            <label class="cameraBox">
+              <span>📷 Take Package Photo</span>
+              <input id="packagePhoto" type="file" accept="image/*" capture="environment">
+            </label>
+            <div id="packagePhotoPreview" class="photoPreview"></div>
+
+            <div id="processingBox" class="processing hidden">
+              <strong id="processingText">Processing package…</strong>
+              <small id="processingDetail"></small>
+            </div>
+
+            <section id="labelReadout" class="notice hidden" aria-live="polite">
+              <strong>Read from photo</strong>
+              <pre id="labelFields" style="white-space:pre-wrap"></pre>
+              <details open><summary>All extracted text</summary><pre id="labelRawText" style="white-space:pre-wrap"></pre></details>
+            </section>
+
+            <label>Customer
+              <select id="receiveCustomer"></select>
+            </label>
+
+            <div id="receiveNewCustomer" class="inlineCustomer hidden">
+              <span class="eyebrow">NEW / UNMATCHED CUSTOMER</span>
+              <div class="formGrid">
+                <label>Name
+                  <input id="receiveNewCustomerName" placeholder="Customer name">
+                </label>
+                <label>Email
+                  <input id="receiveNewCustomerEmail" type="email" placeholder="customer@example.com">
+                </label>
+                <label>Phone / WhatsApp
+                  <input id="receiveNewCustomerPhone" inputmode="tel" placeholder="Optional">
+                </label>
+                <label>Name / business shown on package
+                  <input id="receiveNewCustomerAlias" placeholder="Example: customer business or mailbox name">
+                  <small>Save this once so future package photos can match automatically.</small>
+                </label>
+              </div>
+              <button id="saveReceiveCustomer" class="ghost wide">Save Customer & Use</button>
+            </div>
+
+            <div class="formGrid">
+              <label>Carrier
+                <input id="receiveCarrier" placeholder="UPS / FedEx / USPS / Amazon">
+              </label>
+              <label>Package size
+                <select id="receiveSize">
+                  <option value="UNKNOWN">Unknown</option>
+                  <option value="SMALL">Small</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LARGE">Large</option>
+                  <option value="OVERSIZE">Oversize</option>
+                </select>
+              </label>
+              <label>Payment status
+                <select id="receivePayment">
+                  <option value="UNKNOWN">Unknown</option>
+                  <option value="UNPAID">Unpaid</option>
+                  <option value="PARTIAL">Partial</option>
+                  <option value="PAID">Paid</option>
+                  <option value="WAIVED">Waived</option>
+                </select>
+              </label>
+              <label>Weight (lb)
+                <input id="receiveWeight" type="number" step="0.01" min="0">
+              </label>
+            </div>
+
+            <input id="receiveTracking" type="hidden">
+            <button id="receivePackageButton" class="primary wide">Receive Package</button>
+            <div id="receiveResult" class="message"></div>
+          </article>
+        </section>
+
+        <section id="tab-transfer" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">PACKAGE MOVEMENT</span>
+            <h2>Record Arrival at Another Warehouse</h2>
+            <p>Photograph the package again. Parcel Snap will use tracking and the known-customer directory to find the existing package.</p>
+
+            <label>Arriving warehouse
+              <select id="transferFacility"></select>
+            </label>
+
+            <label class="cameraBox">
+              <span>📷 Take Arrival Photo</span>
+              <input id="transferPhoto" type="file" accept="image/*" capture="environment">
+            </label>
+            <div id="transferPhotoPreview" class="photoPreview"></div>
+
+            <div id="transferProcessing" class="processing hidden">
+              <strong id="transferProcessingText">Reading package…</strong>
+              <small id="transferProcessingDetail"></small>
+            </div>
+
+            <label>Package
+              <select id="transferPackage"></select>
+            </label>
+
+            <label>Note
+              <input id="transferNote" placeholder="Optional receiving note">
+            </label>
+
+            <button id="saveTransfer" class="primary wide">Save Arrival</button>
+            <div id="transferResult" class="message"></div>
+          </article>
+        </section>
+
+        <section id="tab-overview" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">TODAY</span>
+            <h2>Warehouse attention queue</h2>
+            <div id="attentionList"></div>
+          </article>
+        </section>
+
+        <section id="tab-packages" class="panel hidden">
+          <article class="card">
+            <div class="sectionHead">
+              <div>
+                <span class="eyebrow">PACKAGE RECORDS</span>
+                <h2>Packages</h2>
+              </div>
+              <input id="packageSearch" class="search" placeholder="Search customer, tracking, shelf…">
+            </div>
+            <div id="packageList"></div>
+          </article>
+        </section>
+
+        <section id="tab-customers" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">CUSTOMER DIRECTORY</span>
+            <h2>Add Customer</h2>
+            <div class="formGrid">
+              <label>Customer type
+                <select id="newCustomerType">
+                  <option value="PERSON">Person</option>
+                  <option value="BUSINESS">Business</option>
+                </select>
+              </label>
+              <label>Name / business name
+                <input id="newCustomerName" placeholder="Customer or business name">
+              </label>
+              <label>Email
+                <input id="newCustomerEmail" type="email" placeholder="customer@example.com">
+              </label>
+              <label>Phone / WhatsApp
+                <input id="newCustomerPhone" placeholder="Optional">
+              </label>
+              <label>Label name / business alias <small>(optional)</small>
+                <input id="newCustomerAlias" placeholder="Example: customer business or mailbox name">
+                <small>Parcel Snap will treat this label text as belonging to this customer and use the customer's saved email.</small>
+              </label>
+              <label>Customer code <small>(optional)</small>
+                <input id="newCustomerCode" placeholder="Suite, mailbox, account code">
+              </label>
+            </div>
+            <button id="addCustomerButton" class="primary wide">Add to Recognition Directory</button>
+          </article>
+          <article class="card">
+            <h2>Add Recognition Alias</h2>
+            <div class="formGrid">
+              <label>Customer
+                <select id="aliasCustomer"></select>
+              </label>
+              <label>Alias type
+                <select id="aliasType">
+                  <option value="LABEL">Label name</option>
+                  <option value="PERSON_NAME">Person name</option>
+                  <option value="BUSINESS_NAME">Business name</option>
+                  <option value="CUSTOMER_CODE">Customer / mailbox code</option>
+                </select>
+              </label>
+              <label>Alias / code
+                <input id="aliasValue" placeholder="Text Parcel Snap should recognize">
+              </label>
+            </div>
+            <button id="addAliasButton" class="ghost wide">Add Recognition Alias</button>
+          </article>
+          <article class="card">
+            <h2>Customers</h2>
+            <div id="customerList"></div>
+          </article>
+        </section>
+
+        <section id="tab-warehouses" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">WAREHOUSE PROFILES</span>
+            <h2>Add Warehouse</h2>
+            <div class="formGrid">
+              <label>Name
+                <input id="newFacilityName" placeholder="Main Receiving Warehouse">
+              </label>
+              <label>Type
+                <select id="newFacilityType">
+                  <option value="ORIGIN">Origin / receiving</option>
+                  <option value="DESTINATION">Destination</option>
+                  <option value="TRANSIT">Transit</option>
+                </select>
+              </label>
+              <label>City
+                <input id="newFacilityCity" placeholder="Your city">
+              </label>
+              <label>Street address
+                <input id="newFacilityAddress" placeholder="Actual warehouse address">
+              </label>
+              <label>Region / state
+                <input id="newFacilityRegion" placeholder="FL">
+              </label>
+              <label>Postal code
+                <input id="newFacilityPostal" placeholder="Optional">
+              </label>
+              <label>Country
+                <input id="newFacilityCountry" placeholder="USA">
+              </label>
+            </div>
+            <button id="addFacilityButton" class="primary wide">Add Warehouse</button>
+          </article>
+          <article class="card">
+            <h2>Facilities</h2>
+            <div id="facilityList"></div>
+          </article>
+        </section>
+
+        <section id="tab-staff" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">STAFF ACCESS</span>
+            <h2>Create Worker Login</h2>
+            <p>Create a one-time invite code. The worker creates their own login, and Parcel Snap assigns the role and warehouse access automatically.</p>
+            <div class="formGrid">
+              <label>Worker email <small>(optional but recommended)</small>
+                <input id="staffEmail" type="email" placeholder="worker@example.com">
+              </label>
+              <label>Role
+                <select id="staffRole">
+                  <option value="STAFF">Warehouse worker</option>
+                  <option value="DRIVER">Driver</option>
+                  <option value="VIEWER">Viewer</option>
+                  <option value="MANAGER">Manager</option>
+                </select>
+              </label>
+            </div>
+            <label>Warehouse access
+              <div id="staffFacilityChoices" class="facilityChoices"></div>
+            </label>
+            <button id="createStaffInviteButton" class="primary wide">Create Staff Code</button>
+            <div id="staffInviteResult" class="inviteResult hidden"></div>
+          </article>
+
+          <article class="card">
+            <h2>Active Staff</h2>
+            <div id="staffList"></div>
+          </article>
+
+          <article class="card">
+            <h2>Pending Codes</h2>
+            <div id="pendingInviteList"></div>
+          </article>
+        </section>
+
+        <section id="tab-billing" class="panel hidden">
+          <article class="card">
+            <span class="eyebrow">SUBSCRIPTION</span>
+            <h2>ParcelSnap Business</h2>
+            <div id="subscriptionCard"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
+  <script src="known-customer-matcher.js"></script>
+  <script src="app.js?v=20261008-vision-first"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <script src="vision-config.js?v=20261008-vision-first"></script>
+  <script src="vision-client.js?v=20261008-vision-first"></script>
+</body>
+</html>
