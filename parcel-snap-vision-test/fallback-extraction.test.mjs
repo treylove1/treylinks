@@ -107,3 +107,17 @@ test('single unmarked personal address remains review-only: explicit recall limi
   const h=harness('Jordan Sample\n123 FICTIONAL STREET\nMiami FL 33122'),r=await h.read();
   assert.equal(r.candidate,'');assert.equal(r.match,null);assert.equal(r.status,'NEEDS_REVIEW');
 });
+
+// Actual local Tesseract --psm 6 output from the committed fictional JPEGs.
+test('actual clean JPEG OCR excludes heading and preserves complete destination address',async()=>{
+ const text=readFileSync(new URL('./fixtures/tesseract-psm6-clean-20261008.txt',import.meta.url),'utf8');
+ const r=await harness(text).read();
+ assert.equal(r.candidate,'Jordan Sample');assert.equal(r.match?.customer.id,'recipient');
+ assert.equal(r.address,'123 TEST PARCEL WAY, UNIT 04, MIAMI FL 33101');assert.equal(r.tracking,'1ZTEST000000000001');
+});
+test('actual blurred JPEG OCR preserves incorrect raw street and flags unreadable tracking',async()=>{
+ const text=readFileSync(new URL('./fixtures/tesseract-psm6-blur-20261008.txt',import.meta.url),'utf8');
+ const h=harness(text),r=await h.read();assert.equal(r.candidate,'Jordan Sample');
+ assert.equal(r.address,'423 TEST PARCEL WAY, UNIT 04, MIAMI FL 33101');assert.equal(r.tracking,'');
+ assert.equal(h.elements.get('receiveTracking').dataset.needsReview,'true');
+});

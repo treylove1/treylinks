@@ -188,7 +188,7 @@ function destinationBlock(text){
   if(starts.length===1){
     const start=starts[0], block=[];
     const inline=lines[start].match(to)[1];
-    if(inline)block.push(inline);
+    if(inline&&!/^(?:[\s\/|:\-]|destination|recipient|address|consignee|deliver(?:y)?)*$/i.test(inline))block.push(inline);
     for(let i=start+1;i<lines.length;i++){
       if(from.test(lines[i])||/^(?:tracking|package\s+tracking|order\s+reference|partner\s+order|in\s+hand\s+date|1Z[A-Z0-9]{16}\b)/i.test(lines[i]))break;
       block.push(lines[i]);
@@ -354,9 +354,10 @@ function guessRecipientAddress(text){
 
   if(start<0)return "";
   const collected=[];
-  for(let i=start;i<Math.min(lines.length,start+3);i++){
+  for(let i=start;i<Math.min(lines.length,start+4);i++){
     if(/order reference|partner order|in hand date|tracking code/i.test(lines[i]))break;
     collected.push(lines[i]);
+    if(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i.test(lines[i]))break;
   }
   return collected.join(", ");
 }
