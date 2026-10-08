@@ -1,0 +1,32 @@
+Camera readiness preparation while Cloudflare sign-in is blocked
+
+Base: fb7c174117fa98bdd88e0f564febb68d7d89c71c
+Branch: parcel-snap-camera-offline-prep-20261008
+Backup branch: backup/parcel-snap-before-work-20261008
+Local verified full-history backup: ../parcel-snap-before-work-20261008.bundle
+
+Changes:
+- Manual receivePackage returns before writes in camera review mode.
+- Receive Package button disabled and labeled as review-only.
+- Cloudflare exception logs contain a fixed error category, never raw messages.
+- Two regression tests added; CI includes them.
+
+Validation: modified JavaScript syntax checks and all 12 regression tests passed.
+Inference tests are MOCKED, not actual Cloudflare image recognition.
+
+Important: this full portal is NOT yet a safe scan-only harness. Other customer,
+warehouse, transfer and staff actions remain. Do not stage the full portal
+against live data. Build a minimal authenticated camera-only interface next.
+
+Observed live GET: provider=openai, model=gpt-4o, configured=true.
+Candidate configuration: provider=cloudflare. No production deployment changed.
+Cloudflare login rejected Google authentication and showed verification error.
+No account plan, remaining quota or staging Worker verified.
+
+The original handoff remains authoritative. Deployment requires usable authorized
+Cloudflare access; do not bypass login or use a Global API Key.
+Actual camera opening, inference, exact fields and latency remain NOT TESTED.
+No paid changes, customer notifications, production writes or merge performed.
+
+Rollback: discard this isolated branch and return to the base repair branch.
+No production rollback required because production was not changed.

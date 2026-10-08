@@ -1834,6 +1834,10 @@ $("addFacilityButton").onclick=async()=>{
 };
 
 async function receivePackage(){
+  if(window.PARCEL_SNAP_REVIEW_ONLY){
+    $("receiveResult").textContent="Camera review only — package saving and notifications are disabled.";
+    return;
+  }
   if(receiveInFlight)return;
   receiveInFlight=true;
   let customer_id=$("receiveCustomer").value;

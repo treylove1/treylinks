@@ -22,7 +22,7 @@ export async function readWithCloudflare(env,image){
   else input.max_completion_tokens=600;
   const out=await env.AI.run(model,input);
   return {result:normalize(out?.response??out?.choices?.[0]?.message?.content??out),provider:'cloudflare',model,model_attempts:attempts,inference_ms:Date.now()-started};
- }catch(e){last=e;console.error('Workers AI failed',model,String(e?.message||e).slice(0,300));}
+ }catch(e){last=e;console.error('Workers AI failed',model,e instanceof SyntaxError?'INVALID_MODEL_JSON':'MODEL_REQUEST_OR_VALIDATION_FAILED');}
  const msg=String(last?.message||last||'');
  const error=/5035|paid plan/i.test(msg)?'Cloudflare model needs the paid plan':/quota|neuron|daily.*limit/i.test(msg)?'Cloudflare free daily limit reached — resets daily':/INVALID_MODEL_RESULT|JSON/i.test(msg)?'Cloudflare model did not return readable JSON':'Cloudflare AI request failed';
  throw Object.assign(Error(error),{status:502});

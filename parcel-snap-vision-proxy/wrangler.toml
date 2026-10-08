@@ -19,3 +19,13 @@ OPENAI_MODEL = "gpt-4o"
 name = "RATE_LIMITER"
 namespace_id = "10808"
 simple = { limit = 30, period = 60 }
+
+# Preview bindings do not inherit production bindings. Keep this repair
+# fail-closed until a scan-only origin, auth context and free AI quota are verified.
+[previews.vars]
+VISION_PROVIDER = "cloudflare"
+CF_VISION_MODEL = "@cf/google/gemma-4-26b-a4b-it"
+CF_VISION_FALLBACK_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+ALLOWED_ORIGIN = "https://parcel-snap-staging.invalid"
+SUPABASE_URL = ""
+SUPABASE_PUBLISHABLE_KEY = ""

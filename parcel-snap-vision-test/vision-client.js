@@ -1,6 +1,8 @@
 (() => {
  // One gate shared with the older local OCR fallback, which loads before this script.
  window.PARCEL_SNAP_REVIEW_ONLY=true;
+ const saveButton=document.getElementById('receivePackageButton');
+ if(saveButton){saveButton.disabled=true;saveButton.textContent='Camera review only — saving disabled';}
  let generation=0;
  let lastVisionMetrics=null;
  const keys=['recipient_name','address_line','unit','city','state','zip','tracking','order_reference','partner_order','carrier'];
