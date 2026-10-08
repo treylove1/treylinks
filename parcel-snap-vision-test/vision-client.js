@@ -37,6 +37,11 @@
     throw Error('Photo exceeds upload limit — photograph the label closer');
   }finally{image.close?.();}
  }
+ async function fullFrameFallback(file){
+  let image;
+  try{image=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{image=await loadImage(await readFileDataUrl(file));}
+  try{return drawImageRegionCanvas(image,null,2400);}finally{image.close?.();}
+ }
  function trackingFromBarcode(raw){
   if(!raw)return null;
   const text=raw.trim();
@@ -100,12 +105,9 @@
    const visionStarted=performance.now();
    try{result=await vision(photo);}catch(error){
     if(current!==generation)return;
-    // Full frame fallback avoids the clipped label detector entirely.
-    let img;try{img=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{img=await loadImage(await readFileDataUrl(file));}
-    let rect;try{rect=detectBrightLabelRegion(img);}catch{}
-    if(rect){const px=rect.w*.15,py=rect.h*.15;const x=Math.max(0,rect.x-px),y=Math.max(0,rect.y-py);rect={x,y,w:Math.min(img.width,rect.x+rect.w+px)-x,h:Math.min(img.height,rect.y+rect.h+py)-y};}
-    const canvas=drawImageRegionCanvas(img,rect||null,2400);img.close?.();
-    const local=await readPackagePhoto(prepareFastOcrCanvas(fitForOcr(canvas,900,1300)),{raw:fitForOcr(canvas,1100,1600),startedAt:started});stopRecoveryOcr();if(current!==generation||local?.superseded)return;
+    // Keep the original full frame and its detail when the hosted reader is unavailable.
+    const canvas=await fullFrameFallback(file);
+    const local=await readPackagePhoto(canvas,{raw:canvas,startedAt:started});stopRecoveryOcr();if(current!==generation||local?.superseded)return;
     const raw=barcodeResult?.raw||null;if(current!==generation)return;const tracking=trackingFromBarcode(raw);if(tracking&&!$('receiveTracking').value)$('receiveTracking').value=tracking;
     $('processingDetail').textContent='Low confidence, please verify · '+error.message+' · '+((performance.now()-started)/1000).toFixed(1)+'s';
     $('receiveResult').textContent='Verify all fields before saving. '+((workspace?.customers||[]).find(c=>c.id===$('receiveCustomer').value)?.email?'':'Email not listed');renderLabelReadout();activeResult={...Object.fromEntries(keys.map(k=>[k,null])),recipient_name:intakeOcrName||null,address_line:intakeOcrAddress||null,tracking:$('receiveTracking').value||null,confidence:0};editor(activeResult,raw,true);return;
@@ -133,5 +135,5 @@
    // Model confidence is self-reported, not calibrated against real package-label evaluations.
   }catch(error){if(current!==generation)return;$('processingText').textContent='Photo could not be read';$('processingDetail').textContent='Low confidence, please verify · '+error.message;showInlineCustomer('');}
  };
- window.ParcelVisionInternals={rank,trackingFromBarcode,fullPhoto};
+ window.ParcelVisionInternals={rank,trackingFromBarcode,fullPhoto,fullFrameFallback};
 })();

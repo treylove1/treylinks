@@ -28,3 +28,18 @@ test('provider exceptions never log raw provider message or label text',async()=
   assert.equal(logs.length,2);
   assert.ok(logs.every(line=>!line.includes('PRIVATE_LABEL_AND_TOKEN')));
 });
+
+
+test('camera fallback preserves all four photo edges and closes decoded image',async()=>{
+ const source=readFileSync(new URL('./vision-client.js',import.meta.url),'utf8');
+ const app=readFileSync(new URL('./app.js',import.meta.url),'utf8');
+ const helper=source.slice(source.indexOf(' async function fullFrameFallback'),source.indexOf(' function trackingFromBarcode'));
+ const draw=app.slice(app.indexOf('function drawImageRegionCanvas'),app.indexOf('function drawImageRegion(',app.indexOf('function drawImageRegionCanvas')));
+ let closed=false,drawn;
+ const bitmap={width:3200,height:2000,close(){closed=true;}};
+ const canvas={getContext(){return {drawImage(...args){drawn=args;}};}};
+ const ctx=vm.createContext({createImageBitmap:async()=>bitmap,document:{createElement(){return canvas;}},detectBrightLabelRegion(){assert.fail('must not crop label');}});
+ vm.runInContext(draw+helper,ctx);
+ const actual=await vm.runInContext('fullFrameFallback({})',ctx);
+ assert.equal(actual,canvas);assert.deepEqual(drawn.slice(1),[0,0,3200,2000,0,0,2400,1500]);assert.equal(closed,true);
+});
