@@ -29,7 +29,7 @@ jobs:
           node --check parcel-snap-vision-test/app.js
           node --check parcel-snap-vision-proxy/worker.mjs
       - name: Run Workers AI mocked contract tests
-        run: node --test parcel-snap-vision-proxy/*.test.mjs parcel-snap-vision-test/review-only.test.mjs
+        run: node --test parcel-snap-vision-proxy/*.test.mjs parcel-snap-vision-test/*.test.mjs
       - name: Enforce human review in camera candidate
         run: |
           grep -Fq 'window.PARCEL_SNAP_REVIEW_ONLY=true;' parcel-snap-vision-test/vision-client.js
@@ -37,3 +37,4 @@ jobs:
           if grep -Fq 'await codePromise' parcel-snap-vision-test/vision-client.js; then
             echo 'Blocking barcode wait returned'; exit 1
           fi
+

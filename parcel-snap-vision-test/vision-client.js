@@ -46,9 +46,10 @@
   if(!raw)return null;
   const text=raw.trim();
   // A QR payload is not automatically a tracking number. Accept only recognizable plain codes.
-  if(/^1Z[A-Z0-9]{16}$/i.test(text)||/^\d{10,22}$/.test(text))return text;
-  try{const u=new URL(text);return u.searchParams.get('tracking')||u.searchParams.get('tracking_number')||null;}catch{}
-  try{const j=JSON.parse(text);return typeof j.tracking==='string'?j.tracking:null;}catch{return null;}
+  const carrier=guessCarrier(intakeOcrText);
+  const valid=validatedTracking(text,carrier);if(valid)return valid;
+  try{const u=new URL(text);return validatedTracking(u.searchParams.get('tracking')||u.searchParams.get('tracking_number'),carrier)||null;}catch{}
+  try{const j=JSON.parse(text);return typeof j.tracking==='string'?(validatedTracking(j.tracking,carrier)||null):null;}catch{return null;}
  }
  async function vision(photo){
   if(!window.PARCEL_VISION_URL)throw Error('Vision proxy is not configured');
@@ -137,3 +138,4 @@
  };
  window.ParcelVisionInternals={rank,trackingFromBarcode,fullPhoto,fullFrameFallback};
 })();
+
