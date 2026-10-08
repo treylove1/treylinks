@@ -89,3 +89,21 @@ test('vision adapter validates extracted URL/JSON barcode tracking too',()=>{
   }
   h.ctx.rawCode='1Z999AA10123456784';assert.equal(vm.runInContext('trackingFromBarcode(rawCode)',h.ctx),h.ctx.rawCode);
 });
+
+test('multiple destination blocks require review instead of selecting the first name',async()=>{
+  const h=harness('SHIP TO: Trevon Humes\n123 FICTIONAL STREET\nMiami FL 33122\nSHIP TO: Jordan Sample\n456 TEST ROAD\nMiami FL 33101'),r=await h.read();
+  assert.equal(r.candidate,'');assert.equal(r.match,null);assert.equal(r.suggestion,'');assert.equal(r.address,'');assert.equal(r.status,'NEEDS_REVIEW');
+});
+test('sender-only registered YEN alias is never promoted to destination',async()=>{
+  const h=harness('RETURN ADDRESS:\nYEN/Trevon Humes\n123 FICTIONAL STREET\nMiami FL 33122\nUPS\nTracking: 1Z999AA10123456784'),r=await h.read();
+  assert.equal(r.candidate,'');assert.equal(r.match,null);assert.equal(r.suggestion,'');assert.equal(r.address,'');
+  assert.equal(r.tracking,'1Z999AA10123456784');
+});
+test('inline destination followed by sender preserves destination only',async()=>{
+  const h=harness('TO: Jordan Sample\n123 FICTIONAL STREET\nMiami FL 33122\nFROM: Trevon Humes\n456 RETURN ROAD\nMiami FL 33101'),r=await h.read();
+  assert.equal(r.candidate,'Jordan Sample');assert.equal(r.match?.customer.id,'recipient');assert.doesNotMatch(r.address,/RETURN/);
+});
+test('single unmarked personal address remains review-only: explicit recall limitation',async()=>{
+  const h=harness('Jordan Sample\n123 FICTIONAL STREET\nMiami FL 33122'),r=await h.read();
+  assert.equal(r.candidate,'');assert.equal(r.match,null);assert.equal(r.status,'NEEDS_REVIEW');
+});
