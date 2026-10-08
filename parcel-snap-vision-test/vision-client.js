@@ -1,5 +1,6 @@
 (() => {
  let generation=0;
+ let lastVisionMetrics=null;
  const keys=['recipient_name','address_line','unit','city','state','zip','tracking','order_reference','partner_order','carrier'];
  const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
  function rank(result){
@@ -32,6 +33,7 @@
   const {data:{session}}=await sb.auth.getSession();if(!session)throw Error('Please sign in');
   const response=await fetch(window.PARCEL_VISION_URL,{method:'POST',signal:AbortSignal.timeout(25000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({image_data_url:photo})});
   const body=await response.json();if(!response.ok)throw Error(body.error||'Vision unavailable');
+  lastVisionMetrics=body.timing_ms?{...body.timing_ms,model_attempts:body.model_attempts||1,model:body.model||'unknown'}:null;
   const r=body.result;if(!r||keys.some(k=>!(k in r)||(r[k]!==null&&typeof r[k]!=='string'))||!Number.isFinite(r.confidence)||r.confidence<0||r.confidence>1)throw Error('Invalid vision result');return r;
  }
  function editor(result,rawBarcode,fallback=false){
@@ -47,7 +49,7 @@
  }
  $('packagePhoto').onchange=async event=>{
   const file=event.target.files?.[0];if(!file||receiveInFlight)return;
-  const current=++generation;const started=performance.now();stopRecoveryOcr();intakeReadToken++;const token=intakeReadToken;
+  const current=++generation;const started=performance.now();lastVisionMetrics=null;stopRecoveryOcr();intakeReadToken++;const token=intakeReadToken;
   intakePackageId=crypto.randomUUID();intakeOcrText='';intakeOcrName='';intakeOcrAddress='';
   for(const id of ['receiveTracking','receiveCarrier','receiveCustomer','receiveNewCustomerName','receiveNewCustomerEmail','receiveNewCustomerPhone'])$(id).value='';
   $('visionFields')?.remove();$('receiveResult').textContent='';$('processingBox').classList.remove('hidden');$('processingText').textContent='Reading full photo with AI…';$('processingDetail').textContent='';
@@ -104,7 +106,10 @@
    $('receiveCustomer').value='';
    showInlineCustomer(result.recipient_name||'');
    renderLabelReadout();editor(result,raw);suggestions(result,ranked);
-   $('processingText').textContent=result.recipient_name||'Name not read';$('processingDetail').textContent='AI '+((performance.now()-visionStarted)/1000).toFixed(1)+'s · Total '+((performance.now()-started)/1000).toFixed(1)+'s · Verify name, address and tracking';
+   $('processingText').textContent=result.recipient_name||'Name not read';
+   const m=lastVisionMetrics;
+   const stages=m?' · Auth '+(m.authorization/1000).toFixed(1)+'s · Model '+(m.inference/1000).toFixed(1)+'s · Model attempts '+m.model_attempts:'';
+   $('processingDetail').textContent='AI '+((performance.now()-visionStarted)/1000).toFixed(1)+'s · Total '+((performance.now()-started)/1000).toFixed(1)+'s'+stages+' · Verify name, address and tracking';
    $('receiveResult').textContent='Select the correct customer, verify all fields, then save.';
    // CAMERA-READINESS FREEZE: no automatic parcel saving or customer email before human review.
    // Model confidence is self-reported, not calibrated against real package-label evaluations.
