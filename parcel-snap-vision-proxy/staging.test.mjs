@@ -19,3 +19,15 @@ test('staging fails closed without limiter even with an AI binding and bearer he
  const r=await worker.fetch(new Request(origin+'/scan',{method:'POST',headers:{Origin:origin,Authorization:'Bearer test-only'}}),{...env,AI:{run(){called=true;}},SUPABASE_URL:'https://auth.example',SUPABASE_PUBLISHABLE_KEY:'public'});
  assert.equal(r.status,503);assert.equal(called,false);
 });
+test('staged scan uses dedicated read-only authorization instead of workspace setup',async()=>{
+ const old=globalThis.fetch;
+ globalThis.fetch=async(url,options)=>{
+  assert.equal(url,'https://auth.example/functions/v1/parcel-snap-camera-auth-staging-20261008');
+  assert.deepEqual(JSON.parse(options.body),{});
+  return Response.json({error:'ACCESS_DENIED'},{status:403});
+ };
+ try{
+  const r=await worker.fetch(new Request(origin+'/scan',{method:'POST',headers:{Origin:origin,Authorization:'Bearer fictional'}}),{...env,AI:{run(){assert.fail('must not infer')}},RATE_LIMITER:{limit(){assert.fail('must not infer')}},SUPABASE_URL:'https://auth.example',SUPABASE_PUBLISHABLE_KEY:'public'});
+  assert.equal(r.status,403);
+ }finally{globalThis.fetch=old;}
+});

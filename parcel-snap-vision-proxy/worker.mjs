@@ -58,7 +58,7 @@ export default {async fetch(request,env){
  if(staging&&(!env.RATE_LIMITER||!env.SUPABASE_URL||!env.SUPABASE_PUBLISHABLE_KEY))return reply({error:'STAGING_BINDINGS_NOT_CONFIGURED'},503);
  try{
  // Verify the existing authenticated warehouse/tenant context before paid inference.
- const authorized=await fetch(env.SUPABASE_URL+'/functions/v1/parcel-snap-portal',{method:'POST',headers:{Authorization:authorization,apikey:env.SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:JSON.stringify({action:'workspace'})});
+ const authorized=await fetch(env.SUPABASE_URL+'/functions/v1/'+(staging?'parcel-snap-camera-auth-staging-20261008':'parcel-snap-portal'),{method:'POST',headers:{Authorization:authorization,apikey:env.SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:JSON.stringify(staging?{}:{action:'workspace'})});
  if(!authorized.ok)return reply({error:'ACCESS_DENIED'},403);
  const context=await authorized.json();
  if(context.state!=='ACTIVE'||!['OWNER','MANAGER','STAFF','WAREHOUSE'].includes(context.company?.role))return reply({error:'ACCESS_DENIED'},403);
