@@ -2,7 +2,13 @@ name = "parcel-snap-vision"
 main = "worker.mjs"
 compatibility_date = "2026-10-08"
 
+[ai]
+binding = "AI"
+
 [vars]
+VISION_PROVIDER = "cloudflare"
+CF_VISION_MODEL = "@cf/google/gemma-4-26b-a4b-it"
+CF_VISION_FALLBACK_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
 ALLOWED_ORIGIN = "https://treylove1.github.io"
 SUPABASE_URL = "https://evjoitqnogmpedrulepv.supabase.co"
 # Copy the public SUPABASE_KEY from app.js. This is NOT the service-role key.
