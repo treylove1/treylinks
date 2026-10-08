@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, {normalize, readWithCloudflare} from './worker.mjs';
+import worker, {normalize, readWithCloudflare, reviewWarnings} from './worker.mjs';
 
 const fields=['recipient_name','address_line','unit','city','state','zip','tracking','order_reference','partner_order','carrier'];
 const expected={...Object.fromEntries(fields.map(field=>[field,null])),recipient_name:'SAMPLE RECEIVER',address_line:'100 TEST STREET',tracking:'1Z1234567890123456',confidence:.95};
@@ -76,3 +76,17 @@ test('successful inference returns structured fields and timing without customer
   assert.ok(body.timing_ms.authorization>=0&&body.timing_ms.inference>=0&&body.timing_ms.total>=0);
   assert.equal(body.model_attempts,1);
 }));
+
+test('review flags expose missing and malformed tracking even at confidence one',()=>{
+ const result={...expected,tracking:'1ZTEST00000000001',confidence:1};
+ assert.ok(reviewWarnings(result).some(w=>w.code==='INVALID_UPS_1Z_FORMAT'));
+ assert.equal(result.tracking,'1ZTEST00000000001');
+ assert.ok(reviewWarnings({...result,tracking:null}).some(w=>w.field==='tracking'&&w.code==='MISSING_FIELD'));
+ assert.ok(!reviewWarnings({...result,tracking:'1ZTEST000000000001'}).some(w=>w.field==='tracking'));
+ assert.ok(!reviewWarnings({...result,tracking:'9400111899223856928499'}).some(w=>w.field==='tracking'));
+});
+test('truncated completion cannot be accepted even if JSON parses',async()=>{
+ let calls=0;
+ const result=await readWithCloudflare(makeEnv(async()=>++calls===1?{choices:[{finish_reason:'length',message:{content:JSON.stringify(expected)}}]}:{response:JSON.stringify(expected)}),'data:image/jpeg;base64,AA==');
+ assert.equal(result.model_attempts,2);
+});
