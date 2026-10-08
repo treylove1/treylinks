@@ -40,7 +40,7 @@ test('Cloudflare vision requests use each model\'s supported generation paramete
   });
   await readWithCloudflare(binding,'data:image/jpeg;base64,AA==');
   assert.equal(inputs.length,2);
-  assert.equal(inputs[0].input.max_completion_tokens,600);
+  assert.equal(inputs[0].input.max_completion_tokens,1400);
   assert.equal(inputs[0].input.max_tokens,undefined);
   assert.equal(inputs[1].input.max_tokens,600);
   assert.equal(inputs[1].input.max_completion_tokens,undefined);
