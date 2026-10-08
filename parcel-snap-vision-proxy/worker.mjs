@@ -16,7 +16,11 @@ export async function readWithCloudflare(env,image){
  const started=Date.now();let attempts=0;
  for(const model of [...new Set(models)])try{
   attempts++;
-  const out=await env.AI.run(model,{messages:[{role:'system',content:PROMPT},{role:'user',content:[{type:'text',text:'Read this package photo and return only JSON.'},{type:'image_url',image_url:{url:image}}]}],max_completion_tokens:600,temperature:0});
+  const input={messages:[{role:'system',content:PROMPT},{role:'user',content:[{type:'text',text:'Read this package photo and return only JSON.'},{type:'image_url',image_url:{url:image}}]}],temperature:0};
+  // Gemma 4's chat API uses max_completion_tokens; the Llama Scout binding uses max_tokens.
+  if(model.includes('llama-4-scout'))input.max_tokens=600;
+  else input.max_completion_tokens=600;
+  const out=await env.AI.run(model,input);
   return {result:normalize(out?.response??out?.choices?.[0]?.message?.content??out),provider:'cloudflare',model,model_attempts:attempts,inference_ms:Date.now()-started};
  }catch(e){last=e;console.error('Workers AI failed',model,String(e?.message||e).slice(0,300));}
  const msg=String(last?.message||last||'');
