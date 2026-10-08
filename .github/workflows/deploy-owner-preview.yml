@@ -6,6 +6,7 @@ on:
     paths:
       - "parcel-snap-owner-preview/**"
       - "parcel-snap-customer/**"
+      - "parcel-snap-vision-test/**"
       - "yen-stays/**"
       - "code-engine-test/**"
       - ".github/workflows/deploy-owner-preview.yml"
