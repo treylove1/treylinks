@@ -915,6 +915,11 @@ function canBackgroundReplaceCustomer(){
 }
 
 function applyRecoveredCustomer(recovered,combined){
+  // In camera acceptance testing, recovery is evidence, not permission to assign customers.
+  if(window.PARCEL_SNAP_REVIEW_ONLY){
+    if(recovered?.customer)$("processingDetail").textContent="Possible customer: "+recovered.customer.name+" — confirm manually";
+    return false;
+  }
   if(!recovered||!recovered.customer||!canBackgroundReplaceCustomer())return false;
 
   intakeOcrText=combined;
@@ -1066,7 +1071,9 @@ async function readPackagePhoto(source,options={}){
   if(!tracking)tracking=guessTracking(merged);
 
   intakeOcrText=merged;
-  intakeOcrName=decision.customer?.name||extractNameCandidate(merged)||"";
+  intakeOcrName=window.PARCEL_SNAP_REVIEW_ONLY
+    ?(extractNameCandidate(merged)||"")
+    :(decision.customer?.name||extractNameCandidate(merged)||"");
   intakeOcrAddress=guessRecipientAddress(merged)||"";
 
   $("receiveTracking").value=tracking||"";
@@ -1080,7 +1087,7 @@ async function readPackagePhoto(source,options={}){
   }
   const customers=workspace?.customers||[];
 
-  if(decision.customer){
+  if(decision.customer&&!window.PARCEL_SNAP_REVIEW_ONLY){
     $("receiveCustomer").value=decision.customer.id;
     hideInlineCustomer();
     $("processingText").textContent=decision.customer.name;
@@ -1092,8 +1099,9 @@ async function readPackagePhoto(source,options={}){
     showInlineCustomer("");
     $("receiveNewCustomerName").value=intakeOcrName;
 
-    const suggestion=decision.candidate&&(decision.status==="REVIEW"||decision.status==="AMBIGUOUS")
-      ?"Possible: "+decision.candidate.name+" — please confirm · "
+    const suggestedCustomer=decision.customer||decision.candidate;
+    const suggestion=suggestedCustomer
+      ?"Possible: "+suggestedCustomer.name+" — please confirm · "
       :"";
 
     $("processingText").textContent=intakeOcrName||"Name not clear";
@@ -1149,6 +1157,7 @@ function renderLabelReadout(){
 }
 
 async function autoReceiveMatchedPhoto(local,vision){
+  if(window.PARCEL_SNAP_REVIEW_ONLY)return; // Never save or notify unattended during camera validation.
   const token=local?.read_token;
   if(!token||token!==intakeReadToken||autoReceivedToken===token||receiveInFlight)return;
   const customer=(workspace?.customers||[]).find(c=>c.id===$("receiveCustomer").value);
