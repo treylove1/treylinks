@@ -32,6 +32,20 @@ test('valid model output uses one inference only',async()=>{
   const result=await readWithCloudflare(makeEnv(async()=>{count++;return {response:JSON.stringify(expected)}}),'data:image/jpeg;base64,AA==');
   assert.equal(count,1);assert.equal(result.model_attempts,1);assert.equal(result.result.recipient_name,expected.recipient_name);
 });
+test('Cloudflare vision requests use each model\'s supported generation parameter',async()=>{
+  const inputs=[];
+  const binding=makeEnv(async(model,input)=>{
+    inputs.push({model,input});
+    return {response:inputs.length===1?'invalid JSON':JSON.stringify(expected)};
+  });
+  await readWithCloudflare(binding,'data:image/jpeg;base64,AA==');
+  assert.equal(inputs.length,2);
+  assert.equal(inputs[0].input.max_completion_tokens,600);
+  assert.equal(inputs[0].input.max_tokens,undefined);
+  assert.equal(inputs[1].input.max_tokens,600);
+  assert.equal(inputs[1].input.max_completion_tokens,undefined);
+  assert.equal(inputs[0].input.messages[1].content[1].image_url.url,'data:image/jpeg;base64,AA==');
+});
 test('second model only runs when first output fails validation',async()=>{
   let count=0;
   const result=await readWithCloudflare(makeEnv(async()=>({response:++count===1?'not JSON':JSON.stringify(expected)})),'data:image/jpeg;base64,AA==');
