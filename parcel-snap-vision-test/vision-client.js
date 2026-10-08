@@ -5,6 +5,7 @@
  if(saveButton){saveButton.disabled=true;saveButton.textContent='Camera review only — saving disabled';}
  let generation=0;
  let lastVisionMetrics=null;
+ let lastVisionWarnings=[];
  const keys=['recipient_name','address_line','unit','city','state','zip','tracking','order_reference','partner_order','carrier'];
  const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
  function rank(result){
@@ -47,15 +48,16 @@
  async function vision(photo){
   if(!window.PARCEL_VISION_URL)throw Error('Vision proxy is not configured');
   const {data:{session}}=await sb.auth.getSession();if(!session)throw Error('Please sign in');
-  const response=await fetch(window.PARCEL_VISION_URL,{method:'POST',signal:AbortSignal.timeout(25000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({image_data_url:photo})});
+  const response=await fetch(window.PARCEL_VISION_URL,{method:'POST',signal:AbortSignal.timeout(60000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({image_data_url:photo})});
   const body=await response.json();if(!response.ok)throw Error(body.error||'Vision unavailable');
+  lastVisionWarnings=Array.isArray(body.review_warnings)?body.review_warnings:[];
   lastVisionMetrics=body.timing_ms?{...body.timing_ms,model_attempts:body.model_attempts||1,model:body.model||'unknown'}:null;
   const r=body.result;if(!r||keys.some(k=>!(k in r)||(r[k]!==null&&typeof r[k]!=='string'))||!Number.isFinite(r.confidence)||r.confidence<0||r.confidence>1)throw Error('Invalid vision result');return r;
  }
  function editor(result,rawBarcode,fallback=false){
   let box=$('visionFields');if(!box){box=document.createElement('div');box.id='visionFields';$('labelReadout').append(box);}box.replaceChildren();
   const title=document.createElement('p');title.textContent=fallback?'Local OCR fallback — verify every field':'AI-estimated confidence: '+Math.round(result.confidence*100)+'% (not verified) · Review all fields';box.append(title);
-  for(const key of keys){const label=document.createElement('label');label.textContent=key.replaceAll('_',' ')+(result[key]===null?' — not read':'');const input=document.createElement('input');input.value=result[key]||'';input.dataset.field=key;if(result[key]===null){input.style.border='2px solid #f0ad4e';input.placeholder='Not read — enter manually';}input.oninput=()=>{result[key]=input.value.trim()||null;sync(result);renderLabelReadout();};label.append(input);box.append(label);}
+  for(const key of keys){const label=document.createElement('label');label.textContent=key.replaceAll('_',' ')+(result[key]===null?' — not read':'');const input=document.createElement('input');input.value=result[key]||'';input.dataset.field=key;if(result[key]===null){input.style.border='2px solid #f0ad4e';input.placeholder='Not read — enter manually';}input.oninput=()=>{result[key]=input.value.trim()||null;sync(result);renderLabelReadout();};label.append(input);if(!fallback)for(const warning of lastVisionWarnings.filter(w=>w.field===key)){input.style.border='2px solid #f0ad4e';const note=document.createElement('p');note.textContent=warning.message;label.append(note);}box.append(label);}
   if(rawBarcode){const p=document.createElement('p');p.textContent='Decoded barcode: '+rawBarcode;box.append(p);}
  }
  function sync(r){intakeOcrName=r.recipient_name||'';intakeOcrAddress=[r.address_line,r.unit,r.city,r.state,r.zip].filter(Boolean).join(', ');intakeOcrText=keys.map(k=>k+': '+(r[k]??'Not read')).join('\n');$('receiveTracking').value=r.tracking||'';$('receiveCarrier').value=r.carrier||'';if(!$('receiveCustomer').value)$('receiveNewCustomerName').value=intakeOcrName;}
@@ -65,7 +67,7 @@
  }
  $('packagePhoto').onchange=async event=>{
   const file=event.target.files?.[0];if(!file||receiveInFlight)return;
-  const current=++generation;const started=performance.now();lastVisionMetrics=null;stopRecoveryOcr();intakeReadToken++;const token=intakeReadToken;
+  const current=++generation;const started=performance.now();lastVisionMetrics=null;lastVisionWarnings=[];stopRecoveryOcr();intakeReadToken++;const token=intakeReadToken;
   intakePackageId=crypto.randomUUID();intakeOcrText='';intakeOcrName='';intakeOcrAddress='';
   for(const id of ['receiveTracking','receiveCarrier','receiveCustomer','receiveNewCustomerName','receiveNewCustomerEmail','receiveNewCustomerPhone'])$(id).value='';
   $('visionFields')?.remove();$('receiveResult').textContent='';$('processingBox').classList.remove('hidden');$('processingText').textContent='Reading full photo with AI…';$('processingDetail').textContent='';
