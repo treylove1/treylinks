@@ -19,9 +19,6 @@
   canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);image.close?.();
   return canvas.toDataURL('image/jpeg',.85);
  }
- async function barcode(data){
-  try{const image=await loadImage(data);const reader=new ZXingBrowser.BrowserMultiFormatReader();const r=await reader.decodeFromImageElement(image);return r.getText();}catch{return null;}
- }
  function trackingFromBarcode(raw){
   if(!raw)return null;
   const text=raw.trim();
@@ -53,20 +50,26 @@
   intakePackageId=crypto.randomUUID();intakeOcrText='';intakeOcrName='';intakeOcrAddress='';
   for(const id of ['receiveTracking','receiveCarrier','receiveCustomer','receiveNewCustomerName','receiveNewCustomerEmail','receiveNewCustomerPhone'])$(id).value='';
   $('visionFields')?.remove();$('receiveResult').textContent='';$('processingBox').classList.remove('hidden');$('processingText').textContent='Reading full photo with AI…';$('processingDetail').textContent='';
+  const codePromise=window.ParcelBarcode.decodePhoto(file,()=>current===generation).catch(()=>({raw:null,status:'Barcode decoder failed — refresh and retry'}));
+  const barcodeStatus=document.createElement('p');barcodeStatus.id='barcodeStatus';$('barcodeStatus')?.remove();$('processingBox').append(barcodeStatus);barcodeStatus.textContent='Scanning QR / barcode…';
+  codePromise.then(decoded=>{if(current!==generation)return;barcodeStatus.textContent=decoded.raw?'Decoded barcode: '+decoded.raw:decoded.status;const tracking=trackingFromBarcode(decoded.raw);if(tracking){$('receiveTracking').value=tracking;renderLabelReadout();}else if(decoded.raw){barcodeStatus.textContent+=' · Tracking not identified in payload — verify manually';}});
   try{
    const photo=await fullPhoto(file);if(current!==generation)return;intakePhotoDataUrl=photo;$('packagePhotoPreview').innerHTML='<img src="'+photo+'" alt="Package photo">';
-   const codePromise=barcode(photo);
+
    let result;
    try{result=await vision(photo);}catch(error){
     if(current!==generation)return;
     // Full frame fallback avoids the clipped label detector entirely.
-    const img=await loadImage(photo);const canvas=drawImageRegionCanvas(img,null,1600);
-    const local=await readPackagePhoto(canvas,{raw:canvas,startedAt:started});stopRecoveryOcr();if(current!==generation||local?.superseded)return;
-    const raw=await codePromise;if(current!==generation)return;const tracking=trackingFromBarcode(raw);if(tracking)$('receiveTracking').value=tracking;
+    let img;try{img=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{img=await loadImage(await readFileDataUrl(file));}
+    let rect;try{rect=detectBrightLabelRegion(img);}catch{}
+    if(rect){const px=rect.w*.15,py=rect.h*.15;const x=Math.max(0,rect.x-px),y=Math.max(0,rect.y-py);rect={x,y,w:Math.min(img.width,rect.x+rect.w+px)-x,h:Math.min(img.height,rect.y+rect.h+py)-y};}
+    const canvas=drawImageRegionCanvas(img,rect||null,2400);img.close?.();
+    const local=await readPackagePhoto(prepareFastOcrCanvas(fitForOcr(canvas,900,1300)),{raw:fitForOcr(canvas,1100,1600),startedAt:started});stopRecoveryOcr();if(current!==generation||local?.superseded)return;
+    const code=await codePromise;const raw=code.raw;if(current!==generation)return;const tracking=trackingFromBarcode(raw);if(tracking)$('receiveTracking').value=tracking;
     $('processingDetail').textContent='Low confidence, please verify · '+error.message+' · '+((performance.now()-started)/1000).toFixed(1)+'s';
     $('receiveResult').textContent='Verify all fields before saving. '+((workspace?.customers||[]).find(c=>c.id===$('receiveCustomer').value)?.email?'':'Email not listed');renderLabelReadout();editor({...Object.fromEntries(keys.map(k=>[k,null])),recipient_name:intakeOcrName||null,address_line:intakeOcrAddress||null,tracking:$('receiveTracking').value||null,confidence:0},raw,true);return;
    }
-   const raw=await codePromise;if(current!==generation)return;const decoded=trackingFromBarcode(raw);if(decoded)result.tracking=decoded;
+   const code=await codePromise;const raw=code.raw;if(current!==generation)return;const decoded=trackingFromBarcode(raw);if(decoded)result.tracking=decoded;
    sync(result);const ranked=rank(result);const best=ranked[0];const gap=best?best.score-(ranked[1]?.score||0):0;
    const high=result.confidence>=.90&&result.recipient_name&&best?.name>=.94&&best.score>=.93&&gap>=.10&&(best.address===null||best.address>=.80);
    if(high){$('receiveCustomer').value=best.customer.id;hideInlineCustomer();}else{showInlineCustomer(result.recipient_name||'');}

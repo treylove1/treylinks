@@ -6,7 +6,7 @@
   <title>Parcel Snap Business Portal</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body><p style="padding:12px;background:#ffe0a3;color:#161616">Vision test version: AI server is not configured yet. Photos currently use local OCR fallback; verify before saving.</p>
+<body><p style="padding:12px;background:#ffe0a3;color:#161616">Vision test version. If AI is unavailable, local OCR requires verification. QR/barcode scanning runs independently on every photo.</p>
   <div id="authView" class="screen">
     <section class="authCard">
       <div class="brand">PARCEL SNAP</div>
@@ -534,9 +534,11 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
   <script src="known-customer-matcher.js"></script>
-  <script src="app.js?v=20261008-vision-first"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
-  <script src="vision-config.js?v=20261008-vision-first"></script>
-  <script src="vision-client.js?v=20261008-vision-first"></script>
+  <script src="app.js?v=20261008-barcode-2"></script>
+  <script src="vendor/zxing-browser-0.1.5.min.js"></script>
+  <script src="vendor/jsQR-1.4.0.js"></script>
+  <script src="barcode-reader.js?v=20261008-barcode-2"></script>
+  <script src="vision-config.js?v=20261008-barcode-2"></script>
+  <script src="vision-client.js?v=20261008-barcode-2"></script>
 </body>
 </html>
