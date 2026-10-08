@@ -100,11 +100,12 @@
    activeResult=result;
    sync(result);const ranked=rank(result);const best=ranked[0];const gap=best?best.score-(ranked[1]?.score||0):0;
    const high=result.confidence>=.90&&result.recipient_name&&best?.name>=.94&&best.score>=.93&&gap>=.10&&(best.address===null||best.address>=.80);
-   if(high){$('receiveCustomer').value=best.customer.id;hideInlineCustomer();}else{showInlineCustomer(result.recipient_name||'');}
-   renderLabelReadout();editor(result,raw);if(!high)suggestions(result,ranked);
+   // Candidate matching is only a suggestion until a person selects the intended customer.
+   $('receiveCustomer').value='';
+   showInlineCustomer(result.recipient_name||'');
+   renderLabelReadout();editor(result,raw);suggestions(result,ranked);
    $('processingText').textContent=result.recipient_name||'Name not read';$('processingDetail').textContent='AI '+((performance.now()-visionStarted)/1000).toFixed(1)+'s · Total '+((performance.now()-started)/1000).toFixed(1)+'s · Verify name, address and tracking';
-   const customer=high?best.customer:null;
-   $('receiveResult').textContent=customer?.email?'Verify highlighted fields':'Email not listed';
+   $('receiveResult').textContent='Select the correct customer, verify all fields, then save.';
    // CAMERA-READINESS FREEZE: no automatic parcel saving or customer email before human review.
    // Model confidence is self-reported, not calibrated against real package-label evaluations.
   }catch(error){if(current!==generation)return;$('processingText').textContent='Photo could not be read';$('processingDetail').textContent='Low confidence, please verify · '+error.message;showInlineCustomer('');}
