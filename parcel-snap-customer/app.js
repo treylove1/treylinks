@@ -5,6 +5,7 @@ const PORTAL_API=SUPABASE_URL+"/functions/v1/parcel-snap-portal";
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let authMode="signin";
 let workspace=null;
+let workspaceLoadGeneration=0;
 let intakePhotoDataUrl=null;
 let intakeOcrText="";
 let intakeOcrName="";
@@ -1621,9 +1622,9 @@ $("signInMode").onclick=()=>setMode("signin");
 $("signUpMode").onclick=()=>setMode("signup");
 $("joinStaffMode").onclick=()=>setMode("join");
 
-async function api(body){
+async function api(body,expectedUserId=null){
   const {data:{session}}=await sb.auth.getSession();
-  if(!session)throw new Error("Please sign in again.");
+  if(!session||expectedUserId!==null&&session.user?.id!==expectedUserId)throw new Error("Please sign in again.");
   const r=await fetch(PORTAL_API,{
     method:"POST",
     headers:{
@@ -1675,7 +1676,7 @@ $("authButton").onclick=async()=>{
   }
 };
 
-$("signOut").onclick=async()=>{await sb.auth.signOut();location.reload()};
+$("signOut").onclick=async()=>{workspaceLoadGeneration++;workspace=null;showOnly("loadingState");await sb.auth.signOut();location.reload()};
 
 async function boot(){
   const {data:{session}}=await sb.auth.getSession();
@@ -1706,10 +1707,20 @@ function showOnly(id){
 }
 
 async function loadWorkspace(){
+  const generation=++workspaceLoadGeneration;
   showOnly("loadingState");
+  $("loadingState").innerHTML="<h2>Loading workspace…</h2>";
   try{
+    const {data:{session:startedSession}}=await sb.auth.getSession();
+    if(generation!==workspaceLoadGeneration)return;
+    if(!startedSession?.user?.id)throw new Error("Please sign in again.");
     const previousCompany=workspace?.company?.id||null;
-    workspace=await api({action:"workspace"});
+    const nextWorkspace=await api({action:"workspace"},startedSession.user.id);
+    if(generation!==workspaceLoadGeneration)return;
+    const {data:{session:currentSession}}=await sb.auth.getSession();
+    if(generation!==workspaceLoadGeneration)return;
+    if(!currentSession||currentSession.user?.id!==startedSession.user.id)throw new Error("Please sign in again.");
+    workspace=nextWorkspace;
     if(previousCompany!==(workspace?.company?.id||null))clearArrivalEmailRecovery();
     if(workspace.state==="NO_COMPANY"){
       showOnly("onboardingState");
@@ -1746,7 +1757,15 @@ async function loadWorkspace(){
     }
     throw new Error("Unknown workspace state.");
   }catch(e){
-    $("loadingState").innerHTML="<h2>Workspace unavailable</h2><p>"+esc(e.message||String(e))+"</p>";
+    if(generation!==workspaceLoadGeneration)return;
+    workspace=null;
+    $("loadingState").innerHTML="<h2>Workspace unavailable</h2><p>"+esc(e.message||String(e))+"</p><button id=\"retryWorkspace\" type=\"button\" class=\"ghost wide\">Retry workspace</button>";
+    const retry=$("retryWorkspace");
+    retry.onclick=async()=>{
+      if(retry.disabled)return;
+      retry.disabled=true;
+      await loadWorkspace();
+    };
   }
 }
 

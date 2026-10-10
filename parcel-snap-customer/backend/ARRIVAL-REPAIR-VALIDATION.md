@@ -18,6 +18,10 @@ The first native PostgreSQL CI run exposed a postgres.js parameter-encoding diff
 
 After image preparation, the browser now displays the exact prepared JPEG held for submission, replacing the temporary original-image preview before OCR/review. Regression checks compare displayed data with the actual receive payload and reject stale photo selections. This does not substitute for physical-camera or live Storage acceptance.
 
+## Workspace error recovery
+
+A failed workspace load now offers an ordinary Retry workspace button and a loading state. Retry retains the current in-memory session; it does not reload, sign in or sign out. Duplicate clicks are suppressed, older load results cannot replace a newer view, and sign-out invalidates pending loads. The actual request session must match the expected user before fetch, with a second identity check before rendering. Same-user token refresh remains valid. Sixteen synthetic regressions cover repeated failures, stale replies, lost/switched sessions (including A-to-B-to-A), escaped errors, loading state and retained photo/review fields.
+
 ## Photo and send safety
 
 The portal requires the existing private photo bucket. Company/package/event/content-hash object paths are immutable, and downloaded bytes are checked against the saved SHA-256. The attachment relationship is checked server-side against the company, package, customer, facility and event. Client addresses or paths cannot override it.
@@ -44,6 +48,7 @@ node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test \
   parcel-snap-customer/tests/vision-display-test.mjs \
   parcel-snap-customer/tests/customer-label-safety-test.mjs \
   parcel-snap-customer/tests/intake-confirmation-flow-test.mjs \
+  parcel-snap-customer/tests/workspace-recovery.test.mjs \
   parcel-snap-customer/tests/vision-result-test.mjs \
   parcel-snap-customer/tests/arrival-workflow.test.mjs \
   parcel-snap-customer/tests/arrival-review.test.mjs \
@@ -52,7 +57,7 @@ node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test \
   parcel-snap-customer/tests/customer-arrival-integration.test.mjs
 ```
 
-On the frozen public-safe candidate, this combined command passed 283 tests with zero failures. Separate smoke and pure configuration results are recorded independently; native concurrency and real service delivery are not counted in that result.
+On the frozen public-safe candidate, this combined command passed 299 tests with zero failures. Separate smoke and pure configuration results are recorded independently; native concurrency and real service delivery are not counted in that result.
 
 The network guard fails accidental global HTTP/socket access. Application transports are injected capture functions. Cross-layer tests exercise real customer event handlers, an actual fictional JPEG, local Tesseract and the production SQL adapter on isolated PostgreSQL-WASM; DOM/auth envelopes, private Storage and mail are substituted. The workflow separately covers portal/private-bucket/default-pause, photo parser, onboarding and the previously published frozen preview.
 

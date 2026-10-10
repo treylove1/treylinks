@@ -367,7 +367,7 @@ test('list refresh failure keeps saved-result feedback and the same review evide
 
 test('an older list response cannot overwrite a newer same-company full workspace load',async()=>{
   const pending=deferred();let count=0;const h=harness(()=>++count===1?pending.promise:freshLists([{...parcel,tracking_number:'NEWER-FULL-LOAD'}]));includeListRendering(h);
-  h.run('workspace.company={id:"original-company"};workspace.attention=[];showOnly=()=>{};renderWorkspace=()=>{};');
+  h.run('workspace.company={id:"original-company"};workspace.attention=[];showOnly=()=>{};renderWorkspace=()=>{};sb.auth={getSession:async()=>({data:{session:{user:{id:"fictional-owner"}}}})};');
   const start=app.indexOf('async function loadWorkspace(){');h.run(app.slice(start,app.indexOf('$("saveOnboarding").onclick=',start)));
   const older=h.run('refreshSavedArrivalLists(arrivalEmailRecoveryScope())');await h.run('loadWorkspace()');
   pending.resolve(freshLists([{...parcel,tracking_number:'OLDER-LIST'}]));await older;
