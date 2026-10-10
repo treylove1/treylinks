@@ -6,6 +6,8 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let authMode="signin";
 let workspace=null;
 let workspaceLoadGeneration=0;
+let signOutState="IDLE";
+let authActionInFlight=false;
 let intakePhotoDataUrl=null;
 let intakeOcrText="";
 let intakeOcrName="";
@@ -1640,6 +1642,17 @@ async function api(body,expectedUserId=null){
 }
 
 $("authButton").onclick=async()=>{
+  if(signOutState==="PENDING"){
+    $("authMessage").textContent="Sign-out is still pending. Please wait before signing in.";
+    return;
+  }
+  if(signOutState==="FAILED"&&authMode!=="signin"){
+    $("authMessage").textContent="Finish signing out, or choose Sign in to use your existing account.";
+    return;
+  }
+  if(authActionInFlight)return;
+  authActionInFlight=true;
+  $("authButton").disabled=true;
   const email=$("email").value.trim();
   const password=$("password").value;
   $("authMessage").textContent="";
@@ -1647,6 +1660,7 @@ $("authButton").onclick=async()=>{
     if(authMode==="signin"){
       const {error}=await sb.auth.signInWithPassword({email,password});
       if(error)throw error;
+      signOutState="IDLE";
     }else if(authMode==="signup"){
       const company_name=$("signupCompany").value.trim();
       if(!company_name)throw new Error("Enter your company name.");
@@ -1670,13 +1684,49 @@ $("authButton").onclick=async()=>{
       await api({action:"claim_staff_invite",code:inviteCode});
       localStorage.removeItem("parcel-snap-pending-invite");
     }
+    authActionInFlight=false;
     await boot();
   }catch(e){
     $("authMessage").textContent=e.message||String(e);
+  }finally{
+    authActionInFlight=false;
+    $("authButton").disabled=signOutState==="PENDING";
   }
 };
 
-$("signOut").onclick=async()=>{workspaceLoadGeneration++;workspace=null;showOnly("loadingState");await sb.auth.signOut();location.reload()};
+$("signOut").onclick=async()=>{
+  if(signOutState==="PENDING")return;
+  if(authActionInFlight){
+    $("authMessage").textContent="Authentication is still pending. Please wait before signing out.";
+    return;
+  }
+  signOutState="PENDING";
+  workspaceLoadGeneration++;
+  workspace=null;
+  showOnly("loadingState");
+  $("signOut").disabled=true;
+  $("authButton").disabled=true;
+  $("loadingState").innerHTML="<h2>Signing out…</h2><p>Your workspace stays locked while sign-out completes.</p>";
+  const pendingNotice=setTimeout(()=>{
+    if(signOutState!=="PENDING")return;
+    $("loadingState").innerHTML="<h2>Sign-out is still pending</h2><p>The authentication request has not completed. This page keeps your workspace locked. Please wait; no second sign-out request has been sent.</p>";
+    $("authMessage").textContent="Sign-out is still pending. The authentication request has not completed. Please wait before signing in.";
+  },10000);
+  try{
+    const result=await sb.auth.signOut();
+    if(result?.error!==null)throw new Error("Sign-out did not complete.");
+    location.reload();
+  }catch{
+    signOutState="FAILED";
+    $("loadingState").innerHTML="<h2>Sign-out could not finish</h2><p>This page keeps your workspace locked. Retry signing out when you are ready.</p><button id=\"retrySignOut\" type=\"button\" class=\"ghost wide\">Retry sign out</button>";
+    $("retrySignOut").onclick=()=>$("signOut").onclick();
+    $("authMessage").innerHTML="Sign-out could not finish. Retry signing out, or sign in to your existing account.<button id=\"retrySignOutAuth\" type=\"button\" class=\"ghost wide\">Retry sign out</button>";
+    $("retrySignOutAuth").onclick=()=>$("signOut").onclick();
+  }finally{
+    clearTimeout(pendingNotice);
+    if(signOutState==="FAILED"){$("signOut").disabled=false;$("authButton").disabled=false;}
+  }
+};
 
 async function boot(){
   const {data:{session}}=await sb.auth.getSession();
@@ -1707,6 +1757,7 @@ function showOnly(id){
 }
 
 async function loadWorkspace(){
+  if(signOutState!=="IDLE")return;
   const generation=++workspaceLoadGeneration;
   showOnly("loadingState");
   $("loadingState").innerHTML="<h2>Loading workspace…</h2>";
@@ -2723,5 +2774,13 @@ if("requestIdleCallback" in window){
   setTimeout(warmParcelSnapOcr,100);
 }
 
-sb.auth.onAuthStateChange((_event,session)=>{if(!session){clearArrivalEmailRecovery();$("authView").classList.remove("hidden");$("appView").classList.add("hidden")}});
+sb.auth.onAuthStateChange((_event,session)=>{if(!session){
+  clearArrivalEmailRecovery();
+  $("authView").classList.remove("hidden");
+  $("appView").classList.add("hidden");
+  if(signOutState==="PENDING"){
+    $("authMessage").textContent="Sign-out is still pending. Please wait before signing in.";
+    $("authButton").disabled=true;
+  }
+}});
 boot();

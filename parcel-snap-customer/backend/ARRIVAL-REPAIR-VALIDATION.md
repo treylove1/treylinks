@@ -22,6 +22,14 @@ After image preparation, the browser now displays the exact prepared JPEG held f
 
 A failed workspace load now offers an ordinary Retry workspace button and a loading state. Retry retains the current in-memory session; it does not reload, sign in or sign out. Duplicate clicks are suppressed, older load results cannot replace a newer view, and sign-out invalidates pending loads. The actual request session must match the expected user before fetch, with a second identity check before rendering. Same-user token refresh remains valid. Sixteen synthetic regressions cover repeated failures, stale replies, lost/switched sessions (including A-to-B-to-A), escaped errors, loading state and retained photo/review fields.
 
+## Sign-out and authentication recovery
+
+Sign-out immediately locks the workspace and invalidates earlier workspace loads. One SDK request remains in flight at a time. A request still pending after ten seconds receives an honest waiting message; it is not treated as success, cancelled, retried automatically or used as a reason to clear credentials. A later successful result follows the existing reload path. Rejection, a returned SDK error or an unexpected result keeps the workspace locked and exposes explicit Retry sign out.
+
+Authentication callbacks can reveal the login view before sign-out settles, so pending/error feedback is shown there too. Unresolved sign-out blocks authentication submissions. After a settled failure, only an explicitly successful existing-account sign-in clears the lock; generic callbacks and failed sign-in do not. Sign-up/join flows and overlapping authentication/sign-out operations are guarded. SDK sign-out scope, credential storage and refresh policies are unchanged.
+
+Twenty-two additional synthetic regressions cover sign-out outcomes and actual auth-handler/callback interaction. The reason a real SDK request may remain pending is unverified; this is a recovery improvement, not a claim that an SDK hang is fixed or that a server session was revoked. Real authentication behavior on this final source remains a separate pre-production acceptance gate.
+
 ## Photo and send safety
 
 The portal requires the existing private photo bucket. Company/package/event/content-hash object paths are immutable, and downloaded bytes are checked against the saved SHA-256. The attachment relationship is checked server-side against the company, package, customer, facility and event. Client addresses or paths cannot override it.
@@ -49,6 +57,8 @@ node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test \
   parcel-snap-customer/tests/customer-label-safety-test.mjs \
   parcel-snap-customer/tests/intake-confirmation-flow-test.mjs \
   parcel-snap-customer/tests/workspace-recovery.test.mjs \
+  parcel-snap-customer/tests/signout-recovery.test.mjs \
+  parcel-snap-customer/tests/auth-signout-interaction.test.mjs \
   parcel-snap-customer/tests/vision-result-test.mjs \
   parcel-snap-customer/tests/arrival-workflow.test.mjs \
   parcel-snap-customer/tests/arrival-review.test.mjs \
@@ -57,7 +67,7 @@ node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test \
   parcel-snap-customer/tests/customer-arrival-integration.test.mjs
 ```
 
-On the frozen public-safe candidate, this combined command passed 299 tests with zero failures. Separate smoke and pure configuration results are recorded independently; native concurrency and real service delivery are not counted in that result.
+On the frozen public-safe candidate, this combined command passed 321 tests with zero failures. Separate smoke and pure configuration results are recorded independently; native concurrency and real service delivery are not counted in that result.
 
 The network guard fails accidental global HTTP/socket access. Application transports are injected capture functions. Cross-layer tests exercise real customer event handlers, an actual fictional JPEG, local Tesseract and the production SQL adapter on isolated PostgreSQL-WASM; DOM/auth envelopes, private Storage and mail are substituted. The workflow separately covers portal/private-bucket/default-pause, photo parser, onboarding and the previously published frozen preview.
 

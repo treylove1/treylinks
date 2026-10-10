@@ -63,6 +63,8 @@ jobs:
           parcel-snap-customer/tests/customer-label-safety-test.mjs
           parcel-snap-customer/tests/intake-confirmation-flow-test.mjs
           parcel-snap-customer/tests/workspace-recovery.test.mjs
+          parcel-snap-customer/tests/signout-recovery.test.mjs
+          parcel-snap-customer/tests/auth-signout-interaction.test.mjs
           parcel-snap-customer/tests/vision-result-test.mjs
           parcel-snap-customer/tests/arrival-workflow.test.mjs
           parcel-snap-customer/tests/arrival-review.test.mjs
