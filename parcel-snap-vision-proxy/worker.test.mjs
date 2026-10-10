@@ -7,6 +7,7 @@ const expected={...Object.fromEntries(fields.map(field=>[field,null])),recipient
 const origin='https://treylove1.github.io';
 const makeEnv=(run=async()=>({response:JSON.stringify(expected)}))=>({
   VISION_PROVIDER:'cloudflare',AI:{run},ALLOWED_ORIGIN:origin,
+  RATE_LIMITER:{limit:async()=>({success:true})},
   SUPABASE_URL:'https://example.invalid',SUPABASE_PUBLISHABLE_KEY:'public-test'
 });
 const makeRequest=({image='data:image/jpeg;base64,AA==',token='sample-token',originHeader=origin}={})=>{

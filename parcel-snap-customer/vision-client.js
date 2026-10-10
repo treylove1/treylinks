@@ -24,7 +24,8 @@
       return null;
     }
     if (!response.ok) throw new Error(data.error || "Vision analysis failed");
-    return data.result || null;
+    if(!window.ParcelSnapVisionResult)throw new Error("Vision result validation is unavailable");
+    return window.ParcelSnapVisionResult.normalize(data);
   }
 
   function bestDirectoryMatch(name, confidence) {
@@ -102,13 +103,40 @@
   }
 
   function refineFromVision(result,local){
-    if(!result)return;
+    if(!result||receiveInFlight)return;
+    if(local?.edit_generation!==intakeFieldEditGeneration)return;
+    resetLabelConfirmation();
+    intakeVisionWarnings=(result.review_warnings||[]).map(warning=>warning.message).filter(Boolean);
 
     if(result.carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=result.carrier;
-    if(result.tracking_code&&!$("receiveTracking").value)$("receiveTracking").value=result.tracking_code;
+    const trackingEdited=intakeTrackingReview?.manual||intakeTrackingReview?.status==="MANUAL";
+    if(result.tracking_candidates?.length>1){
+      intakeTrackingReview={status:"CONFLICT",manual:trackingEdited,message:"The reader returned conflicting tracking values — check the photo"};
+      if(!trackingEdited)$("receiveTracking").value="";
+    }else if(result.tracking_code){
+      const tracking=trackingAnalysis("CARRIER: "+(result.carrier||"")+"\nTRACKING: "+result.tracking_code);
+      const current=$("receiveTracking").value.trim();
+      if(current&&tracking.value&&current.toUpperCase()!==tracking.value.toUpperCase()){
+        if(!trackingEdited)$("receiveTracking").value="";
+        intakeTrackingReview={status:"CONFLICT",manual:trackingEdited,message:"OCR and vision tracking disagree — check the photo"};
+      }else if(!current&&!trackingEdited){
+        $("receiveTracking").value=tracking.value;
+        intakeTrackingReview=tracking;
+      }
+    }
     if(result.recipient_address&&!intakeOcrAddress)intakeOcrAddress=result.recipient_address;
 
     const vMatch=visionDirectoryMatch(result);
+    const manualName=intakeRecipientDisplay?.read_token===intakeReadToken
+      && intakeRecipientDisplay.source==="manual";
+    if(manualName||($("receiveCustomer").value&&!local?.match))return;
+    if(local?.candidate&&result.recipient_name&&candidateScore(local.candidate,result.recipient_name)<.90){
+      $("receiveCustomer").value="";
+      showInlineCustomer(local.candidate);
+      $("processingText").textContent="Customer needs review";
+      $("processingDetail").textContent="OCR and vision disagree — choose customer";
+      return;
+    }
 
     if(local?.match){
       if(vMatch&&vMatch.id===local.match.customer.id&&!result.needs_review){
@@ -139,7 +167,13 @@
       const safe=Number(result.confidence||0)>=.65
         ?String(result.recipient_name||"").trim()
         :"";
-      if(safe&&!$("receiveNewCustomerName").value)$("receiveNewCustomerName").value=safe;
+      if(safe&&!$("receiveNewCustomerName").value){
+        $("receiveNewCustomerName").value=safe;
+        // Do not change intakeOcrName: background recovery uses it as an eligibility guard.
+        intakeRecipientDisplay={name:safe,read_token:intakeReadToken,source:"vision"};
+        $("processingText").textContent=safe;
+        $("processingDetail").textContent="Possible recipient — verify against the photo";
+      }
     }
   }
 
@@ -150,14 +184,24 @@
     if(receiveInFlight)return;
     const startedAt=performance.now();
     const selectionGeneration=++packageSelectionGeneration;
+    const selectionToken=++intakeReadToken;
+    const editGeneration=intakeFieldEditGeneration;
+    intakePhotoDataUrl=null;
+    intakePhotoPending=true;
     stopRecoveryOcr();
 
     $("receiveResult").textContent = "";
     $("receiveNewCustomerEmail").value = "";
     $("receiveNewCustomerPhone").value = "";
+    $("receiveNewCustomerAlias").value = "";
+    $("receiveAddress").value = "";
     intakePackageId=crypto.randomUUID();
     intakeOcrText = "";
     intakeOcrName = "";
+    intakeRecipientDisplay=null;
+    intakeTrackingReview=null;
+    intakeVisionWarnings=[];
+    resetLabelConfirmation();
     intakeOcrAddress = "";
     $("receiveCustomer").value="";
     $("receiveTracking").value="";
@@ -190,7 +234,7 @@
         });
 
       // Do not wait for remote vision. Local OCR owns the fast path.
-      const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt});
+      const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt,readToken:selectionToken,editGeneration});
       URL.revokeObjectURL(instantUrl);
       if(selectionGeneration!==packageSelectionGeneration||local?.superseded)return;
       intakeOcrAddress=local.address||"";
@@ -212,11 +256,16 @@
           :"Label crop used";
       }
     } catch (error) {
+      if(selectionGeneration!==packageSelectionGeneration)return;
       console.error(error);
       $("processingBox").classList.remove("hidden");
-      $("processingText").textContent = "Name not clear";
+      if(editGeneration===intakeFieldEditGeneration){
+        $("processingText").textContent = "Name not clear";
+        showInlineCustomer("");
+      }
       $("processingDetail").textContent = "Enter customer name and email";
-      showInlineCustomer("");
+    } finally {
+      if(selectionGeneration===packageSelectionGeneration)intakePhotoPending=false;
     }
   };
 })();

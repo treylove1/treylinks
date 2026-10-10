@@ -272,7 +272,7 @@
             </div>
 
             <section id="labelReadout" class="notice hidden" aria-live="polite">
-              <strong>Read from photo</strong>
+              <strong>Photo reading and reviewed fields</strong>
               <pre id="labelFields" style="white-space:pre-wrap"></pre>
               <details open><summary>All extracted text</summary><pre id="labelRawText" style="white-space:pre-wrap"></pre></details>
             </section>
@@ -328,7 +328,16 @@
               </label>
             </div>
 
-            <input id="receiveTracking" type="hidden">
+            <label>Recipient address read from photo
+              <input id="receiveAddress" placeholder="Not read — enter from the label">
+            </label>
+            <label>Tracking number
+              <input id="receiveTracking" placeholder="Not read — enter from the label">
+            </label>
+            <label><input id="receiveLabelConfirmed" type="checkbox">
+              I checked the photo, recipient, address, tracking and customer email. Send the arrival notice to this customer.
+            </label>
+            <small>Unconfirmed scans can be saved for review. No customer email is sent automatically.</small>
             <button id="receivePackageButton" class="primary wide">Receive Package</button>
             <div id="receiveResult" class="message"></div>
           </article>
@@ -361,6 +370,10 @@
 
             <label>Note
               <input id="transferNote" placeholder="Optional receiving note">
+            </label>
+
+            <label><input id="transferLabelConfirmed" type="checkbox">
+              I checked this arrival photo, selected package, tracking and customer recipient. Send the arrival notice.
             </label>
 
             <button id="saveTransfer" class="primary wide">Save Arrival</button>
@@ -532,9 +545,10 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js"></script>
   <script src="known-customer-matcher.js"></script>
   <script src="app.js?v=20261008-ocr"></script>
+  <script src="vision-result.js?v=20261009-review"></script>
   <script src="vision-client.js?v=20261008-ocr"></script>
 </body>
 </html>

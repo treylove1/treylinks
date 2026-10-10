@@ -2,6 +2,10 @@ name: Parcel Snap Customer Regression
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "parcel-snap-customer/**"
+      - ".github/workflows/parcel-snap-customer-regression.yml"
   push:
     branches: ["main"]
     paths:
@@ -14,16 +18,62 @@ permissions:
 jobs:
   regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate customer and arrival workflow syntax
+        run: |
+          node --check parcel-snap-customer/app.js
+          node --check parcel-snap-customer/vision-client.js
+          node --check parcel-snap-customer/vision-result.js
+          node --check parcel-snap-customer/backend/arrival-workflow.mjs
+
       - name: Known-customer matcher regression
         run: node parcel-snap-customer/tests/known-customer-matcher-test.mjs
 
+      - name: Existing OCR parser regression
+        run: node parcel-snap-customer/tests/ocr-parser-test.mjs
+
       - name: OCR speed architecture regression
         run: node parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
+
+      - name: Tentative vision display and intake-safety regression
+        run: node --test parcel-snap-customer/tests/vision-display-test.mjs
+
+      - name: Recipient, tracking, confirmation and hosted-result regressions
+        run: >-
+          node --test
+          parcel-snap-customer/tests/customer-label-safety-test.mjs
+          parcel-snap-customer/tests/intake-confirmation-flow-test.mjs
+          parcel-snap-customer/tests/vision-result-test.mjs
+
+      - name: Private photo and arrival notification regression
+        run: node --test parcel-snap-customer/tests/arrival-workflow.test.mjs
+
+      - name: Install pinned isolated PostgreSQL test runtime
+        run: npm ci --prefix parcel-snap-customer/tests/sql-runtime --ignore-scripts --no-audit --no-fund
+
+      - name: PostgreSQL schema and adapter SQL regression
+        run: node --test parcel-snap-customer/tests/arrival-postgres.test.mjs
+
+      - name: Portal routing and paused-rollout smoke test
+        run: node parcel-snap-customer/tests/backend-intake-test.cjs
+
+      - name: Install pinned OCR test runtime and English data
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr-eng
+          npm ci --prefix parcel-snap-customer/tests/ocr-runtime --ignore-scripts --no-audit --no-fund
+
+      - name: Actual Tesseract synthetic-image regression
+        run: NODE_PATH="$GITHUB_WORKSPACE/parcel-snap-customer/tests/ocr-runtime/node_modules" node parcel-snap-customer/tests/photo-intake-flow-test.cjs
 
       - name: Tenant onboarding architecture regression
         run: node parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs

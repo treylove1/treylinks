@@ -22,7 +22,9 @@ expect("matcher decision is authoritative",app.includes("function decideCustomer
 expect("adaptive binarization exists",app.includes("adaptiveBinarizeCanvas"));
 expect("deskew estimator exists",app.includes("estimateSkewDegrees"));
 expect("recovery worker can be stopped",app.includes("stopRecoveryOcr"));
-expect("new package invalidates prior recovery",app.includes("const token=++intakeReadToken;")&&app.includes("if(token!==intakeReadToken||!canBackgroundReplaceCustomer())return null;"));
+expect("new package reserves token before preparation",vision.indexOf("const selectionToken=++intakeReadToken;")<vision.indexOf("const prepared=await preparePackageImages(file);"));
+expect("local OCR accepts the reserved token",app.includes("const token=options.readToken??++intakeReadToken;"));
+expect("new package and manual edits invalidate prior recovery",app.includes("if(token!==intakeReadToken||editGeneration!==intakeFieldEditGeneration||!canBackgroundReplaceCustomer())return null;"));
 expect("first-result latency is recorded",app.includes("first_result_seconds"));
 expect("background-recovery latency is recorded",app.includes("background_recovery_seconds"));
 expect("phone test surfaces OCR timing",app.includes("intakeTimingSummary()"));
@@ -33,7 +35,7 @@ expect("recipient focus uses destination street anchor",app.includes("recipientF
 expect("fast pass requests OCR layout blocks",app.includes("{text:true,blocks:true}"));
 expect("browser OCR upgraded to Tesseract v6",html.includes("tesseract.js@6"));
 expect("instant package preview exists",vision.includes("URL.createObjectURL(file)"));
-expect("local OCR uses cropped canvas",vision.includes("readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt})"));
+expect("local OCR uses cropped canvas with reserved photo and edit generations",vision.includes("readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt,readToken:selectionToken,editGeneration})"));
 expect("vision is started before local OCR completes",vision.indexOf("visionPromise=analyzePackageWithVision") < vision.indexOf("const local=await readPackagePhoto"));
 expect("remote vision is not awaited before local OCR",!vision.includes("await analyzePackageWithVision(prepared.vision)"));
 
