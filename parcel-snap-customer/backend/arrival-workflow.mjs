@@ -61,6 +61,39 @@ function packageMetadata(body,p={}){
 }
 function metadataChanged(p,next){const old=packageMetadata({},p);return META_KEYS.some(key=>old[key]!==next[key]);}
 function arrivalNote(body){if(body.note!=null&&(typeof body.note!=='string'||body.note.length>2000))fail('Arrival note must be text of at most 2000 characters.');return body.note||'Package arrival and private label photo saved';}
+
+// Preserve the displayed tracking string. These comparison keys are deliberately
+// conservative and never use numeric conversion, partial matching or OCR guesses.
+export function trackingIdentity(carrier,tracking){
+ const raw=String(tracking||'').trim();
+ if(!raw)return null;
+ const label=String(carrier||'').trim().toUpperCase();
+ const aliases={'UNITED PARCEL SERVICE':'UPS','US POSTAL SERVICE':'USPS','UNITED STATES POSTAL SERVICE':'USPS','FEDERAL EXPRESS':'FEDEX','DHL EXPRESS':'DHL'};
+ const brand=aliases[label]||label;
+ const compact=raw.replace(/[ \t\r\n-]/g,'').toUpperCase();
+ const formats={UPS:/^1Z[0-9A-Z]{16}$/,USPS:/^(?:[0-9]{20}|[0-9]{22}|[0-9]{26}|[A-Z]{2}[0-9]{9}[A-Z]{2})$/,FEDEX:/^(?:[0-9]{12}|[0-9]{15}|[0-9]{20}|[0-9]{22})$/,DHL:/^[0-9]{10}$/};
+ return {carrier:brand,tracking:formats[brand]?.test(compact)?compact:raw,search:raw.replace(/[^0-9A-Za-z]/g,'').toUpperCase()};
+}
+function sameTrackingIdentity(a,b){
+ if(!a||!b||a.search!==b.search)return false;
+ // An omitted carrier is ambiguous rather than proof of a different parcel.
+ if(!a.carrier||!b.carrier)return true;
+ return a.carrier===b.carrier&&a.tracking===b.tracking;
+}
+function destinationTransition(c,p,notice,facility=c.facility){
+ if(c.kind==='origin'){if(!['SENT','SENDING','UNKNOWN'].includes(notice?.status)&&facility?.facility_type!=='ORIGIN')fail('A new origin intake requires an active origin warehouse. Review the planned route.',409);return;}
+ if(c.kind!=='destination')return;
+ if(notice){
+  if(['SENT','SENDING','UNKNOWN'].includes(notice.status))return;
+  if(!same(p.current_facility_id,c.facilityId)||!['DESTINATION_RECEIVED','NASSAU_RECEIVED','WAREHOUSED'].includes(p.stage))fail('This arrival is no longer awaiting receipt at this warehouse. Review its saved status; no new email was sent.',409);
+  return;
+ }
+ if(!['DESTINATION','TRANSIT'].includes(facility?.facility_type))fail('This warehouse cannot receive a destination arrival. Review the planned route.',409);
+ if(!same(p.destination_facility_id,c.facilityId))fail('Receiving warehouse does not match the planned destination. Ask an authorized manager to review the route.',409);
+ if(!['ORIGIN_RECEIVED','MIAMI_RECEIVED','IN_TRANSIT'].includes(p.stage))fail('This package is already beyond a new destination arrival. Review its saved status; the location was not changed.',409);
+ if(same(p.current_facility_id,c.facilityId))fail('This package is already at this warehouse. Review the saved arrival before recording another one.',409);
+}
+
 function emailEnabled(profile){return profile?.needs_customer_notifications===true&&Array.isArray(profile?.notification_channels)&&profile.notification_channels.includes('EMAIL');}
 
 export function buildArrivalPayload(context){
@@ -175,6 +208,7 @@ export async function processArrival(input,deps){
  Object.assign(context,input,{packageId,facilityId,eventType,photo,photoPath:companyId+'/'+packageId+'/'+eventDigest+'-'+photo.digest+'.'+photo.ext});
  context.tracking=kind==='origin'?String(body.tracking_number||''):String(context.package.tracking_number||'');
  if((body.tracking_number!=null&&typeof body.tracking_number!=='string')||context.tracking.length>100)fail('Tracking must be text of at most 100 characters.');
+ if(/[\u0000-\u001f\u007f]/.test(context.tracking)||[...context.tracking].some(ch=>ch!==' '&&/\s/u.test(ch)))fail('Tracking contains unsupported whitespace or control characters. Review the printed identifier.');
  context.fingerprint=await sha256(new TextEncoder().encode(JSON.stringify([companyId,packageId,context.customer.id,facilityId,eventType,photo.digest,context.tracking,kind==='origin'?body.destination_facility_id||null:null,context.customer.email||''])));
  context.payload=buildArrivalPayload(context);
  // Existing events are checked before uploading to avoid accepting different photos on retry.
@@ -212,11 +246,32 @@ export function createArrivalRepository(sql){
  const findNotice=(c,db=sql,lock=false)=>one('select * from parcel_snap.arrival_notices where company_id=$1::uuid and package_id=$2::uuid and event_type=$3'+(lock?' for update':''),[c.companyId,c.packageId,c.eventType],db);
  const mutable=notice=>notice?.status==='PENDING'&&Number(notice.attempt_count)===0;
  const checkNotice=(notice,c)=>{if(notice&&notice.fingerprint!==c.fingerprint&&!mutable(notice))fail('This arrival already exists with different label details. Do not create another intake to retry it.',409);};
- async function checkPackage(c,db=sql,canEdit=false){
-  const p=await one('select * from parcel_snap.packages where id=$1::uuid',[c.packageId],db);
+ async function checkPackage(c,db=sql,canEdit=false,lock=false){
+  const p=await one('select * from parcel_snap.packages where id=$1::uuid'+(lock?' for update':''),[c.packageId],db);
   if(p&&!same(p.company_id,c.companyId))fail('Package not found in this company.',404);
   if(p&&(!same(p.origin_facility_id,c.facilityId)&&c.kind==='origin'||(!canEdit&&(!same(p.customer_id,c.customer.id)||(c.kind==='origin'&&(!same(p.tracking_number,c.tracking)||!same(p.destination_facility_id,c.body.destination_facility_id)))))))fail('Saved package differs from this intake. Review it before retrying.',409);
   return p;
+ }
+ async function checkOriginIdentity(c,db=sql){
+  if(c.kind!=='origin')return;
+  const digest=c.photo.digest;
+  // New workflow paths include a verified digest. Retain recognition of earlier
+  // photos after an unattempted draft changes its current notification photo.
+  const pathPattern='^'+c.companyId+'/[0-9a-f-]{36}/[0-9a-f]{24}-'+digest+'\\.(jpg|png|webp)$';
+  const photo=await one('select ph.package_id from parcel_snap.package_photos ph join parcel_snap.packages p on p.id=ph.package_id and p.company_id=ph.company_id where ph.company_id=$1::uuid and ph.package_id<>$2::uuid and (ph.storage_path ~ $3 or exists(select 1 from parcel_snap.arrival_notices n where n.company_id=ph.company_id and n.package_id=ph.package_id and n.photo_id=ph.id and n.photo_sha256=$4)) limit 1',[c.companyId,c.packageId,pathPattern,digest],db);
+  if(photo)fail('This label photo is already linked to a saved package. Review the existing intake in your workspace. A new intake cannot reassign it or send another email.',409);
+  const identity=trackingIdentity(Object.prototype.hasOwnProperty.call(c.body,'carrier')?c.body.carrier:c.package?.carrier,c.tracking);
+  if(!identity)return;
+  const rows=await db.unsafe("select id,carrier,tracking_number from parcel_snap.packages where company_id=$1::uuid and id<>$2::uuid and upper(regexp_replace(tracking_number,'[^0-9A-Za-z]','','g'))=$3",[c.companyId,c.packageId,identity.search]);
+  if(rows.some(p=>sameTrackingIdentity(identity,trackingIdentity(p.carrier,p.tracking_number))))fail('This tracking identity may already belong to a saved package. Review it with an authorized manager before creating a new parcel. No new package or email was created.',409);
+ }
+ async function lockOriginIdentity(c,tx){
+  if(c.kind!=='origin')return;
+  const keys=[c.companyId+'/arrival-photo/'+c.photo.digest];
+  const tracking=trackingIdentity(Object.prototype.hasOwnProperty.call(c.body,'carrier')?c.body.carrier:c.package?.carrier,c.tracking);
+  if(tracking)keys.push(c.companyId+'/arrival-tracking/'+tracking.search);
+  // All identities precede the package lock, in the same order in every process.
+  for(const key of keys.sort())await tx.unsafe('select pg_advisory_xact_lock(hashtextextended($1,0))',[key]);
  }
  return {
   async pendingOriginReviews(companyId,packageIds){
@@ -263,20 +318,24 @@ export function createArrivalRepository(sql){
    const company=await one('select name from parcel_snap.companies where id=$1::uuid',[c.companyId]);
    return {customer,facility,profile,package:p,companyName:String(company?.name||'Parcel Snap')};
   },
-  async checkExisting(c){const notice=await findNotice(c);checkNotice(notice,c);await checkPackage(c,sql,mutable(notice));},
+  async checkExisting(c){const notice=await findNotice(c);checkNotice(notice,c);const p=await checkPackage(c,sql,mutable(notice));destinationTransition(c,p,notice);await checkOriginIdentity(c);},
   async prepare(c){
    return sql.begin(async tx=>{
+    // Cross-intake identities are serialized before the existing package lock.
+    await lockOriginIdentity(c,tx);
     // All callers/processes serialize each package's DB changes on the same durable DB lock.
     await tx.unsafe('select pg_advisory_xact_lock(hashtextextended($1,0))',[c.companyId+'/'+c.packageId]);
     let notice=await findNotice(c,tx,true);checkNotice(notice,c);
-    let p=await checkPackage(c,tx,mutable(notice));
+    let p=await checkPackage(c,tx,mutable(notice),true);
+    await checkOriginIdentity(c,tx);
     await assertReviewedPackage(c,p);
     const duplicate=Boolean(p&&notice);
     if(c.kind==='origin'&&mutable(notice)&&!reviewEligible({notice,package:p}))fail('This package has moved beyond origin review. No edits were saved.',409);
     // Recheck customer/facility tenancy inside the transaction before linking the photo.
     const owner=await one('select id,email,xmin::text as contact_revision from parcel_snap.customers where id=$1::uuid and company_id=$2::uuid',[c.customer.id,c.companyId],tx);
-    const facility=await one('select id from parcel_snap.facilities where id=$1::uuid and company_id=$2::uuid and active=true',[c.facilityId,c.companyId],tx);
+    const facility=await one('select id,facility_type from parcel_snap.facilities where id=$1::uuid and company_id=$2::uuid and active=true for share',[c.facilityId,c.companyId],tx);
     if(!owner||!facility||!same(owner.email,c.customer.email))fail('Customer or warehouse changed. Review this intake again.',409);
+    destinationTransition(c,p,notice,facility);
     await assertReviewedContact(c.body,c.companyId,owner);
     if(c.kind==='origin'&&notice){
      const metadata=packageMetadata(c.body,p);
@@ -307,7 +366,10 @@ export function createArrivalRepository(sql){
     }
     const photo=await one('insert into parcel_snap.package_photos(company_id,package_id,facility_id,kind,storage_path,mime_type) values ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6) returning id',[c.companyId,c.packageId,c.facilityId,c.kind==='origin'?'ARRIVAL':'DESTINATION',c.photoPath,c.photo.mime],tx);
     if(c.kind==='origin')await tx.unsafe('update parcel_snap.packages set source_photo_url=$1 where id=$2::uuid and company_id=$3::uuid',[c.photoPath,c.packageId,c.companyId]);
-    else {await tx.unsafe("update parcel_snap.packages set destination_facility_id=$1::uuid,current_facility_id=$1::uuid,stage='DESTINATION_RECEIVED',last_arrived_at=now(),updated_at=now() where id=$2::uuid and company_id=$3::uuid",[c.facilityId,c.packageId,c.companyId]);p.stage='DESTINATION_RECEIVED';}
+    else {
+     p=await one("update parcel_snap.packages set destination_facility_id=$1::uuid,current_facility_id=$1::uuid,current_location_id=null,stage='DESTINATION_RECEIVED',last_arrived_at=now(),updated_at=now() where id=$2::uuid and company_id=$3::uuid and destination_facility_id=$1::uuid and current_facility_id is distinct from $1::uuid and stage in ('ORIGIN_RECEIVED','MIAMI_RECEIVED','IN_TRANSIT') returning *",[c.facilityId,c.packageId,c.companyId],tx);
+     if(!p)fail('Package route or shipping state changed. Reload the saved package before receiving it.',409);
+    }
     await tx.unsafe('insert into parcel_snap.package_events(package_id,event_type,site,note,actor_label) values ($1::uuid,$2,$3,$4,$5)',[c.packageId,c.kind==='origin'?'ORIGIN_RECEIVED':'DESTINATION_RECEIVED',String(c.facility.city||c.facility.name),arrivalNote(c.body),c.actor||'PORTAL_USER']);
     await one('select parcel_snap.assign_suggested_location($1::uuid,$2) as location_id',[c.packageId,c.actor||'PORTAL_USER'],tx);
     const legacyAccepted=legacy&&['SENT','DELIVERED','BOUNCED'].includes(legacy.status);
@@ -328,7 +390,7 @@ export function createArrivalRepository(sql){
    const token=crypto.randomUUID();
    // The atomic claim is the authorization point. Subsequent contact changes
    // cannot redirect this attempt: only this returned frozen payload is sent.
-   return one("update parcel_snap.arrival_notices set status='SENDING',claim_token=$2::uuid,confirmed_by=$3::uuid,confirmed_at=now(),started_at=now(),attempt_count=attempt_count+1,updated_at=now() where id=$1::uuid and fingerprint=$4 and status in ('PENDING','FAILED') and (status<>'PENDING' or attempt_count=0) and exists(select 1 from parcel_snap.company_profiles cp where cp.company_id=arrival_notices.company_id and cp.needs_customer_notifications=true and 'EMAIL'=any(cp.notification_channels)) and exists(select 1 from parcel_snap.customers cu where cu.id=arrival_notices.customer_id and cu.company_id=arrival_notices.company_id and cu.email=(arrival_notices.payload->'to'->>0) and cu.xmin::text=$5) and exists(select 1 from parcel_snap.packages p where p.id=arrival_notices.package_id and p.company_id=arrival_notices.company_id and p.customer_id=arrival_notices.customer_id and coalesce(p.tracking_number,'')=$6) returning *",[notice.id,token,userId,notice.fingerprint,contactRevision,tracking]);
+   return one("update parcel_snap.arrival_notices set status='SENDING',claim_token=$2::uuid,confirmed_by=$3::uuid,confirmed_at=now(),started_at=now(),attempt_count=attempt_count+1,updated_at=now() where id=$1::uuid and fingerprint=$4 and status in ('PENDING','FAILED') and (status<>'PENDING' or attempt_count=0) and exists(select 1 from parcel_snap.company_profiles cp where cp.company_id=arrival_notices.company_id and cp.needs_customer_notifications=true and 'EMAIL'=any(cp.notification_channels)) and exists(select 1 from parcel_snap.customers cu where cu.id=arrival_notices.customer_id and cu.company_id=arrival_notices.company_id and cu.email=(arrival_notices.payload->'to'->>0) and cu.xmin::text=$5) and exists(select 1 from parcel_snap.packages p where p.id=arrival_notices.package_id and p.company_id=arrival_notices.company_id and p.customer_id=arrival_notices.customer_id and coalesce(p.tracking_number,'')=$6 and p.current_facility_id=arrival_notices.facility_id and ((arrival_notices.event_type='ORIGIN_ARRIVAL' and p.stage in ('ORIGIN_RECEIVED','MIAMI_RECEIVED','NEEDS_REVIEW')) or (arrival_notices.event_type<>'ORIGIN_ARRIVAL' and p.stage in ('DESTINATION_RECEIVED','NASSAU_RECEIVED','WAREHOUSED') and p.destination_facility_id=arrival_notices.facility_id))) and exists(select 1 from parcel_snap.facilities f where f.id=arrival_notices.facility_id and f.company_id=arrival_notices.company_id and f.active=true and ((arrival_notices.event_type='ORIGIN_ARRIVAL' and f.facility_type='ORIGIN') or (arrival_notices.event_type<>'ORIGIN_ARRIVAL' and f.facility_type in ('DESTINATION','TRANSIT')))) returning *",[notice.id,token,userId,notice.fingerprint,contactRevision,tracking]);
   },
   async finish(notice,status,providerId,error,event){
    const row=await one('update parcel_snap.arrival_notices set status=$2,provider_message_id=coalesce($3,provider_message_id),error_message=$4,provider_event=$5,updated_at=now() where id=$1::uuid and claim_token is not distinct from $6::uuid returning id',[notice.id,status,providerId,error,event,notice.claim_token||null]);

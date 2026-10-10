@@ -72,6 +72,8 @@ jobs:
           parcel-snap-customer/tests/vision-result-test.mjs
           parcel-snap-customer/tests/arrival-workflow.test.mjs
           parcel-snap-customer/tests/arrival-review.test.mjs
+          parcel-snap-customer/tests/arrival-warehouse-safety.test.mjs
+          parcel-snap-customer/tests/arrival-conflict-ui.test.mjs
           parcel-snap-customer/tests/arrival-postgres.test.mjs
           parcel-snap-customer/tests/portal-contact-review.test.mjs
           parcel-snap-customer/tests/customer-arrival-integration.test.mjs

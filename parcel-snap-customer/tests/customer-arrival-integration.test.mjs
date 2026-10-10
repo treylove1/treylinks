@@ -79,6 +79,7 @@ function harness(db,objects=new Map(),role="OWNER"){
 
 test('customer events through actual SQL adapter with fictional Storage/mail capture',async t=>{
  const db=await database(t);
+ t.beforeEach(async()=>{await db.exec('truncate parcel_snap.arrival_notices,parcel_snap.package_photos,parcel_snap.package_events,parcel_snap.notifications,parcel_snap.packages restart identity cascade');});
  await t.test('actual JPEG preparation/OCR → explicit recipient confirmation → saved tracking and exact attachment → form reset',async()=>{
   const h=harness(db),worker=await createWorker('eng',1,{langPath:process.env.TESSDATA_PREFIX||'/usr/share/tesseract-ocr/5/tessdata',gzip:false});
   try{

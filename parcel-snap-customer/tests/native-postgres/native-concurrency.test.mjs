@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {processArrival,createArrivalRepository,customerContactVersion,buildArrivalPayload} from '../../backend/arrival-workflow.mjs';
+import {processArrival,createArrivalRepository,customerContactVersion,buildArrivalPayload,packageReviewVersion,sha256} from '../../backend/arrival-workflow.mjs';
 import {nativeTestConfig} from './native-test-config.mjs';
 const config=nativeTestConfig();
 const {default:postgres}=await import(new URL('./node_modules/postgres/src/index.js',import.meta.url));
@@ -23,17 +23,18 @@ test('native PostgreSQL independent connections, advisory locks, concurrent clai
  await a.unsafe(fs.readFileSync(new URL('../../backend/schema-proposals/arrival-notices.sql',import.meta.url),'utf8')).simple();
  await a`insert into parcel_snap.companies(id,name) values(${id(1)},'Synthetic Shipping')`;
  await a`insert into parcel_snap.customers(id,company_id,name,email) values(${id(2)},${id(1)},'Synthetic Recipient','recipient@example.test')`;
- await a`insert into parcel_snap.facilities(id,company_id,code,name,facility_type,city) values(${id(3)},${id(1)},'ORIGIN','Origin','ORIGIN','Test City')`;
+ await a`insert into parcel_snap.facilities(id,company_id,code,name,facility_type,city) values(${id(3)},${id(1)},'ORIGIN','Origin','ORIGIN','Test City'),(${id(4)},${id(1)},'NAS','Nassau','DESTINATION','Nassau')`;
  await a`insert into parcel_snap.company_profiles(company_id,needs_customer_notifications,notification_channels) values(${id(1)},true,array['EMAIL'])`;
  const [customerRevision]=await a`select id,xmin::text as contact_revision from parcel_snap.customers where id=${id(2)}`;
  const contactVersion=await customerContactVersion(id(1),customerRevision);
  let sequence=100;const objects=new Map();
+ t.beforeEach(async()=>{objects.clear();await a.unsafe('truncate parcel_snap.arrival_notices,parcel_snap.package_photos,parcel_snap.package_events,parcel_snap.notifications,parcel_snap.packages restart identity cascade').simple();});
  const storage={async upload(path,bytes){if(objects.has(path))return {error:Error('exists')};objects.set(path,Buffer.from(bytes));return {error:null};},async download(path){return objects.has(path)?{data:new Blob([objects.get(path)])}:{error:Error('missing')};}};
  function scenario(){
-  const input={kind:'origin',companyId:id(1),userId:id(6),role:'OWNER',actor:'owner@example.test',body:{intake_package_id:id(sequence++),customer_id:id(2),origin_facility_id:id(3),tracking_number:'0012345678901234567890',photo_data_url:'data:image/jpeg;base64,'+photo.toString('base64'),label_confirmed:true,confirmed_customer_id:id(2),confirmed_customer_contact_version:contactVersion}};
+  const input={kind:'origin',companyId:id(1),userId:id(6),role:'OWNER',actor:'owner@example.test',body:{intake_package_id:id(sequence++),customer_id:id(2),origin_facility_id:id(3),destination_facility_id:id(4),tracking_number:'0012345678901234567890',photo_data_url:'data:image/jpeg;base64,'+photo.toString('base64'),label_confirmed:true,confirmed_customer_id:id(2),confirmed_customer_contact_version:contactVersion}};
   const calls=[];const flags={timeout:false};
   const deps=s=>({repo:createArrivalRepository(s),storage,assertPrivateStorage:async()=>{},canOperate:async()=>true,secret:async()=>'synthetic-only',fetch:async(url,init)=>{calls.push({url,...init});await new Promise(r=>setTimeout(r,40));if(flags.timeout)throw Error('Synthetic uncertain provider acceptance');return new Response(JSON.stringify({id:'synthetic-message'}));}});
-  return {input,calls,flags,run:s=>processArrival(input,deps(s)),repo:s=>createArrivalRepository(s)};
+  return {input,calls,flags,dependencies:deps,run:s=>processArrival(input,deps(s)),repo:s=>createArrivalRepository(s)};
  }
  await t.test('pinned native driver binds serialized JSON through text without double encoding',async()=>{
   const payload={to:['recipient@example.test'],text:'Quotes " and backslash \\ and Unicode café'};
@@ -61,9 +62,9 @@ test('native PostgreSQL independent connections, advisory locks, concurrent clai
   const h=scenario();let release,locked;
   const wait=new Promise(r=>release=r),ready=new Promise(r=>locked=r);
   const owner=a.begin(async tx=>{await tx`select pg_advisory_xact_lock(hashtextextended(${id(1)+'/'+h.input.body.intake_package_id},0))`;locked();await wait;});
-  await ready;const request=h.run(b);
-  try{let seen=false;for(let n=0;n<250;n++){const rows=await observer`select wait_event_type,wait_event from pg_stat_activity where pid=${pids[1][0].pid}`;if(rows[0]?.wait_event_type==='Lock'&&rows[0]?.wait_event==='advisory'){seen=true;break;}await new Promise(r=>setTimeout(r,20));}assert(seen,'independent backend must visibly wait on the actual advisory lock');}finally{release();}
-  await owner;assert.equal((await request).email.status,'SENT');assert.equal(h.calls.length,1);
+  await ready;const request=h.run(b).then(value=>({value}),error=>({error}));
+  try{let seen=false;for(let n=0;n<250;n++){const rows=await observer`select wait_event_type,wait_event from pg_stat_activity where pid=${pids[1][0].pid}`;if(rows[0]?.wait_event_type==='Lock'&&rows[0]?.wait_event==='advisory'){seen=true;break;}await new Promise(r=>setTimeout(r,20));}assert(seen,'independent backend must visibly wait on the actual advisory lock');}finally{release();await Promise.allSettled([owner,request]);}
+  await owner;assert.equal((await request).value?.email.status,'SENT');assert.equal(h.calls.length,1);
  });
  await t.test('overlapping complete arrivals on independent connections produce one provider request',async()=>{
   const h=scenario();const results=await Promise.all([h.run(a),h.run(b)]);assert.equal(h.calls.length,1);assert(results.some(x=>x.email.status==='SENT'));
@@ -80,11 +81,33 @@ test('native PostgreSQL independent connections, advisory locks, concurrent clai
  await t.test('UNKNOWN persists across independent connection/repository and blocks another send',async()=>{
   const h=scenario();h.flags.timeout=true;assert.equal((await h.run(a)).email.status,'UNKNOWN');h.flags.timeout=false;assert.equal((await h.run(b)).email.status,'UNKNOWN');assert.equal(h.calls.length,1);
  });
- await t.test('new synthetic assignment stub returns the final persisted stage/location contract',async()=>{
-  // Independently authored test stub; intentionally does not reproduce real warehouse assignment.
-  await a.unsafe("create or replace function parcel_snap.assign_suggested_location(uuid,text) returns uuid language plpgsql as $$ begin update parcel_snap.packages set stage='WAREHOUSED', current_location_id='00000088-1111-4111-8111-111111111111'::uuid where id=$1; return '00000088-1111-4111-8111-111111111111'::uuid; end $$").simple();
-  const h=scenario(),result=await h.run(a);const [saved]=await observer`select stage,current_location_id from parcel_snap.packages where id=${h.input.body.intake_package_id}`;
-  assert.equal(saved.stage,'WAREHOUSED');assert.equal(result.stage,saved.stage);assert.equal(result.assigned_location_id,saved.current_location_id);
+ await t.test('new synthetic assignment stub returns the final destination stage/location contract',async()=>{
+  // Independently authored stub, not copied from the private real helper.
+  const h=scenario();await h.run(a);
+  await a.unsafe("create or replace function parcel_snap.assign_suggested_location(uuid,text) returns uuid language plpgsql as $$ begin update parcel_snap.packages set stage='WAREHOUSED', current_location_id='00000088-1111-4111-8111-111111111111'::uuid where id=$1 and stage='DESTINATION_RECEIVED'; return '00000088-1111-4111-8111-111111111111'::uuid; end $$").simple();
+  try{const [p]=await a`select * from parcel_snap.packages where id=${h.input.body.intake_package_id}`;h.input.kind='destination';h.input.body={package_id:p.id,facility_id:id(4),photo_data_url:'data:image/jpeg;base64,'+photo.toString('base64'),label_confirmed:true,confirmed_customer_id:id(2),confirmed_customer_contact_version:contactVersion,confirmed_package_review_version:await packageReviewVersion(id(1),p)};const result=await h.run(a);const [saved]=await observer`select stage,current_location_id from parcel_snap.packages where id=${p.id}`;assert.equal(result.email.status,'SENT');assert.equal(saved.stage,'WAREHOUSED');assert.equal(result.stage,saved.stage);assert.equal(result.assigned_location_id,saved.current_location_id);}finally{await a.unsafe('create or replace function parcel_snap.assign_suggested_location(uuid,text) returns uuid language sql as $$select null::uuid$$').simple();}
+ });
+
+ // Force both independent requests past the read-only preflight before either
+ // may upload/prepare, so a sequential fast-path cannot satisfy the race tests.
+ function afterBothPreflights(left,right){
+  let reached=0,release;const ready=new Promise(resolve=>release=resolve);
+  for(const deps of [left,right]){const original=deps.repo.checkExisting;deps.repo={...deps.repo,checkExisting:async c=>{await original(c);if(++reached===2)release();await ready;}};}
+ }
+ await t.test('different intake UUIDs with identical photo/tracking serialize to one saved parcel',{timeout:20000},async()=>{
+  const h=scenario(),g=scenario(),left=h.dependencies(a),right=g.dependencies(b);afterBothPreflights(left,right);const results=await Promise.allSettled([processArrival(h.input,left),processArrival(g.input,right)]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.filter(r=>r.status==='rejected'&&r.reason.status===409).length,1);assert.equal(h.calls.length+g.calls.length,1);const [rows]=await observer`select (select count(*) from parcel_snap.packages) as packages,(select count(*) from parcel_snap.package_events) as events`;assert.equal(Number(rows.packages),1);assert.equal(Number(rows.events),1);
+ });
+ await t.test('different photos and UUIDs with equivalent known-carrier tracking serialize to one parcel',{timeout:20000},async()=>{
+  const h=scenario(),g=scenario();Object.assign(h.input.body,{carrier:'UPS',tracking_number:'1Z999AA10123456784'});Object.assign(g.input.body,{carrier:'United Parcel Service',tracking_number:'1z 999-aa1-0123456784',photo_data_url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nHsAAAAASUVORK5CYII='});const left=h.dependencies(a),right=g.dependencies(b);afterBothPreflights(left,right);const results=await Promise.allSettled([processArrival(h.input,left),processArrival(g.input,right)]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.filter(r=>r.status==='rejected'&&r.reason.status===409).length,1);assert.equal(h.calls.length+g.calls.length,1);
+ });
+ await t.test('company-scoped photo identity lock is visible across independent connections',async()=>{
+  const h=scenario(),key=id(1)+'/arrival-photo/'+await sha256(photo);let release,locked;const wait=new Promise(r=>release=r),ready=new Promise(r=>locked=r);const owner=a.begin(async tx=>{await tx`select pg_advisory_xact_lock(hashtextextended(${key},0))`;locked();await wait;});await ready;const request=h.run(b).then(value=>({value}),error=>({error}));
+  try{let seen=false;for(let n=0;n<250;n++){const [row]=await observer`select wait_event_type,wait_event from pg_stat_activity where pid=${pids[1][0].pid}`;if(row?.wait_event_type==='Lock'&&row?.wait_event==='advisory'){seen=true;break;}await new Promise(r=>setTimeout(r,20));}assert(seen,'new-intake identity lock must be held by the database');}finally{release();await Promise.allSettled([owner,request]);}await owner;assert.equal((await request).value?.email.status,'SENT');
+ });
+ await t.test('destination row lock observes a concurrently committed terminal state and refuses regression',async()=>{
+  const h=scenario();await h.run(a);const pid=h.input.body.intake_package_id;const [p]=await a`select * from parcel_snap.packages where id=${pid}`;h.input.kind='destination';h.input.body={package_id:pid,facility_id:id(4),photo_data_url:'data:image/jpeg;base64,'+photo.toString('base64'),label_confirmed:true,confirmed_customer_id:id(2),confirmed_customer_contact_version:contactVersion,confirmed_package_review_version:await packageReviewVersion(id(1),p)};
+  let release,locked;const wait=new Promise(r=>release=r),ready=new Promise(r=>locked=r);const owner=a.begin(async tx=>{await tx`update parcel_snap.packages set stage='DELIVERED' where id=${pid}`;locked();await wait;});await ready;const request=h.run(b).then(value=>({value}),error=>({error}));
+  try{let seen=false;for(let n=0;n<250;n++){const [row]=await observer`select wait_event_type,wait_event from pg_stat_activity where pid=${pids[1][0].pid}`;if(row?.wait_event_type==='Lock'&&row?.wait_event!=='advisory'){seen=true;break;}await new Promise(r=>setTimeout(r,20));}assert(seen,'receiving connection must wait for the package row owner');}finally{release();await Promise.allSettled([owner,request]);}await owner;const result=await request;assert.equal(result.error?.status,409);const [saved]=await observer`select stage from parcel_snap.packages where id=${pid}`;assert.equal(saved.stage,'DELIVERED');assert.equal(h.calls.length,1);
  });
 
 });
