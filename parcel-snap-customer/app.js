@@ -37,6 +37,30 @@ let displayedTransferPackage=null;
 const arrivalEmailRecovery={receive:null,transfer:null};
 let arrivalEmailRecoveryGeneration=0;
 let arrivalListRefreshGeneration=0;
+
+function bindPhotoSources(cameraId,galleryId,isSaving){
+  const camera=$(cameraId),gallery=$(galleryId);
+  if(!camera||!gallery)return;
+  for(const input of [camera,gallery]){
+    input.onclick=event=>{
+      if(isSaving()){event?.preventDefault();return false;}
+      // Let the same file trigger change again. Cancelling the native picker
+      // leaves the reviewed image and fields intact; only change selects a photo.
+      input.value="";
+    };
+  }
+  // Resolve the current handler at selection time: vision-client may replace
+  // the intake camera handler after app.js has installed the local fallback.
+  gallery.onchange=event=>camera.onchange?.(event);
+}
+
+function clearInactivePhotoSource(cameraId,galleryId,activeInput){
+  for(const id of [cameraId,galleryId]){
+    const input=$(id);
+    if(input&&input!==activeInput)input.value="";
+  }
+}
+
 let intakeTiming={
   read_token:0,
   started_at_ms:0,
@@ -450,6 +474,7 @@ async function resumeSavedIntake(packageId){
     $("receiveWeight").value=s.weight_lb==null?"":String(s.weight_lb);
     for(const id of ["receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]){$(id).value="";}
     $("packagePhoto").value="";
+    if($("packagePhotoGallery"))$("packagePhotoGallery").value="";
     $("packagePhotoPreview").innerHTML='<img src="'+s.photo_data_url+'" alt="Saved package label for review">';
     $("processingBox").classList.remove("hidden");
     $("processingText").textContent=s.customer.name;
@@ -2276,10 +2301,12 @@ $("receiveLabelConfirmed").onchange=()=>{intakeFieldEditGeneration++;captureArri
 $("packagePhoto").onchange=async e=>{
   const file=e.target.files?.[0];
   if(!file||receiveInFlight)return;
+  clearInactivePhotoSource("packagePhoto","packagePhotoGallery",e.target);
   const token=++intakeReadToken;
   const editGeneration=intakeFieldEditGeneration;
   intakePackageId=crypto.randomUUID();
   intakePhotoDataUrl=null;
+  $("packagePhotoPreview").innerHTML="";
   intakePhotoPending=true;
   intakeOcrText="";intakeOcrName="";intakeOcrAddress="";
   intakeRecipientDisplay=null;intakeTrackingReview=null;intakeVisionWarnings=[];
@@ -2308,10 +2335,12 @@ $("packagePhoto").onchange=async e=>{
       showInlineCustomer(intakeOcrName);
     }
     $("processingDetail").textContent="Enter customer name and email";
+    if(!intakePhotoDataUrl)$("processingDetail").textContent="Could not open this image. Choose a JPG, PNG or WebP photo, or take another photo.";
   }finally{
     if(token===intakeReadToken)intakePhotoPending=false;
   }
 };
+bindPhotoSources("packagePhoto","packagePhotoGallery",()=>receiveInFlight);
 
 async function createReceiveCustomer(){
   const token=intakeReadToken,editGeneration=intakeFieldEditGeneration;
@@ -2419,7 +2448,7 @@ async function receivePackage(){
   let customer_id=$("receiveCustomer").value;
   const origin_facility_id=$("receiveOrigin").value;
 
-  if(!intakePhotoDataUrl){receiveInFlight=false;alert("Take a package photo first.");return}
+  if(!intakePhotoDataUrl){receiveInFlight=false;alert("Take or choose a package photo first.");return}
   if(!origin_facility_id){receiveInFlight=false;alert("Choose the receiving warehouse.");return}
   // Stop late OCR/vision from changing the identity while this reviewed snapshot is saved.
   stopRecoveryOcr();
@@ -2445,6 +2474,7 @@ async function receivePackage(){
 
   $("receivePackageButton").disabled=true;
   $("packagePhoto").disabled=true;
+  if($("packagePhotoGallery"))$("packagePhotoGallery").disabled=true;
   $("receiveResult").textContent="Saving package…";
 
   try{
@@ -2498,6 +2528,7 @@ async function receivePackage(){
     resetLabelConfirmation();
     intakeOcrAddress="";
     $("packagePhoto").value="";
+    if($("packagePhotoGallery"))$("packagePhotoGallery").value="";
     $("packagePhotoPreview").innerHTML="";
     $("processingBox").classList.add("hidden");
     $("labelReadout").classList.add("hidden");
@@ -2519,6 +2550,7 @@ async function receivePackage(){
   }finally{
     $("receivePackageButton").disabled=false;
     $("packagePhoto").disabled=false;
+    if($("packagePhotoGallery"))$("packagePhotoGallery").disabled=false;
     receiveInFlight=false;
   }
 }
@@ -2614,10 +2646,12 @@ async function analyzeTransferImage(dataUrl){
 $("transferPhoto").onchange=async e=>{
   const file=e.target.files?.[0];
   if(!file||transferInFlight)return;
+  clearInactivePhotoSource("transferPhoto","transferPhotoGallery",e.target);
   const generation=++transferPhotoGeneration;
   const editGeneration=transferFieldEditGeneration;
   transferPhotoPending=true;
   transferPhotoDataUrl=null;
+  $("transferPhotoPreview").innerHTML="";
   resetTransferConfirmation();
   $("transferPackage").value="";
   renderTransferRecipient();
@@ -2677,10 +2711,12 @@ $("transferPhoto").onchange=async e=>{
     $("transferProcessingText").textContent="Could not identify package";
     $("transferProcessingDetail").textContent="Choose the package manually";
     renderTransferControls();
+    if(!transferPhotoDataUrl)$("transferProcessingDetail").textContent="Could not open this image. Choose a JPG, PNG or WebP photo, or take another photo.";
   }finally{
     if(generation===transferPhotoGeneration)transferPhotoPending=false;
   }
 };
+bindPhotoSources("transferPhoto","transferPhotoGallery",()=>transferInFlight);
 
 for(const id of ["transferPackage","transferFacility"]){
   $(id).onchange=()=>{
@@ -2704,7 +2740,7 @@ $("saveTransfer").onclick=async()=>{
 
   if(!package_id){alert("Choose the package.");return}
   if(!facility_id){alert("Choose the arriving warehouse.");return}
-  if(!transferPhotoDataUrl){alert("Take the arrival photo first.");return}
+  if(!transferPhotoDataUrl){alert("Take or choose an arrival photo first.");return}
   if(!selected){alert("Choose an existing package from this workspace.");return}
   const confirmedContact=reviewedArrivalConfirmation("transfer");
   const confirmed=Boolean(confirmedContact);
@@ -2746,6 +2782,7 @@ $("saveTransfer").onclick=async()=>{
     transferPhotoDataUrl=null;
     resetTransferConfirmation();
     $("transferPhoto").value="";
+    if($("transferPhotoGallery"))$("transferPhotoGallery").value="";
     $("transferPhotoPreview").innerHTML="";
     $("transferProcessing").classList.add("hidden");
     $("transferNote").value="";

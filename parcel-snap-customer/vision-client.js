@@ -182,6 +182,7 @@
     if (!file) return;
 
     if(receiveInFlight)return;
+    clearInactivePhotoSource("packagePhoto","packagePhotoGallery",event.target);
     const startedAt=performance.now();
     const selectionGeneration=++packageSelectionGeneration;
     const selectionToken=++intakeReadToken;
@@ -267,6 +268,10 @@
         showInlineCustomer("");
       }
       $("processingDetail").textContent = "Enter customer name and email";
+      if(!intakePhotoDataUrl){
+        $("packagePhotoPreview").innerHTML="";
+        $("processingDetail").textContent="Could not open this image. Choose a JPG, PNG or WebP photo, or take another photo.";
+      }
     } finally {
       if(instantUrl)URL.revokeObjectURL(instantUrl);
       if(selectionGeneration===packageSelectionGeneration)intakePhotoPending=false;

@@ -60,6 +60,7 @@ jobs:
           parcel-snap-customer/tests/ocr-parser-test.mjs
           parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
           parcel-snap-customer/tests/vision-display-test.mjs
+          parcel-snap-customer/tests/photo-source-selection.test.mjs
           parcel-snap-customer/tests/customer-label-safety-test.mjs
           parcel-snap-customer/tests/intake-confirmation-flow-test.mjs
           parcel-snap-customer/tests/workspace-recovery.test.mjs

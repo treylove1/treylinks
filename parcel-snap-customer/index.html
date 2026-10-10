@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Parcel Snap Business Portal</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261010-gallery">
 </head>
 <body>
   <div id="authView" class="screen">
@@ -248,7 +248,7 @@
         <section id="tab-receive" class="panel">
           <article class="card">
             <span class="eyebrow">PACKAGE INTAKE</span>
-            <h2>Take Package Photo</h2>
+            <h2>Add Package Photo</h2>
 
             <div class="formGrid">
               <label id="receiveOriginWrap">Receiving warehouse
@@ -260,10 +260,17 @@
             </div>
             <div id="receiveRouteSummary" class="routeSummary hidden"></div>
 
-            <label class="cameraBox">
-              <span>📷 Take Package Photo</span>
-              <input id="packagePhoto" type="file" accept="image/*" capture="environment">
-            </label>
+            <div class="photoSources" role="group" aria-label="Package label photo" aria-describedby="packagePhotoHelp">
+              <label class="cameraBox">
+                <span>📷 Take photo</span>
+                <input id="packagePhoto" type="file" accept="image/*" capture="environment" aria-describedby="packagePhotoHelp">
+              </label>
+              <label class="cameraBox">
+                <span>🖼️ Choose from gallery</span>
+                <input id="packagePhotoGallery" type="file" accept="image/*" aria-describedby="packagePhotoHelp">
+              </label>
+            </div>
+            <p id="packagePhotoHelp" class="photoHelp">Choose one label photo. Browse your photos or use your phone’s search if available. Review the photo and customer before receiving or sending.</p>
             <div id="packagePhotoPreview" class="photoPreview"></div>
 
             <div id="processingBox" class="processing hidden">
@@ -352,16 +359,23 @@
           <article class="card">
             <span class="eyebrow">PACKAGE MOVEMENT</span>
             <h2>Record Arrival at Another Warehouse</h2>
-            <p>Photograph the package again. Parcel Snap will use tracking and the known-customer directory to find the existing package.</p>
+            <p>Take an arrival photo or choose one you already have. Parcel Snap will use tracking and the known-customer directory to find the existing package.</p>
 
             <label>Arriving warehouse
               <select id="transferFacility"></select>
             </label>
 
-            <label class="cameraBox">
-              <span>📷 Take Arrival Photo</span>
-              <input id="transferPhoto" type="file" accept="image/*" capture="environment">
-            </label>
+            <div class="photoSources" role="group" aria-label="Arrival label photo" aria-describedby="transferPhotoHelp">
+              <label class="cameraBox">
+                <span>📷 Take photo</span>
+                <input id="transferPhoto" type="file" accept="image/*" capture="environment" aria-describedby="transferPhotoHelp">
+              </label>
+              <label class="cameraBox">
+                <span>🖼️ Choose from gallery</span>
+                <input id="transferPhotoGallery" type="file" accept="image/*" aria-describedby="transferPhotoHelp">
+              </label>
+            </div>
+            <p id="transferPhotoHelp" class="photoHelp">Choose one arrival photo. Browse your photos or use your phone’s search if available. Review the photo, package and customer before sending.</p>
             <div id="transferPhotoPreview" class="photoPreview"></div>
 
             <div id="transferProcessing" class="processing hidden">
@@ -558,8 +572,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js"></script>
   <script src="known-customer-matcher.js"></script>
-  <script src="app.js?v=20261008-ocr"></script>
+  <script src="app.js?v=20261010-gallery"></script>
   <script src="vision-result.js?v=20261009-review"></script>
-  <script src="vision-client.js?v=20261008-ocr"></script>
+  <script src="vision-client.js?v=20261010-gallery"></script>
 </body>
 </html>
