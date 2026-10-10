@@ -9,7 +9,7 @@ const parcel={id:'fictional-package',customer_id:customer.id,customer_name:custo
 
 function harness(response={photo_saved:true,email:{status:'SENT'}}){
   const nodes=new Map(),requests=[],alerts=[];
-  const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,disabled:false,textContent:'',innerHTML:'',dataset:{},classList:{add(){},remove(){},toggle(){}}});return nodes.get(id);};
+  const node=id=>{if(!nodes.has(id)){const classes=new Set();nodes.set(id,{value:'',checked:false,disabled:false,textContent:'',innerHTML:'',dataset:{},classList:{add(...values){values.forEach(value=>classes.add(value));},remove(...values){values.forEach(value=>classes.delete(value));},toggle(value,force){const on=force??!classes.has(value);if(on)classes.add(value);else classes.delete(value);return on;},contains:value=>classes.has(value)}});}return nodes.get(id);};
   const ctx=vm.createContext({console,performance,setTimeout,window:{},crypto:{randomUUID:()=> '11111111-1111-4111-8111-111111111111'},
     document:{getElementById:node,querySelector:()=>({click(){}})},
     supabase:{createClient:()=>({})},alert:value=>alerts.push(value),fetch(){throw Error('Network forbidden');}});
@@ -205,4 +205,107 @@ test('late arrival OCR preserves the explicitly reviewed package and cannot auth
   assert.equal(h.node('transferPackage').value,parcel.id);assert.equal(h.node('transferLabelConfirmed').checked,true);
   await h.node('saveTransfer').onclick();assert.equal(h.requests[0].package_id,parcel.id);
   assert.equal(h.requests[0].confirmed_customer_id,parcel.customer_id);
+});
+
+for(const status of ['UNKNOWN','SENDING'])test('explicit intake status button posts only original event identity for '+status,async()=>{
+  const h=harness(body=>body.reconcile_notification
+    ?{email:{status:'SENT',provider_id:'fictional-provider-id',provider_event:'delivered'}}
+    :{photo_saved:true,email:{status}});
+  await h.run('receivePackage()');assert(h.run('intakePhotoDataUrl'),'uncertain outcomes retain photo');
+  assert.equal(h.node('receiveEmailRecovery').classList.contains('hidden'),false);assert.equal(h.node('receiveCheckEmailStatus').classList.contains('hidden'),false);
+  const id=h.requests[0].intake_package_id;
+  h.node('receiveCustomer').value='changed-customer';h.node('receiveOrigin').value='changed-facility';
+  h.node('receiveTracking').value='CHANGED-999';h.node('receiveAddress').value='Changed address';
+  await h.node('receiveCheckEmailStatus').onclick();
+  assert.deepEqual(h.requests[1],{action:'receive_package',intake_package_id:id,origin_facility_id:'fictional-origin',reconcile_notification:true});
+  assert.match(h.node('receiveEmailStatus').textContent,/provider acceptance confirmed/);
+  assert.match(h.node('receiveEmailStatus').textContent,/does not guarantee inbox delivery/);
+  assert.match(h.node('receiveEmailStatus').textContent,/fictional-origin/);
+  assert.equal(h.run('arrivalEmailRecovery.receive.status'),'SENT');assert.equal(h.node('receiveCheckEmailStatus').classList.contains('hidden'),true);
+  assert(h.run('intakePhotoDataUrl'));assert.equal(h.node('receiveTracking').value,'CHANGED-999');
+  await h.node('receiveCheckEmailStatus').onclick();assert.equal(h.requests.length,2,'resolved button cannot issue another request');
+});
+
+test('arrival status button retains the original package and arriving facility despite form changes',async()=>{
+  const h=harness(body=>body.reconcile_notification?{email:{status:'UNKNOWN',error:'No provider identifier exists.'}}:{photo_saved:true,email:{status:'UNKNOWN'}});
+  await h.node('saveTransfer').onclick();
+  h.node('transferPackage').value='another-package';h.node('transferFacility').value='another-facility';
+  h.run('transferPhotoDataUrl=null');
+  await h.node('transferCheckEmailStatus').onclick();
+  assert.deepEqual(h.requests[1],{action:'destination_arrival',package_id:parcel.id,facility_id:'fictional-destination',reconcile_notification:true});
+  assert.match(h.node('transferEmailStatus').textContent,/Still unresolved/);assert.match(h.node('transferEmailStatus').textContent,/administrator/);
+  assert.match(h.node('transferEmailStatus').textContent,/No provider identifier/);assert.equal(h.run('arrivalEmailRecovery.transfer.status'),'UNKNOWN');
+});
+
+test('overlapping status clicks issue one reconciliation request, never an arrival resend',async()=>{
+  const check=deferred();const h=harness(body=>body.reconcile_notification?check.promise:{photo_saved:true,email:{status:'UNKNOWN'}});
+  await h.run('receivePackage()');const first=h.node('receiveCheckEmailStatus').onclick();
+  await h.node('receiveCheckEmailStatus').onclick();assert.equal(h.requests.length,2);
+  assert.equal(h.node('receiveCheckEmailStatus').disabled,true);
+  check.resolve({email:{status:'UNKNOWN'}});await first;
+  assert.equal(h.node('receiveCheckEmailStatus').disabled,false);assert.match(h.node('receiveEmailStatus').textContent,/Do not resend/);
+});
+
+test('failed status lookup preserves uncertain state and saved evidence without sending',async()=>{
+  const h=harness(body=>{if(body.reconcile_notification)throw Error('Fictional status lookup unavailable');return {photo_saved:true,email:{status:'UNKNOWN'}};});
+  await h.run('receivePackage()');await h.node('receiveCheckEmailStatus').onclick();
+  assert.equal(h.requests.length,2);assert.equal(h.run('arrivalEmailRecovery.receive.status'),'UNKNOWN');
+  assert(h.run('intakePhotoDataUrl'));assert.match(h.node('receiveEmailStatus').textContent,/No resend attempted/);
+});
+
+test('late status result cannot replace a newer uncertain event',async()=>{
+  const check=deferred();const h=harness(body=>body.reconcile_notification?check.promise:{photo_saved:true,email:{status:'UNKNOWN'}});
+  await h.run('receivePackage()');const first=h.node('receiveCheckEmailStatus').onclick();
+  h.run('intakePackageId="22222222-2222-4222-8222-222222222222"');h.node('receiveTracking').value='NEW-TRACKING-22';
+  await h.run('receivePackage()');
+  check.resolve({email:{status:'SENT'}});await first;
+  assert.equal(h.run('arrivalEmailRecovery.receive.status'),'UNKNOWN');assert.match(h.node('receiveEmailStatus').textContent,/NEW-TRACKING-22/);
+});
+
+test('status action is unavailable without an uncertain event and after definitive status',async()=>{
+  const h=harness();await h.node('receiveCheckEmailStatus').onclick();await h.node('transferCheckEmailStatus').onclick();
+  assert.equal(h.requests.length,0);
+  const failed=harness(body=>body.reconcile_notification?{email:{status:'FAILED',error:'Recorded rejection'}}:{photo_saved:true,email:{status:'UNKNOWN'}});
+  await failed.run('receivePackage()');await failed.node('receiveCheckEmailStatus').onclick();
+  await failed.node('receiveCheckEmailStatus').onclick();assert.equal(failed.requests.length,2);
+  assert.match(failed.node('receiveEmailStatus').textContent,/Recorded email status: FAILED/);
+});
+
+test('sign-out clears retained status context and ignores its pending response',async()=>{
+  const check=deferred();const h=harness(body=>body.reconcile_notification?check.promise:{photo_saved:true,email:{status:'UNKNOWN'}});
+  await h.run('receivePackage()');const first=h.node('receiveCheckEmailStatus').onclick();
+  h.run('sb.auth={onAuthStateChange:callback=>{globalThis.sessionChange=callback;}}');
+  const start=app.indexOf('sb.auth.onAuthStateChange(');h.run(app.slice(start,app.indexOf('\nboot();',start)));
+  h.ctx.sessionChange('SIGNED_OUT',null);check.resolve({email:{status:'SENT'}});await first;
+  assert.equal(h.run('arrivalEmailRecovery.receive'),null);assert.equal(h.node('receiveEmailStatus').textContent,'');
+});
+
+test('a different workspace cannot reuse the previous company status context',async()=>{
+  const h=harness({photo_saved:true,email:{status:'UNKNOWN'}});h.run('workspace.company={id:"original-company"}');
+  await h.run('receivePackage()');h.run('workspace.company={id:"other-company"}');
+  await h.node('receiveCheckEmailStatus').onclick();assert.equal(h.requests.length,1);assert.equal(h.run('arrivalEmailRecovery.receive'),null);
+});
+
+for(const kind of ['receive','transfer'])for(const transition of ['sign-out','company change']){
+  test('delayed original '+kind+' response cannot recreate status recovery after '+transition,async()=>{
+    const save=deferred(),h=harness(()=>save.promise);h.run('workspace.company={id:"original-company"}');
+    const pending=kind==='receive'?h.run('receivePackage()'):h.node('saveTransfer').onclick();
+    if(transition==='sign-out'){
+      h.run('sb.auth={onAuthStateChange:callback=>{globalThis.sessionChange=callback;}}');
+      const start=app.indexOf('sb.auth.onAuthStateChange(');h.run(app.slice(start,app.indexOf('\nboot();',start)));
+      h.ctx.sessionChange('SIGNED_OUT',null);
+    }else h.run('workspace.company={id:"other-company"};clearArrivalEmailRecovery()');
+    save.resolve({photo_saved:true,email:{status:'UNKNOWN'}});await pending;
+    assert.equal(h.run('arrivalEmailRecovery.'+kind),null);
+    assert.equal(h.node(kind+'EmailStatus').textContent,'');
+    await h.node(kind+'CheckEmailStatus').onclick();assert.equal(h.requests.length,1);
+  });
+}
+
+test('status response checks company scope again even before workspace cleanup runs',async()=>{
+  const check=deferred(),h=harness(body=>body.reconcile_notification?check.promise:{photo_saved:true,email:{status:'UNKNOWN'}});
+  h.run('workspace.company={id:"original-company"}');await h.run('receivePackage()');
+  const pending=h.node('receiveCheckEmailStatus').onclick();h.run('workspace.company={id:"other-company"}');
+  check.resolve({email:{status:'SENT'}});await pending;
+  assert.equal(h.run('arrivalEmailRecovery.receive'),null);assert.equal(h.node('receiveEmailStatus').textContent,'');
 });

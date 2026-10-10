@@ -28,6 +28,8 @@ let intakeReadToken=0;
 let autoReceivedToken=0;
 let receiveInFlight=false;
 let intakePackageId=null;
+const arrivalEmailRecovery={receive:null,transfer:null};
+let arrivalEmailRecoveryGeneration=0;
 let intakeTiming={
   read_token:0,
   started_at_ms:0,
@@ -172,6 +174,86 @@ function markIntakeEdit(){
   intakeFieldEditGeneration++;
   resetLabelConfirmation();
 }
+function renderArrivalEmailRecovery(kind){
+  const state=arrivalEmailRecovery[kind];
+  const box=$(kind+"EmailRecovery"),button=$(kind+"CheckEmailStatus"),message=$(kind+"EmailStatus");
+  if(!box||!button||!message)return;
+  box.classList.toggle("hidden",!state);
+  button.classList.toggle("hidden",!state||!["UNKNOWN","SENDING"].includes(state.status));
+  button.disabled=Boolean(state?.inFlight);
+  message.textContent=state?"Saved package "+state.reference+": "+state.message:"";
+}
+
+function arrivalEmailRecoveryScope(){
+  return {generation:arrivalEmailRecoveryGeneration,companyId:workspace?.company?.id||null};
+}
+function isCurrentArrivalEmailScope(scope){
+  return scope?.generation===arrivalEmailRecoveryGeneration&&scope.companyId===(workspace?.company?.id||null);
+}
+function clearArrivalEmailRecovery(){
+  arrivalEmailRecoveryGeneration++;
+  for(const kind of ["receive","transfer"]){arrivalEmailRecovery[kind]=null;renderArrivalEmailRecovery(kind);}
+}
+
+function rememberArrivalEmailRecovery(kind,identity,result,reference,scope){
+  if(!isCurrentArrivalEmailScope(scope))return;
+  const status=result.email?.status;
+  if(!status)return;
+  // Copy only immutable event identity. No photo, recipient or mutable form data belongs in a status request.
+  const request=kind==="receive"
+    ?{action:"receive_package",intake_package_id:identity.intake_package_id,origin_facility_id:identity.origin_facility_id,reconcile_notification:true}
+    :{action:"destination_arrival",package_id:identity.package_id,facility_id:identity.facility_id,reconcile_notification:true};
+  if(!["UNKNOWN","SENDING"].includes(status)){
+    const prior=arrivalEmailRecovery[kind];
+    if(prior&&JSON.stringify(prior.request)===JSON.stringify(request)){
+      arrivalEmailRecovery[kind]={...prior,status,inFlight:false,message:"Recorded email status: "+status+". No status-check resend was attempted."};
+      renderArrivalEmailRecovery(kind);
+    }
+    return;
+  }
+  const facilityId=identity.origin_facility_id||identity.facility_id;
+  const facilityName=(workspace?.facilities||[]).find(item=>item.id===facilityId)?.name||facilityId;
+  arrivalEmailRecovery[kind]={request:Object.freeze(request),status,reference:(reference||identity.intake_package_id||identity.package_id)+" at "+facilityName,
+    ...scope,inFlight:false,
+    message:"Email outcome is uncertain. Check its status before any resend."};
+  renderArrivalEmailRecovery(kind);
+}
+
+async function checkArrivalEmailStatus(kind){
+  const state=arrivalEmailRecovery[kind];
+  if(!state||state.inFlight||!["UNKNOWN","SENDING"].includes(state.status))return;
+  if(!isCurrentArrivalEmailScope(state)){clearArrivalEmailRecovery();return;}
+  state.inFlight=true;
+  state.message="Checking the saved email record. No resend will be attempted.";
+  renderArrivalEmailRecovery(kind);
+  try{
+    const result=await api({...state.request});
+    if(arrivalEmailRecovery[kind]!==state||!isCurrentArrivalEmailScope(state))return;
+    const status=result.email?.status;
+    if(status==="SENT"){
+      state.status="SENT";
+      state.message="Email provider acceptance confirmed; this does not guarantee inbox delivery."+
+        (result.email?.provider_event?" Provider event: "+result.email.provider_event+".":"");
+    }else if(["UNKNOWN","SENDING"].includes(status)||!status){
+      state.status=status||"UNKNOWN";
+      state.message="Still unresolved. Do not resend or create another intake for this notice. Ask an administrator to reconcile the provider record."+
+        (result.email?.error?" "+result.email.error:"");
+    }else{
+      state.status=status;
+      state.message="Recorded email status: "+status+". This check did not send an email. Review with an administrator before another attempt."+
+        (result.email?.error?" "+result.email.error:"");
+    }
+  }catch(error){
+    if(arrivalEmailRecovery[kind]!==state||!isCurrentArrivalEmailScope(state))return;
+    state.message="Status could not be verified. No resend attempted. Ask an administrator to check the saved notice. "+(error.message||String(error));
+  }finally{
+    if(arrivalEmailRecovery[kind]===state){
+      if(!isCurrentArrivalEmailScope(state))clearArrivalEmailRecovery();
+      else{state.inFlight=false;renderArrivalEmailRecovery(kind);}
+    }
+  }
+}
+
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 
 function normText(s=""){return String(s).toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
@@ -1413,7 +1495,9 @@ function showOnly(id){
 async function loadWorkspace(){
   showOnly("loadingState");
   try{
+    const previousCompany=workspace?.company?.id||null;
     workspace=await api({action:"workspace"});
+    if(previousCompany!==(workspace?.company?.id||null))clearArrivalEmailRecovery();
     if(workspace.state==="NO_COMPANY"){
       showOnly("onboardingState");
       if(workspace.onboarding?.company_name)$("onboardingCompany").value=workspace.onboarding.company_name;
@@ -2036,6 +2120,7 @@ $("addFacilityButton").onclick=async()=>{
 
 async function receivePackage(){
   if(receiveInFlight)return;
+  const recoveryScope=arrivalEmailRecoveryScope();
   if(intakePhotoPending){alert("Wait for this photo to finish reading before receiving it.");return;}
   receiveInFlight=true;
   let customer_id=$("receiveCustomer").value;
@@ -2068,7 +2153,7 @@ async function receivePackage(){
       customer_id=await createReceiveCustomer();
     }
 
-    const r=await api({
+    const request={
       action:"receive_package",
       intake_package_id:intakePackageId||(intakePackageId=crypto.randomUUID()),
       customer_id,
@@ -2086,7 +2171,9 @@ async function receivePackage(){
       ocr_raw_text:reviewed.ocr_raw_text,
       ocr_recipient_address:reviewed.ocr_recipient_address,
       photo_data_url:reviewed.photo_data_url
-    });
+    };
+    const r=await api(request);
+    rememberArrivalEmailRecovery("receive",request,r,reviewed.tracking_number,recoveryScope);
 
     const emailStatus=r.email?.status||"SKIPPED";
     $("receiveResult").textContent=
@@ -2094,8 +2181,8 @@ async function receivePackage(){
       (r.assigned_location_id?" · location assigned":"")+
       intakeTimingSummary()+(r.email?.error?" · "+r.email.error:"");
 
-    if(!r.photo_saved||["FAILED","UNKNOWN","REVIEW_REQUIRED","EMAIL_NOT_LISTED","NOT_CONFIGURED"].includes(emailStatus)){
-      $("receiveResult").textContent+=emailStatus==="UNKNOWN"
+    if(!r.photo_saved||["FAILED","UNKNOWN","SENDING","REVIEW_REQUIRED","EMAIL_NOT_LISTED","NOT_CONFIGURED"].includes(emailStatus)){
+      $("receiveResult").textContent+=["UNKNOWN","SENDING"].includes(emailStatus)
         ?" · Delivery is uncertain. Do not retry until its status is checked."
         :" · Photo and fields kept for review; retry uses the same package.";
       return;
@@ -2132,6 +2219,7 @@ async function receivePackage(){
   }
 }
 $("receivePackageButton").onclick=receivePackage;
+$("receiveCheckEmailStatus").onclick=()=>checkArrivalEmailStatus("receive");
 
 
 function renderTransferControls(){
@@ -2300,6 +2388,7 @@ $("transferLabelConfirmed").onchange=()=>{transferFieldEditGeneration++;};
 
 $("saveTransfer").onclick=async()=>{
   if(transferInFlight)return;
+  const recoveryScope=arrivalEmailRecoveryScope();
   if(transferPhotoPending){alert("Wait for this arrival photo to finish reading before saving it.");return;}
   const package_id=$("transferPackage").value;
   const facility_id=$("transferFacility").value;
@@ -2319,7 +2408,7 @@ $("saveTransfer").onclick=async()=>{
   $("transferResult").textContent="Saving arrival…";
 
   try{
-    const r=await api({
+    const request={
       action:"destination_arrival",
       package_id,
       facility_id,
@@ -2327,14 +2416,16 @@ $("saveTransfer").onclick=async()=>{
       confirmed_customer_id:confirmed?selected.customer_id:null,
       note,
       photo_data_url:photo
-    });
+    };
+    const r=await api(request);
+    rememberArrivalEmailRecovery("transfer",request,r,selected.tracking_number,recoveryScope);
 
     const emailStatus=r.email?.status||"SKIPPED";
     $("transferResult").textContent=
       "Arrival saved · "+(r.photo_saved?"photo saved":"photo needs review")+" · email "+emailStatus+
       (r.assigned_location_id?" · location assigned":"")+(r.email?.error?" · "+r.email.error:"");
-    if(!r.photo_saved||["FAILED","UNKNOWN","REVIEW_REQUIRED","EMAIL_NOT_LISTED","NOT_CONFIGURED"].includes(emailStatus)){
-      $("transferResult").textContent+=emailStatus==="UNKNOWN"
+    if(!r.photo_saved||["FAILED","UNKNOWN","SENDING","REVIEW_REQUIRED","EMAIL_NOT_LISTED","NOT_CONFIGURED"].includes(emailStatus)){
+      $("transferResult").textContent+=["UNKNOWN","SENDING"].includes(emailStatus)
         ?" · Delivery is uncertain. Do not retry until its status is checked."
         :" · Arrival photo and fields kept for review.";
       return;
@@ -2357,6 +2448,8 @@ $("saveTransfer").onclick=async()=>{
   }
 };
 
+$("transferCheckEmailStatus").onclick=()=>checkArrivalEmailStatus("transfer");
+
 document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===btn));
   document.querySelectorAll(".panel").forEach(x=>x.classList.add("hidden"));
@@ -2369,5 +2462,5 @@ if("requestIdleCallback" in window){
   setTimeout(warmParcelSnapOcr,100);
 }
 
-sb.auth.onAuthStateChange((_event,session)=>{if(!session){$("authView").classList.remove("hidden");$("appView").classList.add("hidden")}});
+sb.auth.onAuthStateChange((_event,session)=>{if(!session){clearArrivalEmailRecovery();$("authView").classList.remove("hidden");$("appView").classList.add("hidden")}});
 boot();

@@ -340,6 +340,11 @@
             <small>Unconfirmed scans can be saved for review. No customer email is sent automatically.</small>
             <button id="receivePackageButton" class="primary wide">Receive Package</button>
             <div id="receiveResult" class="message"></div>
+            <div id="receiveEmailRecovery" class="message hidden">
+              <div id="receiveEmailStatus" role="status" aria-live="polite"></div>
+              <button id="receiveCheckEmailStatus" type="button">Check email status</button>
+              <small>This checks the saved notice only. It does not resend the email.</small>
+            </div>
           </article>
         </section>
 
@@ -378,6 +383,11 @@
 
             <button id="saveTransfer" class="primary wide">Save Arrival</button>
             <div id="transferResult" class="message"></div>
+            <div id="transferEmailRecovery" class="message hidden">
+              <div id="transferEmailStatus" role="status" aria-live="polite"></div>
+              <button id="transferCheckEmailStatus" type="button">Check email status</button>
+              <small>This checks the saved notice only. It does not resend the email.</small>
+            </div>
           </article>
         </section>
 
