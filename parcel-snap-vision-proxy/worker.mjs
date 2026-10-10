@@ -65,8 +65,10 @@ export default {async fetch(request,env){
  // The portal workspace action can initialize business setup. A scan must never
  // trigger it. This separately verified endpoint only SELECTs in a read-only transaction.
  let authorized;
- try{authorized=await fetch(env.SUPABASE_URL+'/functions/v1/'+SCAN_AUTH_FUNCTION,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:{Authorization:authorization,apikey:env.SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:'{}'});}
+ try{authorized=await fetch(env.SUPABASE_URL+'/functions/v1/'+SCAN_AUTH_FUNCTION,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(10000),headers:{Authorization:authorization,apikey:env.SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:'{}'});}
  catch{return reply({error:'AUTHORIZATION_UNAVAILABLE'},503);}
+ // Workerd does not support redirect:'error'. Manual never forwards credentials to Location.
+ if(authorized.status>=300&&authorized.status<400)return reply({error:'AUTHORIZATION_UNAVAILABLE'},503);
  if(!authorized.ok)return reply({error:authorized.status>=500?'AUTHORIZATION_UNAVAILABLE':'ACCESS_DENIED'},authorized.status>=500?503:403);
  let context;
  try{context=await authorized.json();}catch{return reply({error:'AUTHORIZATION_UNAVAILABLE'},503);}

@@ -16,7 +16,7 @@ test('production uses only verified read-only auth before the unchanged OpenAI p
   calls.push({url,options});
   if(calls.length===1){
    assert.equal(url,'https://auth.example.invalid/functions/v1/'+SCAN_AUTH_FUNCTION);
-   assert.equal(options.method,'POST');assert.equal(options.body,'{}');assert.equal(options.redirect,'error');
+   assert.equal(options.method,'POST');assert.equal(options.body,'{}');assert.equal(options.redirect,'manual');
    assert.equal(options.headers.Authorization,'Bearer fictional-user');assert.equal(options.headers.apikey,'public-test');
    assert.ok(options.signal instanceof AbortSignal);return active();
   }
@@ -90,4 +90,12 @@ test('OpenAI truncation, refusal and quota errors remain review failures with no
 test('Worker source cannot dispatch the mutating workspace or notify/save routes',()=>{
  const source=readFileSync(new URL('./worker.mjs',import.meta.url),'utf8');
  assert.doesNotMatch(source,/parcel-snap-portal|action\s*:\s*['"]workspace['"]|send_notification|receive_package/);
+});
+
+test('all auth redirects are rejected without body reading, target lookup or model call',async()=>{
+ for(let status=300;status<400;status++){
+  let calls=0;await mocked(async(url,opts)=>{calls++;assert.ok(url.endsWith('/'+SCAN_AUTH_FUNCTION));assert.equal(opts.redirect,'manual');return {status,ok:false,get headers(){assert.fail('must not inspect or follow Location');},json(){assert.fail('must not read redirect body');}};},async()=>{
+   const response=await worker.fetch(request(),env());assert.equal(response.status,503);assert.equal((await response.json()).error,'AUTHORIZATION_UNAVAILABLE');assert.equal(calls,1);
+  });
+ }
 });

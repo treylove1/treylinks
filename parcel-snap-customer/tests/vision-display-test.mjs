@@ -1,3 +1,4 @@
+import './isolated-network-guard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -10,8 +11,8 @@ const app=readFileSync(resolve(root,'app.js'),'utf8');
 const vision=readFileSync(resolve(root,'vision-client.js'),'utf8');
 const matcher=readFileSync(resolve(root,'known-customer-matcher.js'),'utf8');
 const adapter=readFileSync(resolve(root,'vision-result.js'),'utf8');
-const customer={id:'fictional-recipient',name:'Jordan Sample',email:'recipient@example.invalid'};
-const other={id:'fictional-other',name:'Alex Example',email:'other@example.invalid'};
+const customer={id:'fictional-recipient',name:'Jordan Sample',email:'recipient@example.invalid',contact_version:'a'.repeat(64),contact_email_visible:true};
+const other={id:'fictional-other',name:'Alex Example',email:'other@example.invalid',contact_version:'b'.repeat(64),contact_email_visible:true};
 const candidate={recipient_name:'Jordan Sample',confidence:.8,needs_review:true,
   recipient_address:'123 Fictional Way, Miami FL 33101',tracking_code:'001234567890'};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));

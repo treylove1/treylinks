@@ -1,67 +1,67 @@
-# Parcel Snap arrival/photo/email repair checkpoint
+# Parcel Snap arrival and customer-review repair
 
-Date: 2026-10-09 UTC. Local implementation and isolated validation only. No production deployment, migration, customer write, credential setup, or real email send was performed.
+Checkpoint: 2026-10-10. This is reviewed source plus isolated synthetic tests. It is not a deployment, migration, real inbox-delivery result, or complete live-app acceptance result.
 
-## What changed
+## Matching frontend and backend contract
 
-- Both receive and destination-arrival routes use `arrival-workflow.mjs` through `portal.ts`.
-- Email needs `label_confirmed: true` and `confirmed_customer_id` matching the saved customer. OCR/model confidence never authorizes a send.
-- Package photos stay in the existing private bucket. The portal checks the bucket is private before writes. Server-generated company/package/event/content-hash paths are immutable. The stored photo bytes are downloaded and SHA-256 checked after upload and again before sending.
-- The attachment is selected through a server-side company/package/customer/facility/event/photo relationship check. Client recipient addresses and storage paths cannot override it. The message includes one exact saved JPEG/PNG/WebP attachment and the saved tracking string, preserving leading zeros. Raw OCR text is no longer dumped into email.
-- Company email preferences apply to both arrival flows and are rechecked by the atomic send claim. No recipient email means no send.
-- A private durable arrival ledger records a unique company/package/event and frozen mail payload. Preparation uses a database transaction/advisory lock; sending uses an atomic database claim with fingerprint and claim token. These are not process-memory dedupe flags.
-- Before any provider attempt, an unconfirmed PENDING draft can be corrected under the original intake ID. A stale caller cannot claim a subsequently edited draft. After an attempt is claimed, its payload is immutable.
-- A storage failure cannot leave a newly inserted partial package. A database preparation failure may leave a private unreferenced object; retry verifies/reuses its content-addressed bytes. No cleanup job deletes evidence automatically.
-- Documented provider rejection permits explicit identical-payload retry. Transport failure, HTTP 409/5xx, malformed success, or uncertain status persistence is UNKNOWN. Durable SENDING also blocks resend after a crash. No lease expiry silently turns these into a new send.
-- `reconcile_notification: true` is a separate read-only-provider status path: authorize company/package/event/facility, load the saved payload, then GET the known provider ID. It does not upload a new photo or POST mail, and works if the customer's current email changed or the browser lost its photo.
-- Legacy accepted notifications are not resent. Earlier exact-facility destination photos and corresponding arrival-event history trigger UNKNOWN when an old send cannot be proven absent, including after the package moved elsewhere.
-- New write routes default to paused unless the ordinary non-secret `PARCEL_ARRIVAL_WRITES_ENABLED` environment flag is exactly `true`. Read-only reconciliation is exempt. Existing deployed JWT verification must remain enabled.
+- Origin receive and destination arrival use `arrival-workflow.mjs` through `portal.ts`. OCR/model output remains review evidence and never authorizes email.
+- Confirmed arrival requires the displayed customer ID and opaque `contact_version`. Contact changes invalidate the confirmation before writes, in the database transaction, and at the final atomic claim. The token hashes company/customer identity and the PostgreSQL row revision, without embedding contact details.
+- OWNER/MANAGER/STAFF permissions are unchanged. Staff workspace and recovered-review responses keep email hidden and explicitly set `contact_email_visible: false`; the UI describes confirmation of the selected customer's saved contact.
+- Destination confirmation also pins the exact displayed `review_version` for package/customer/tracking identity. A stale or missing version fails before photo upload, ledger creation, or movement. Tracking remains text, including leading zeros and explicitly blank values.
+- Form, photo, package, customer, contact, route, size, weight and payment edits invalidate the corresponding confirmation. Newly created customers require fresh confirmation.
+- An unattempted PENDING origin draft can recover its original package ID, verified private photo and editable metadata. Corrections use that same package instead of creating a duplicate. Recovery is read-only, restricted to the authorized company/origin facility, and rejects concurrent changes.
+- Metadata-only corrections are persisted transactionally even when the existing notice fingerprint does not change. Attempted PENDING and SENT/SENDING/UNKNOWN payloads remain immutable. Existing explicit, same-payload FAILED retry behavior is retained.
 
-## Reproduce locally / CI
+## Photo and send safety
 
-From repository root, on Node 24:
+The portal requires the existing private photo bucket. Company/package/event/content-hash object paths are immutable, and downloaded bytes are checked against the saved SHA-256. The attachment relationship is checked server-side against the company, package, customer, facility and event. Client addresses or paths cannot override it.
+
+The durable ledger has one company/package/event record, transactional preparation, advisory locking, an atomic claim and a frozen send payload. The successful claim is the authorization point: later customer/tracking changes cannot redirect the claimed message. Mail contains the exact stored photo and tracking, without dumping raw OCR text.
+
+Definitive rejection permits explicit same-payload retry. Timeout, HTTP 409/5xx, malformed provider success, or uncertain status persistence is UNKNOWN. SENDING and UNKNOWN never expire into automatic resends. Read-only provider reconciliation can retrieve a known message ID without uploading a photo or sending mail again. Legacy accepted/uncertain arrival history remains a send barrier.
+
+The ordinary `PARCEL_ARRIVAL_WRITES_ENABLED` flag still defaults to paused. Reconciliation is exempt. JWT verification, private Storage, company preferences and role/facility checks remain required. The proposed ledger migration is not applied by tests or CI to any live system.
+
+## Reproduce the public-safe checks
+
+The regression workflow pins Node 24.19.0, PGlite 0.5.8, Tesseract.js 6.0.1, Tesseract.js-core 6.0.0 and canvas 0.1.100. Its package lockfiles use the existing official npm runtimes with install scripts disabled. English OCR data is installed locally by the existing operating-system package step; the tests do not fetch language data.
+
+From the repository root after installing the locked test runtimes:
 
 ```sh
-node --test parcel-snap-customer/tests/arrival-workflow.test.mjs
-node parcel-snap-customer/tests/backend-intake-test.cjs
-npm ci --prefix parcel-snap-customer/tests/sql-runtime --ignore-scripts --no-audit --no-fund
-node --test parcel-snap-customer/tests/arrival-postgres.test.mjs
-node --check parcel-snap-customer/backend/portal.ts
-node --check parcel-snap-customer/backend/arrival-workflow.mjs
+export NODE_PATH="$PWD/parcel-snap-customer/tests/ocr-runtime/node_modules"
+export TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test \
+  parcel-snap-customer/tests/known-customer-matcher-test.mjs \
+  parcel-snap-customer/tests/ocr-parser-test.mjs \
+  parcel-snap-customer/tests/ocr-speed-architecture-test.mjs \
+  parcel-snap-customer/tests/vision-display-test.mjs \
+  parcel-snap-customer/tests/customer-label-safety-test.mjs \
+  parcel-snap-customer/tests/intake-confirmation-flow-test.mjs \
+  parcel-snap-customer/tests/vision-result-test.mjs \
+  parcel-snap-customer/tests/arrival-workflow.test.mjs \
+  parcel-snap-customer/tests/arrival-review.test.mjs \
+  parcel-snap-customer/tests/arrival-postgres.test.mjs \
+  parcel-snap-customer/tests/portal-contact-review.test.mjs \
+  parcel-snap-customer/tests/customer-arrival-integration.test.mjs
 ```
 
-The SQL runtime dependency is isolated under `tests/sql-runtime`; package and lock files pin official npm `@electric-sql/pglite@0.5.8`. It is test-only, with no package install scripts run. `PGLITE_MODULE` can point to an already installed absolute `dist/index.js` instead. No network is used by the tests and no credentials are loaded. The mail transport is a capture function, Storage is an in-memory object store, and fixtures/recipients are synthetic.
+On the frozen public-safe candidate, this combined command passed 279 tests with zero failures. Separate smoke and pure configuration results are recorded independently; native concurrency and real service delivery are not counted in that result.
 
-Verified results:
+The network guard fails accidental global HTTP/socket access. Application transports are injected capture functions. Cross-layer tests exercise real customer event handlers, an actual fictional JPEG, local Tesseract and the production SQL adapter on isolated PostgreSQL-WASM; DOM/auth envelopes, private Storage and mail are substituted. The workflow separately covers portal/private-bucket/default-pause, photo parser, onboarding and the previously published frozen preview.
 
-- 32 mock-boundary tests pass, including the actual workflow and SQL adapter, exact attachment bytes, ownership attacks, uncertain recognition, preferences, failed upload/DB preparation, repeated/concurrent calls, retry, unknown outcomes, provider reconciliation and authorization rejection.
-- 9 PostgreSQL-WASM tests pass. The exact proposal SQL is applied to real in-memory PostgreSQL, then the production SQL adapter runs. Tests verify RLS/privileges, unique event constraint, composite customer/photo/facility foreign keys, deferred ownership correction, stale-fingerprint claim rejection, atomic claim competition, historical-arrival guard, frozen retries and GET-only reconciliation.
-- Portal routing/private-bucket/default-pause smoke and JavaScript/TypeScript syntax checks pass.
+The unchanged, already-public `arrival-baseline-fixture.sql` was derived from read-only column/type/default/identity/check/primary-key metadata, without customer records. It is not a wholly independently authored production schema. It omits pre-existing foreign keys, triggers, non-primary indexes and RLS, and stubs warehouse assignment. All inserted records are fictional. No newly captured schema metadata or complete-schema fixtures are part of this release.
 
-Evidence logs: `evidence/arrival-workflow-tests.log`, `evidence/arrival-postgres-tests.log`, and `evidence/arrival-portal-smoke.log`.
+PGlite uses one database connection. The separately prepared [native PostgreSQL job](../tests/native-postgres/README.md) must pass on the exact published commit before independent-connection behavior is claimed. Local native sockets were restricted; that route was not retried.
 
-The baseline SQL fixture was built from read-only production column/type/default/identity/check/primary-key metadata. It contains no customer records. It intentionally omits pre-existing foreign keys, triggers, non-primary indexes and RLS. Location assignment is stubbed to return no location. PostgreSQL-WASM uses one database connection; it does not prove independent-process locking or Supabase transaction/connection-pool behavior.
+## Rollout and rollback gates
 
-## Schema and rollout gates
+1. Review the exact frontend/backend pair and take an approved backup before any live rollout. Stop intake submission and deploy the new handler paused. Drain all old handler instances and in-flight arrivals; the old handler must not overlap the new claim workflow.
+2. Rehearse the proposal against an authorized complete disposable schema, including actual constraints, triggers, RLS, allocation functions and independent connections. Public minimal-fixture tests do not establish production migration compatibility.
+3. Preserve and review existing notice, event and photo history. Uncertain prior sends require operator/provider reconciliation; missing history is not evidence that nothing was sent.
+4. Verify private Storage permissions, existing JWT/role/facility checks, sender preferences and the intended environment. Run authorized staging tests, then an explicitly approved synthetic delivery to a verified test inbox. Verify photo bytes, tracking, persistence and provider/inbox status separately.
+5. Release the matching frontend/backend and migration together, refresh open forms, and only then deliberately enable writes for that approved environment. PostgreSQL row revisions are short-lived concurrency markers, not permanent IDs or credentials.
 
-`schema-proposals/arrival-notices.sql` is a reviewed local proposal, not an applied migration. Supabase CLI was unavailable here, so no migration filename was invented. Use `supabase migration new arrival_notices` to generate the real migration after review, copying the proposal into it.
+Rollback begins by pausing writes and draining in-flight work. Retain the ledger, claims, event and photo history, and reconcile SENDING/UNKNOWN. Do not drop a populated ledger, restore automatic legacy sends, or create a fresh intake to bypass a retry barrier. A code rollback cannot undo sent email.
 
-Before live writes are enabled:
-
-1. Take the approved database/storage backup. Keep the existing notification, package-event and photo history intact.
-2. Deploy a paused handler (`PARCEL_ARRIVAL_WRITES_ENABLED` absent/false) and stop frontend intake submission during the transition. Verify all old handler instances and in-flight old arrivals have drained before applying the ledger migration or enabling the new flow. The old handler does not honor the new claim lock and must not overlap it.
-3. Rehearse the migration against a complete disposable PostgreSQL schema with actual triggers, existing FKs, RLS, indexes and `assign_suggested_location`. Test multiple independent database connections/processes competing for the same event, transaction rollback, restart, and claim persistence. Review Supabase advisors. Never treat the WASM test as proof of this gate.
-4. Review legacy send/history inventory and reconcile suspicious events with provider records. Inventory from read-only checks at 2026-10-09 23:53 UTC: 4 packages, 4 origin events, 4 origin photos, 4 origin notification rows; 0 destination events/photos/notifications. All 4 photo metadata entries had a matching Storage object. Earlier audit showed the 4 notification rows marked SENT. This inventory supports current retained-record consistency, not proof of inbox delivery, absence of deleted history, or no unlogged provider acceptance.
-5. Verify private bucket settings and no newly broad Storage policies, existing JWT verification, role/facility authorization, company preferences, and the intended email sender. Do not expose keys in client code or logs.
-6. Run nonproduction end-to-end application tests with real private Storage and captured mail, then an explicitly approved synthetic delivery to a verified test inbox. Verify attachment rendering/bytes, tracking, record/photo consistency, bounce/delivery interpretation, and low-confidence/manual review behavior.
-7. Only after the above gates, deliberately enable `PARCEL_ARRIVAL_WRITES_ENABLED=true` for the approved environment and verify the deployed frontend/backend/migration versions match. Monitor first approved operations without sending any unsolicited test notices to real customers.
-
-## Recovery/rollback limitations
-
-- SENT means Resend accepted the message; it is not an inbox-delivery claim. Reconciliation records provider `last_event` separately. No exactly-once delivery guarantee is claimed; provider idempotency expires after 24 hours, while this ledger's accepted/uncertain send barrier persists.
-- An uncertain attempt without a provider ID stays blocked for operator/provider reconciliation. The code never guesses that it was unsent or automatically sends another message.
-- After a definitive rejection, retries currently require the same payload. Correcting a rejected recipient address requires a separately reviewed durable attempt-version/idempotency-key workflow. Do not relax FAILED immutability or create a fresh intake just to bypass the block.
-- Historical destination detection depends on retained photos/facility association or matching event site information. Missing/deleted history or renamed sites can make old outcomes unprovable. Such uncertainty needs review; absence of a record is not evidence that a provider never accepted an email.
-- Keep the ledger on rollback. First pause writes and drain in-flight work, preserve all claims/history, and reconcile SENDING/UNKNOWN. Do not restore automatic legacy sending or drop a populated ledger: either would remove dedupe protection. Only an empty disposable test database may drop the proposal table and its four supporting indexes without a separate data-retention plan.
-
-Official references: [Resend send/attachments](https://resend.com/docs/api-reference/emails/send-email), [Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys), [Resend GET sent email](https://resend.com/docs/api-reference/emails/retrieve-email), [Supabase private download](https://supabase.com/docs/reference/javascript/storage-from-download), [Supabase bucket metadata](https://supabase.com/docs/reference/javascript/storage-getbucket).
+SENT means provider acceptance, not inbox delivery or an exactly-once guarantee. Physical camera behavior, actual browser authentication, hosted inference, live private Storage, real inbox delivery and production deployment remain separate acceptance gates.

@@ -28,8 +28,12 @@ let intakeReadToken=0;
 let autoReceivedToken=0;
 let receiveInFlight=false;
 let intakePackageId=null;
+const displayedArrivalContacts={receive:null,transfer:null};
+const confirmedArrivalReviews={receive:null,transfer:null};
+let displayedTransferPackage=null;
 const arrivalEmailRecovery={receive:null,transfer:null};
 let arrivalEmailRecoveryGeneration=0;
+let arrivalListRefreshGeneration=0;
 let intakeTiming={
   read_token:0,
   started_at_ms:0,
@@ -167,12 +171,102 @@ async function fastOcrRecognizeDetailed(image){
 
 const $=id=>document.getElementById(id);
 function resetLabelConfirmation(){
+  confirmedArrivalReviews.receive=null;
   const checkbox=$("receiveLabelConfirmed");
   if(checkbox)checkbox.checked=false;
 }
 function markIntakeEdit(){
   intakeFieldEditGeneration++;
   resetLabelConfirmation();
+}
+function resetTransferConfirmation(){
+  confirmedArrivalReviews.transfer=null;
+  if($("transferLabelConfirmed"))$("transferLabelConfirmed").checked=false;
+}
+function contactReviewSnapshot(customer){
+  return customer?{customer_id:customer.id,name:String(customer.name||""),
+    email:customer.contact_email_visible===true?String(customer.email||""):"",
+    contact_email_visible:typeof customer.contact_email_visible==="boolean"?customer.contact_email_visible:null,
+    contact_version:typeof customer.contact_email_visible==="boolean"&&typeof customer.contact_version==="string"?customer.contact_version:null}:null;
+}
+function displayArrivalContact(kind,customer){
+  const contact=contactReviewSnapshot(customer);
+  if(JSON.stringify(displayedArrivalContacts[kind])!==JSON.stringify(contact)){
+    if(kind==="receive")resetLabelConfirmation();else resetTransferConfirmation();
+  }
+  // Only display paths may refresh this version; sending never reads a newer directory version.
+  displayedArrivalContacts[kind]=contact;
+  const wording=$(kind+"ConfirmationText");
+  if(wording)wording.textContent=kind==="receive"
+    ?(contact?.contact_email_visible!==true
+      ?"I checked the photo, selected customer, address and tracking. Send the arrival notice to this customer's saved contact."
+      :"I checked the photo, recipient, address, tracking and customer email. Send the arrival notice to this customer.")
+    :(contact?.contact_email_visible!==true
+      ?"I checked this arrival photo, selected package, tracking and customer. Send the arrival notice to this customer's saved contact."
+      :"I checked this arrival photo, selected package, tracking and customer email. Send the arrival notice.");
+  return contact;
+}
+function arrivalEmailDescription(contact){
+  if(contact&&contact.contact_email_visible===null)return "Customer contact visibility unavailable; refresh before confirming";
+  if(contact?.contact_email_visible===false)return "Email address hidden for your role; notice uses the selected customer's saved contact";
+  return contact?.email?"Email: "+contact.email:"Email not listed";
+}
+function arrivalReviewSignature(kind){
+  const ids=kind==="receive"
+    ?["receiveCustomer","receiveOrigin","receiveDestination","receiveTracking","receiveAddress","receiveCarrier","receiveSize","receiveWeight","receivePayment","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]
+    :["transferPackage","transferFacility","transferNote"];
+  return JSON.stringify({company:workspace?.company?.id||null,generation:arrivalEmailRecoveryGeneration,
+    values:ids.map(id=>$(id)?.value||""),contact:displayedArrivalContacts[kind],
+    package:kind==="transfer"?displayedTransferPackage:null});
+}
+function selectedArrivalCustomerId(kind){
+  return kind==="receive"?$("receiveCustomer").value:
+    (workspace?.packages||[]).find(p=>p.id===$("transferPackage").value)?.customer_id;
+}
+function captureArrivalConfirmation(kind){
+  const checkbox=$(kind==="receive"?"receiveLabelConfirmed":"transferLabelConfirmed");
+  const contact=displayedArrivalContacts[kind];
+  confirmedArrivalReviews[kind]=null;
+  if(!checkbox?.checked)return;
+  if(!contact?.contact_version||contact.customer_id!==selectedArrivalCustomerId(kind)){
+    checkbox.checked=false;
+    $(kind==="receive"?"receiveResult":"transferResult").textContent=kind==="receive"&&!selectedArrivalCustomerId(kind)
+      ?"Save or select the customer first, then review their contact and confirm."
+      :"Review the saved customer contact before confirming. If the contact cannot be verified, refresh the workspace first.";
+    return;
+  }
+  if(kind==="transfer"&&!displayedTransferPackage?.review_version){
+    checkbox.checked=false;
+    $("transferResult").textContent="Review the current package details before confirming. Refresh the workspace if package review is unavailable.";
+    return;
+  }
+  confirmedArrivalReviews[kind]={contact:{...contact},signature:arrivalReviewSignature(kind),
+    package_review_version:kind==="transfer"?displayedTransferPackage.review_version:null,
+    photo:kind==="receive"?intakePhotoDataUrl:transferPhotoDataUrl};
+}
+function reviewedArrivalConfirmation(kind){
+  const checkbox=$(kind==="receive"?"receiveLabelConfirmed":"transferLabelConfirmed");
+  const review=confirmedArrivalReviews[kind];
+  if(checkbox?.checked&&review&&review.signature===arrivalReviewSignature(kind)
+    &&review.contact.customer_id===selectedArrivalCustomerId(kind)
+    &&review.photo===(kind==="receive"?intakePhotoDataUrl:transferPhotoDataUrl))return {...review.contact,package_review_version:review.package_review_version};
+  if(kind==="receive")resetLabelConfirmation();else resetTransferConfirmation();
+  return null;
+}
+function renderTransferRecipient(){
+  const selected=(workspace?.packages||[]).find(p=>p.id===$("transferPackage").value);
+  const customer=(workspace?.customers||[]).find(c=>c.id===selected?.customer_id);
+  const contact=displayArrivalContact("transfer",customer);
+  const shown=selected?{id:selected.id,customer_id:selected.customer_id,name:contact?.name||selected.customer_name||"",tracking:selected.tracking_number||"",
+    review_version:typeof selected.review_version==="string"?selected.review_version:null}:null;
+  if(JSON.stringify(shown)!==JSON.stringify(displayedTransferPackage))resetTransferConfirmation();
+  displayedTransferPackage=shown;
+  const readout=$("transferRecipient");
+  if(readout)readout.textContent=selected
+    ?"Recipient: "+(contact?.name||selected.customer_name||"Unknown customer")+" · "+
+      arrivalEmailDescription(contact)+" · Tracking: "+(selected.tracking_number||"Not listed")
+    :"Choose a package to review its customer email.";
+  if(confirmedArrivalReviews.transfer)reviewedArrivalConfirmation("transfer");
 }
 function renderArrivalEmailRecovery(kind){
   const state=arrivalEmailRecovery[kind];
@@ -192,6 +286,8 @@ function isCurrentArrivalEmailScope(scope){
 }
 function clearArrivalEmailRecovery(){
   arrivalEmailRecoveryGeneration++;
+  resetLabelConfirmation();resetTransferConfirmation();
+  displayedArrivalContacts.receive=null;displayedArrivalContacts.transfer=null;displayedTransferPackage=null;
   for(const kind of ["receive","transfer"]){arrivalEmailRecovery[kind]=null;renderArrivalEmailRecovery(kind);}
 }
 
@@ -251,6 +347,121 @@ async function checkArrivalEmailStatus(kind){
       if(!isCurrentArrivalEmailScope(state))clearArrivalEmailRecovery();
       else{state.inFlight=false;renderArrivalEmailRecovery(kind);}
     }
+  }
+}
+
+async function refreshSavedArrivalLists(scope){
+  if(!scope?.companyId||!isCurrentArrivalEmailScope(scope))return null;
+  const currentWorkspace=workspace;
+  const generation=++arrivalListRefreshGeneration;
+  try{
+    const latest=await api({action:"workspace"});
+    if(workspace!==currentWorkspace||generation!==arrivalListRefreshGeneration||!isCurrentArrivalEmailScope(scope))return null;
+    if(latest.state!=="ACTIVE"||latest.company?.id!==scope.companyId||!Array.isArray(latest.packages)||!Array.isArray(latest.attention))return false;
+    const selectedId=$("transferPackage").value;
+    const previous=(workspace.packages||[]).find(p=>p.id===selectedId);
+    workspace.packages=latest.packages;
+    workspace.attention=latest.attention;
+    $("packageCount").textContent=workspace.packages.length;
+    $("attentionCount").textContent=workspace.attention.length;
+    renderPackages($("packageSearch").value);
+    renderAttention();
+    // Refresh package choices only. Do not rerender or default either intake form or warehouse.
+    const active=workspace.packages.filter(p=>!["DELIVERED","PICKED_UP"].includes(p.stage));
+    const selected=active.find(p=>p.id===selectedId);
+    $("transferPackage").innerHTML='<option value="">Select package</option>'+active.map(p=>
+      '<option value="'+p.id+'">'+esc(p.customer_name||"Unknown customer")+' — '+esc(p.tracking_number||"No tracking")+' — '+esc(p.stage)+'</option>').join("");
+    $("transferPackage").value=selected?selectedId:"";
+    if(selectedId&&(!selected||previous?.customer_id!==selected.customer_id||previous?.tracking_number!==selected.tracking_number)){
+      transferFieldEditGeneration++;
+      resetTransferConfirmation();
+    }
+    renderTransferRecipient();
+    return true;
+  }catch{return false;}
+}
+
+function intakeReviewFormSignature(){
+  return JSON.stringify(["receiveCustomer","receiveOrigin","receiveDestination","receiveTracking","receiveAddress","receiveCarrier","receiveSize","receiveWeight","receivePayment","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]
+    .map(id=>$(id)?.value||"").concat($("receiveLabelConfirmed")?.checked===true));
+}
+
+async function resumeSavedIntake(packageId){
+  const saved=(workspace?.packages||[]).find(p=>p.id===packageId);
+  if(saved?.origin_review_pending!==true||!saved.origin_facility_id){$("receiveResult").textContent="This package has no editable saved origin review.";return;}
+  if(receiveInFlight||intakePhotoPending){$("receiveResult").textContent="Finish the current photo or save before opening a saved review.";return;}
+  if(intakePhotoDataUrl&&!confirm("Replace the current unsaved intake view with this saved review?"))return;
+  const scope=arrivalEmailRecoveryScope();
+  const originalWorkspace=workspace;
+  const edits=intakeFieldEditGeneration,signature=intakeReviewFormSignature();
+  stopRecoveryOcr();
+  const token=++intakeReadToken;
+  if(intakeRecipientDisplay)intakeRecipientDisplay.read_token=token;
+  intakePhotoPending=true;
+  $("receiveResult").textContent="Loading the saved private label for review…";
+  document.querySelector('[data-tab="receive"]').click();
+  try{
+    const result=await api({action:"review_saved_arrival",package_id:saved.id,origin_facility_id:saved.origin_facility_id});
+    if(token!==intakeReadToken||workspace!==originalWorkspace||!isCurrentArrivalEmailScope(scope))return;
+    if(edits!==intakeFieldEditGeneration||signature!==intakeReviewFormSignature()){
+      $("receiveResult").textContent="Your newer intake edits were kept. Open the saved review again when ready.";return;
+    }
+    const s=result.snapshot;
+    if(result.ok!==true||result.editable!==true||!s||s.intake_package_id!==saved.id||s.origin_facility_id!==saved.origin_facility_id||
+      !s.customer_id||s.customer?.id!==s.customer_id||typeof s.customer.name!=="string"||
+      s.origin_facility?.id!==s.origin_facility_id||typeof s.origin_facility.name!=="string"||
+      (s.destination_facility_id&&(s.destination_facility?.id!==s.destination_facility_id||typeof s.destination_facility.name!=="string"))||
+      (s.tracking_number!=null&&typeof s.tracking_number!=="string")||
+      typeof s.photo_data_url!=="string"||s.photo_data_url.length>14*1024*1024||!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(s.photo_data_url))throw Error("The saved review could not be verified. No intake was replaced.");
+    const customerIndex=(workspace.customers||[]).findIndex(c=>c.id===s.customer_id);
+    if(customerIndex<0)workspace.customers.push(s.customer);
+    else workspace.customers[customerIndex]={...workspace.customers[customerIndex],...s.customer};
+    // A saved destination may be outside the worker's receiving-location list.
+    // Use its server-authorized label without inventing a new location or changing route defaults.
+    const addOption=(id,value,label)=>{
+      const select=$(id);
+      const existing=Array.from(select.options||[]).find(option=>option.value===value);
+      if(existing)existing.textContent=label;
+      else select.innerHTML+='<option value="'+esc(value)+'">'+esc(label)+'</option>';
+      select.value=value;
+    };
+    addOption("receiveCustomer",s.customer_id,s.customer.name+(s.customer.email?" — "+s.customer.email:""));
+    addOption("receiveOrigin",s.origin_facility_id,s.origin_facility.name);
+    if(s.destination_facility_id)addOption("receiveDestination",s.destination_facility_id,s.destination_facility.name);
+    else $("receiveDestination").value="";
+    intakePackageId=s.intake_package_id;
+    intakePhotoDataUrl=s.photo_data_url;
+    intakeOcrText=String(s.ocr_raw_text||"");
+    intakeOcrName=String(s.ocr_name||"");
+    intakeOcrAddress=String(s.ocr_recipient_address||"");
+    intakeRecipientDisplay=null;
+    intakeTrackingReview={status:"SAVED_REVIEW",message:"Saved value — verify against the stored photo"};
+    intakeVisionWarnings=[];
+    intakeFieldEditGeneration++;
+    resetLabelConfirmation();
+    resetIntakeTiming(token,0);
+    $("receiveTracking").value=s.tracking_number||"";
+    $("receiveCarrier").value=String(s.carrier||"");
+    $("receiveSize").value=s.size_class||"UNKNOWN";
+    $("receivePayment").value=s.payment_status||"UNKNOWN";
+    $("receiveWeight").value=s.weight_lb==null?"":String(s.weight_lb);
+    for(const id of ["receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]){$(id).value="";}
+    $("packagePhoto").value="";
+    $("packagePhotoPreview").innerHTML='<img src="'+s.photo_data_url+'" alt="Saved package label for review">';
+    $("processingBox").classList.remove("hidden");
+    $("processingText").textContent=s.customer.name;
+    $("processingDetail").textContent="Saved intake restored — check the photo and details before confirming";
+    $("receiveOriginWrap").classList.remove("hidden");
+    $("receiveDestinationWrap").classList.remove("hidden");
+    $("receiveRouteSummary").textContent="Saved receiving: "+s.origin_facility.name+(s.destination_facility_id?" → Next: "+s.destination_facility.name:"");
+    $("receiveRouteSummary").classList.remove("hidden");
+    hideInlineCustomer();
+    renderLabelReadout();
+    $("receiveResult").textContent="Saved review loaded with its original package ID. No email was sent. Confirm only after checking the photo, recipient and tracking.";
+  }catch(error){
+    if(token===intakeReadToken&&workspace===originalWorkspace&&isCurrentArrivalEmailScope(scope))$("receiveResult").textContent=error.message||String(error);
+  }finally{
+    if(token===intakeReadToken)intakePhotoPending=false;
   }
 }
 
@@ -1371,6 +1582,7 @@ function renderLabelReadout(){
   const fields=$("labelFields");
   if(!fields)return;
   const customer=(workspace?.customers||[]).find(c=>c.id===$("receiveCustomer").value);
+  const contact=displayArrivalContact("receive",customer);
   const tentative=intakeRecipientDisplay;
   const displayName=customer?.name||(tentative?.read_token===intakeReadToken
     && !$("receiveCustomer").value
@@ -1380,11 +1592,12 @@ function renderLabelReadout(){
     "Address: "+(intakeOcrAddress||"Not read"),
     "Tracking: "+($("receiveTracking").value||"Not read")+
       (intakeTrackingReview&&intakeTrackingReview.status!=="FORMAT_VALID"?" — "+intakeTrackingReview.message:""),
-    customer?.email?"Email: "+customer.email:"Email not listed",
+    arrivalEmailDescription(contact),
     ...intakeVisionWarnings.map(warning=>"Review: "+warning)].join("\n");
   $("labelReadout").classList.remove("hidden");
   const addressInput=$("receiveAddress");
-  if(addressInput)addressInput.value=intakeOcrAddress||"";
+  if(addressInput)addressInput.value=(intakeOcrAddress||"").replace(/\s*[\r\n]+\s*/g,", ");
+  if(confirmedArrivalReviews.receive)reviewedArrivalConfirmation("receive");
 }
 
 async function autoReceiveMatchedPhoto(local,vision){
@@ -1782,8 +1995,12 @@ function renderAttention(){
 function renderPackages(q){
   q=String(q||"").toLowerCase();
   const rows=workspace.packages.filter(p=>[p.customer_name,p.tracking_number,p.location_code,p.stage].filter(Boolean).join(" ").toLowerCase().includes(q));
-  $("packageList").innerHTML=rows.length?rows.map(p=>"<div class='item'><div class='itemTop'><div><strong>"+esc(p.customer_name||"Unmatched customer")+"</strong><br><small>"+esc(p.tracking_number||"No tracking number")+"</small></div><span class='status'>"+esc(p.stage)+"</span></div><div class='meta'><div><small>Payment</small><strong>"+esc(p.payment_status)+"</strong></div><div><small>Location</small><strong>"+esc(p.location_code||"-")+"</strong></div><div><small>Updated</small><strong>"+new Date(p.updated_at).toLocaleDateString()+"</strong></div></div></div>").join(""):"<div class='empty'>No packages found.</div>";
+  $("packageList").innerHTML=rows.length?rows.map(p=>"<div class='item'><div class='itemTop'><div><strong>"+esc(p.customer_name||"Unmatched customer")+"</strong><br><small>"+esc(p.tracking_number||"No tracking number")+"</small></div><span class='status'>"+esc(p.stage)+"</span></div><div class='meta'><div><small>Payment</small><strong>"+esc(p.payment_status)+"</strong></div><div><small>Location</small><strong>"+esc(p.location_code||"-")+"</strong></div><div><small>Updated</small><strong>"+new Date(p.updated_at).toLocaleDateString()+"</strong></div></div>"+(p.origin_review_pending===true?"<button type='button' data-review-intake='"+esc(p.id)+"'>Resume saved review</button><small>Saved notice has not been sent. Fresh confirmation is required.</small>":"")+"</div>").join(""):"<div class='empty'>No packages found.</div>";
 }
+$("packageList").onclick=e=>{
+  const button=e.target.closest?.("button[data-review-intake]");
+  if(button)return resumeSavedIntake(button.dataset.reviewIntake);
+};
 $("packageSearch").oninput=e=>renderPackages(e.target.value);
 
 function renderCustomers(){
@@ -1935,6 +2152,8 @@ function renderReceiveControls(){
 
   if(!$("receiveCustomer").value)showInlineCustomer(intakeOcrName);
   else hideInlineCustomer();
+  // A directory rerender changes the email shown in the selector; require new review.
+  if(intakePhotoDataUrl)renderLabelReadout();else displayArrivalContact("receive",customers.find(c=>c.id===$("receiveCustomer").value));
 }
 
 $("receiveCustomer").onchange=()=>{
@@ -1978,7 +2197,11 @@ $("receiveCarrier").oninput=markIntakeEdit;
 for(const id of ["receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]){
   if($(id))$(id).oninput=markIntakeEdit;
 }
-$("receiveLabelConfirmed").onchange=()=>{intakeFieldEditGeneration++;};
+for(const id of ["receiveOrigin","receiveDestination","receiveSize","receivePayment"]){
+  $(id).onchange=markIntakeEdit;
+}
+$("receiveWeight").oninput=markIntakeEdit;
+$("receiveLabelConfirmed").onchange=()=>{intakeFieldEditGeneration++;captureArrivalConfirmation("receive");};
 
 $("packagePhoto").onchange=async e=>{
   const file=e.target.files?.[0];
@@ -2134,8 +2357,14 @@ async function receivePackage(){
   if(intakeRecipientDisplay)intakeRecipientDisplay.read_token=intakeReadToken;
 
   // Snapshot the reviewed fields before any customer-creation or save request.
+  const confirmedContact=reviewedArrivalConfirmation("receive");
   const reviewed={
-    label_confirmed:$("receiveLabelConfirmed")?.checked===true,
+    label_confirmed:Boolean(confirmedContact),
+    confirmed_customer_contact_version:confirmedContact?.contact_version||null,
+    destination_facility_id:$("receiveDestination").value||null,
+    size_class:$("receiveSize").value,
+    weight_lb:$("receiveWeight").value||null,
+    payment_status:$("receivePayment").value,
     tracking_number:$("receiveTracking").value.trim()||null,
     carrier:$("receiveCarrier").value.trim()||null,
     photo_data_url:intakePhotoDataUrl,
@@ -2159,13 +2388,14 @@ async function receivePackage(){
       customer_id,
       label_confirmed:reviewed.label_confirmed,
       confirmed_customer_id:reviewed.label_confirmed?customer_id:null,
+      confirmed_customer_contact_version:reviewed.confirmed_customer_contact_version,
       origin_facility_id,
-      destination_facility_id:$("receiveDestination").value||null,
+      destination_facility_id:reviewed.destination_facility_id,
       tracking_number:reviewed.tracking_number,
       carrier:reviewed.carrier,
-      size_class:$("receiveSize").value,
-      weight_lb:$("receiveWeight").value||null,
-      payment_status:$("receivePayment").value,
+      size_class:reviewed.size_class,
+      weight_lb:reviewed.weight_lb,
+      payment_status:reviewed.payment_status,
       ocr_name:reviewed.ocr_name,
       ocr_tracking:reviewed.tracking_number,
       ocr_raw_text:reviewed.ocr_raw_text,
@@ -2185,6 +2415,7 @@ async function receivePackage(){
       $("receiveResult").textContent+=["UNKNOWN","SENDING"].includes(emailStatus)
         ?" · Delivery is uncertain. Do not retry until its status is checked."
         :" · Photo and fields kept for review; retry uses the same package.";
+      if(r.photo_saved&&await refreshSavedArrivalLists(recoveryScope)===false)$("receiveResult").textContent+=" · Package list could not refresh; the saved result and review fields are retained.";
       return;
     }
 
@@ -2199,6 +2430,9 @@ async function receivePackage(){
     $("packagePhoto").value="";
     $("packagePhotoPreview").innerHTML="";
     $("processingBox").classList.add("hidden");
+    $("labelReadout").classList.add("hidden");
+    $("labelFields").textContent="";
+    $("labelRawText").textContent="";
     $("receiveTracking").value="";
     $("receiveAddress").value="";
     $("receiveCarrier").value="";
@@ -2252,6 +2486,7 @@ function renderTransferControls(){
     }).join("");
     if(packages.some(p=>p.id===currentPackage))$("transferPackage").value=currentPackage;
   }
+  renderTransferRecipient();
 }
 
 function normalizeTracking(v){
@@ -2313,8 +2548,9 @@ $("transferPhoto").onchange=async e=>{
   const editGeneration=transferFieldEditGeneration;
   transferPhotoPending=true;
   transferPhotoDataUrl=null;
-  $("transferLabelConfirmed").checked=false;
+  resetTransferConfirmation();
   $("transferPackage").value="";
+  renderTransferRecipient();
 
   $("transferResult").textContent="";
   $("transferProcessing").classList.remove("hidden");
@@ -2348,6 +2584,7 @@ $("transferPhoto").onchange=async e=>{
 
     const strongEvidence=result.tracking_status==="FORMAT_VALID"||Boolean(result.customer);
     if(candidates.length===1&&strongEvidence)$("transferPackage").value=candidates[0].id;
+    renderTransferRecipient();
 
     if(candidates.length===1){
       $("transferProcessingText").textContent=candidates[0].customer_name||"Package matched";
@@ -2378,13 +2615,14 @@ $("transferPhoto").onchange=async e=>{
 for(const id of ["transferPackage","transferFacility"]){
   $(id).onchange=()=>{
     transferFieldEditGeneration++;
-    $("transferLabelConfirmed").checked=false;
+    resetTransferConfirmation();
     const selected=(workspace?.packages||[]).find(item=>item.id===$("transferPackage").value);
     $("transferProcessingText").textContent=selected?.customer_name||"Choose the package";
+    renderTransferRecipient();
   };
 }
-$("transferNote").oninput=()=>{transferFieldEditGeneration++;$("transferLabelConfirmed").checked=false;};
-$("transferLabelConfirmed").onchange=()=>{transferFieldEditGeneration++;};
+$("transferNote").oninput=()=>{transferFieldEditGeneration++;resetTransferConfirmation();};
+$("transferLabelConfirmed").onchange=()=>{transferFieldEditGeneration++;captureArrivalConfirmation("transfer");};
 
 $("saveTransfer").onclick=async()=>{
   if(transferInFlight)return;
@@ -2398,7 +2636,8 @@ $("saveTransfer").onclick=async()=>{
   if(!facility_id){alert("Choose the arriving warehouse.");return}
   if(!transferPhotoDataUrl){alert("Take the arrival photo first.");return}
   if(!selected){alert("Choose an existing package from this workspace.");return}
-  const confirmed=$("transferLabelConfirmed").checked===true;
+  const confirmedContact=reviewedArrivalConfirmation("transfer");
+  const confirmed=Boolean(confirmedContact);
   const photo=transferPhotoDataUrl;
   const note=$("transferNote").value.trim()||null;
   transferInFlight=true;
@@ -2414,6 +2653,8 @@ $("saveTransfer").onclick=async()=>{
       facility_id,
       label_confirmed:confirmed,
       confirmed_customer_id:confirmed?selected.customer_id:null,
+      confirmed_customer_contact_version:confirmedContact?.contact_version||null,
+      confirmed_package_review_version:confirmedContact?.package_review_version||null,
       note,
       photo_data_url:photo
     };
@@ -2428,11 +2669,12 @@ $("saveTransfer").onclick=async()=>{
       $("transferResult").textContent+=["UNKNOWN","SENDING"].includes(emailStatus)
         ?" · Delivery is uncertain. Do not retry until its status is checked."
         :" · Arrival photo and fields kept for review.";
+      if(r.photo_saved&&await refreshSavedArrivalLists(recoveryScope)===false)$("transferResult").textContent+=" · Package list could not refresh; the saved result and review fields are retained.";
       return;
     }
 
     transferPhotoDataUrl=null;
-    $("transferLabelConfirmed").checked=false;
+    resetTransferConfirmation();
     $("transferPhoto").value="";
     $("transferPhotoPreview").innerHTML="";
     $("transferProcessing").classList.add("hidden");

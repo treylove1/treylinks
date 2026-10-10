@@ -6,12 +6,14 @@ on:
     paths:
       - "parcel-snap-customer/**"
       - "parcel-snap-customer-preview/**"
+      - "parcel-snap-vision-test/fixtures/**"
       - ".github/workflows/parcel-snap-customer-regression.yml"
   push:
     branches: ["main"]
     paths:
       - "parcel-snap-customer/**"
       - "parcel-snap-customer-preview/**"
+      - "parcel-snap-vision-test/fixtures/**"
       - ".github/workflows/parcel-snap-customer-regression.yml"
 
 permissions:
@@ -20,15 +22,17 @@ permissions:
 jobs:
   regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Select Node 22
+      - name: Select reviewed Node runtime
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.19.0'
 
       - name: Validate customer and arrival workflow syntax
         run: |
@@ -36,50 +40,99 @@ jobs:
           node --check parcel-snap-customer/vision-client.js
           node --check parcel-snap-customer/vision-result.js
           node --check parcel-snap-customer/backend/arrival-workflow.mjs
+          node --check parcel-snap-customer/backend/portal.ts
 
-      - name: Known-customer matcher regression
-        run: node parcel-snap-customer/tests/known-customer-matcher-test.mjs
-
-      - name: Existing OCR parser regression
-        run: node parcel-snap-customer/tests/ocr-parser-test.mjs
-
-      - name: OCR speed architecture regression
-        run: node parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
-
-      - name: Tentative vision display and intake-safety regression
-        run: node --test parcel-snap-customer/tests/vision-display-test.mjs
-
-      - name: Recipient, tracking, confirmation and hosted-result regressions
-        run: >-
-          node --test
-          parcel-snap-customer/tests/customer-label-safety-test.mjs
-          parcel-snap-customer/tests/intake-confirmation-flow-test.mjs
-          parcel-snap-customer/tests/vision-result-test.mjs
-
-      - name: Private photo and arrival notification regression
-        run: node --test parcel-snap-customer/tests/arrival-workflow.test.mjs
-
-      - name: Install pinned isolated PostgreSQL test runtime
-        run: npm ci --prefix parcel-snap-customer/tests/sql-runtime --ignore-scripts --no-audit --no-fund
-
-      - name: PostgreSQL schema and adapter SQL regression
-        run: node --test parcel-snap-customer/tests/arrival-postgres.test.mjs
-
-      - name: Portal routing and paused-rollout smoke test
-        run: node parcel-snap-customer/tests/backend-intake-test.cjs
-
-      - name: Install pinned OCR test runtime and English data
+      - name: Install pinned isolated test runtimes and local English data
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr-eng
+          npm ci --prefix parcel-snap-customer/tests/sql-runtime --ignore-scripts --no-audit --no-fund
           npm ci --prefix parcel-snap-customer/tests/ocr-runtime --ignore-scripts --no-audit --no-fund
+          test -f /usr/share/tesseract-ocr/5/tessdata/eng.traineddata
 
-      - name: Actual Tesseract synthetic-image regression
-        run: NODE_PATH="$GITHUB_WORKSPACE/parcel-snap-customer/tests/ocr-runtime/node_modules" node parcel-snap-customer/tests/photo-intake-flow-test.cjs
+      - name: Guarded customer, saved-review, contact and cross-layer regressions
+        env:
+          NODE_PATH: ${{ github.workspace }}/parcel-snap-customer/tests/ocr-runtime/node_modules
+          TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
+          parcel-snap-customer/tests/known-customer-matcher-test.mjs
+          parcel-snap-customer/tests/ocr-parser-test.mjs
+          parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
+          parcel-snap-customer/tests/vision-display-test.mjs
+          parcel-snap-customer/tests/customer-label-safety-test.mjs
+          parcel-snap-customer/tests/intake-confirmation-flow-test.mjs
+          parcel-snap-customer/tests/vision-result-test.mjs
+          parcel-snap-customer/tests/arrival-workflow.test.mjs
+          parcel-snap-customer/tests/arrival-review.test.mjs
+          parcel-snap-customer/tests/arrival-postgres.test.mjs
+          parcel-snap-customer/tests/portal-contact-review.test.mjs
+          parcel-snap-customer/tests/customer-arrival-integration.test.mjs
 
-      - name: Tenant onboarding architecture regression
-        run: node parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
+      - name: Guarded portal, parser and onboarding smoke checks
+        env:
+          NODE_PATH: ${{ github.workspace }}/parcel-snap-customer/tests/ocr-runtime/node_modules
+          TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
+        run: |
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/backend-intake-test.cjs
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/photo-intake-flow-test.cjs
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
+
+      - name: Reject private schema capture paths
+        run: |
+          test ! -e parcel-snap-customer/tests/schema-fixture
+          test ! -e parcel-snap-customer/tests/arrival-full-schema.test.mjs
 
       - name: Reproduce and verify frozen no-write phone preview
         working-directory: parcel-snap-customer-preview/published-dcc0aba3/parcel-snap-customer-preview
         run: node test.mjs
+
+  native-postgres:
+    name: Native PostgreSQL independent connections
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_DB: parcel_snap_synthetic
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - '127.0.0.1:55437:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d parcel_snap_synthetic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select reviewed Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+
+      - name: Verify PostgreSQL service publishes only to loopback
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          docker inspect "$POSTGRES_SERVICE_ID" --format '{{json .HostConfig.PortBindings}}' > "$RUNNER_TEMP/parcel-native-ports.json"
+          node -e 'const p=require(process.argv[1]); const b=p["5432/tcp"]; if(!Array.isArray(b)||b.length!==1||b[0].HostIp!=="127.0.0.1"||b[0].HostPort!=="55437") throw Error("Disposable service must bind only to the fixed loopback port");' "$RUNNER_TEMP/parcel-native-ports.json"
+
+      - name: Install pinned synthetic native SQL client
+        run: npm ci --prefix parcel-snap-customer/tests/native-postgres --ignore-scripts --no-audit --no-fund
+
+      - name: Reject unsafe native test configuration without connecting
+        run: node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test parcel-snap-customer/tests/native-postgres/native-test-config.test.mjs
+
+      - name: Validate concurrent claims, locking, retries and unknown outcomes
+        env:
+          PARCEL_NATIVE_CI_DISPOSABLE: 'true'
+          PARCEL_NATIVE_PORT: '55437'
+          PARCEL_NATIVE_DATABASE: parcel_snap_synthetic
+          PARCEL_NATIVE_USER: postgres
+        run: node --test parcel-snap-customer/tests/native-postgres/native-concurrency.test.mjs

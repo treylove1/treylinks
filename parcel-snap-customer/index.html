@@ -335,9 +335,9 @@
               <input id="receiveTracking" placeholder="Not read — enter from the label">
             </label>
             <label><input id="receiveLabelConfirmed" type="checkbox">
-              I checked the photo, recipient, address, tracking and customer email. Send the arrival notice to this customer.
+              <span id="receiveConfirmationText">I checked the photo, recipient, address, tracking and customer email. Send the arrival notice to this customer.</span>
             </label>
-            <small>Unconfirmed scans can be saved for review. No customer email is sent automatically.</small>
+            <small>Unconfirmed scans can be saved for review and reopened from Packages. No customer email is sent automatically.</small>
             <button id="receivePackageButton" class="primary wide">Receive Package</button>
             <div id="receiveResult" class="message"></div>
             <div id="receiveEmailRecovery" class="message hidden">
@@ -377,8 +377,9 @@
               <input id="transferNote" placeholder="Optional receiving note">
             </label>
 
+            <div id="transferRecipient" class="message" role="status" aria-live="polite">Choose a package to review its customer email.</div>
             <label><input id="transferLabelConfirmed" type="checkbox">
-              I checked this arrival photo, selected package, tracking and customer recipient. Send the arrival notice.
+              <span id="transferConfirmationText">I checked this arrival photo, selected package, tracking and customer email. Send the arrival notice.</span>
             </label>
 
             <button id="saveTransfer" class="primary wide">Save Arrival</button>

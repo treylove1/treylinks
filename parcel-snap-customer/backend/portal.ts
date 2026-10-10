@@ -1,6 +1,6 @@
 import postgres from "npm:postgres@3.4.7";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { processArrival, createArrivalRepository } from "./arrival-workflow.mjs";
+import { processArrival, createArrivalRepository, reviewSavedArrival, customerContactVersion, packageReviewVersion } from "./arrival-workflow.mjs";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL")!;
 const sql = postgres(DB_URL, { prepare: false, max: 1 });
@@ -128,8 +128,8 @@ async function integrationSecret(name: string) {
 
 const arrivalRepository = createArrivalRepository(sql);
 
-async function saveArrival(body: any, companyId: string, userId: string, role: string, actor: string, kind: string) {
-  return await processArrival({ body, companyId, userId, role, actor, kind }, {
+function arrivalDependencies() {
+  return {
     repo: arrivalRepository,
     storage: admin.storage.from(PHOTO_BUCKET),
     assertPrivateStorage: async () => {
@@ -141,7 +141,22 @@ async function saveArrival(body: any, companyId: string, userId: string, role: s
     secret: integrationSecret,
     fetch,
     canOperate: canOperateFacility
-  });
+  };
+}
+
+async function saveArrival(body: any, companyId: string, userId: string, role: string, actor: string, kind: string) {
+  return await processArrival({ body, companyId, userId, role, actor, kind }, arrivalDependencies());
+}
+
+async function markPendingOriginReviews(packages: any[], companyId: string, role: string, scopedFacilities: string[]) {
+  for (const p of packages) {
+    p.origin_review_pending = false;
+    p.review_version = await packageReviewVersion(companyId, p);
+  }
+  if (!canWrite(role)) return;
+  const pending = await arrivalRepository.pendingOriginReviews(companyId, packages.map(p => p.id));
+  const allowed = new Set(pending.filter((n: any) => isAdmin(role) || scopedFacilities.includes(n.facility_id)).map((n: any) => n.package_id));
+  for (const p of packages) p.origin_review_pending = allowed.has(p.id);
 }
 
 async function workspace(companyId: string, userId: string, role: string) {
@@ -152,10 +167,16 @@ async function workspace(companyId: string, userId: string, role: string) {
       "select p.id, p.customer_id, p.tracking_number, p.carrier, p.size_class, p.weight_lb, p.payment_status, p.stage, p.origin_received_at, p.last_arrived_at, p.storage_started_at, p.free_storage_days, p.storage_rate_per_day, p.current_location_id, p.origin_facility_id, p.destination_facility_id, p.current_facility_id, p.updated_at, c.name as customer_name, c.email as customer_email, l.code as location_code, l.shelf, l.bin, l.zone_type, (select count(*) from parcel_snap.package_photos ph where ph.package_id=p.id) as photo_count from parcel_snap.packages p left join parcel_snap.customers c on c.id = p.customer_id left join parcel_snap.warehouse_locations l on l.id = p.current_location_id where p.company_id = $1::uuid order by p.updated_at desc limit 200",
       [companyId]
     );
+    await markPendingOriginReviews(packages, companyId, role, scopedFacilities);
     const customers = await queryMany(
-      "select c.id,c.name,c.customer_type,c.email,c.phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
+      "select c.id,c.xmin::text as contact_revision,c.name,c.customer_type,c.email,c.phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
       [companyId]
     );
+    for (const customer of customers) {
+      customer.contact_version = await customerContactVersion(companyId, customer);
+      delete customer.contact_revision;
+      customer.contact_email_visible = true;
+    }
     const facilities = await queryMany(
       "select id, code, name, facility_type, address_line1, address_line2, city, region, postal_code, country, notification_label, timezone, active from parcel_snap.facilities where company_id = $1::uuid order by facility_type, name",
       [companyId]
@@ -194,10 +215,17 @@ async function workspace(companyId: string, userId: string, role: string) {
     [companyId, scopedFacilities]
   );
 
+  await markPendingOriginReviews(packages, companyId, role, scopedFacilities);
   const customers = await queryMany(
-    "select c.id,c.name,c.customer_type,null::text as email,null::text as phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
+    "select c.id,c.xmin::text as contact_revision,c.name,c.customer_type,null::text as email,null::text as phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
     [companyId]
   );
+  for (const customer of customers) {
+    customer.contact_version = await customerContactVersion(companyId, customer);
+    delete customer.contact_revision;
+    customer.contact_email_visible = false;
+    customer.email = null;
+  }
 
   const facilities = await queryMany(
     "select id, code, name, facility_type, address_line1, address_line2, city, region, postal_code, country, notification_label, timezone, active from parcel_snap.facilities where company_id=$1::uuid and id = any($2::uuid[]) order by facility_type, name",
@@ -744,7 +772,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const row = await queryOne(
-        "insert into parcel_snap.customers(company_id,name,email,phone,customer_type,updated_at) values ($1::uuid,$2,$3,$4,$5,now()) returning id,name,email,phone,customer_type,status",
+        "insert into parcel_snap.customers(company_id,name,email,phone,customer_type,updated_at) values ($1::uuid,$2,$3,$4,$5,now()) returning id,name,email,phone,customer_type,status,xmin::text as contact_revision",
         [companyId, name, customerEmail, phone, customerType]
       );
 
@@ -773,6 +801,9 @@ Deno.serve(async (req: Request) => {
       }
 
       row.aliases = aliases;
+      row.contact_version = await customerContactVersion(companyId, row);
+      delete row.contact_revision;
+      row.contact_email_visible = true;
       return json(req, { ok: true, customer: row });
     }
 
@@ -836,6 +867,12 @@ Deno.serve(async (req: Request) => {
         [companyId, facilityId, body.site || facility.city || facility.name || "WAREHOUSE", code, zone, body.shelf || null, body.bin || null, Number(body.capacity || 1), Number(body.priority || 100)]
       );
       return json(req, { ok: true, location: row });
+    }
+
+    if (action === "review_saved_arrival") {
+      if (!canWrite(role)) return json(req, { error: "You do not have permission to review saved arrivals." }, 403);
+      const result = await reviewSavedArrival({ body, companyId, userId, role }, arrivalDependencies());
+      return json(req, result);
     }
 
     if (action === "receive_package" || action === "destination_arrival") {
