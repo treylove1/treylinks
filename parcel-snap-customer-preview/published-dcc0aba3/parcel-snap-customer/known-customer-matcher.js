@@ -1,0 +1,134 @@
+(function(g){
+"use strict";
+const N=s=>String(s||"").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+const C=s=>N(s).replace(/ /g,"");
+function lev(a,b){a=String(a||"");b=String(b||"");const d=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));for(let i=0;i<=a.length;i++)d[i][0]=i;for(let j=0;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length];}
+function sim(a,b){a=C(a);b=C(b);return !a||!b?0:1-lev(a,b)/Math.max(a.length,b.length);}
+function prefixScore(alias,text,minCoverage=.58){alias=C(alias);text=C(text);let best=0;for(let i=0;i<text.length;i++){let k=0;while(k<alias.length&&i+k<text.length&&alias[k]===text[i+k])k++;best=Math.max(best,k);}if(best<7||best/alias.length<minCoverage)return 0;return Math.min(.96,.72+(best/alias.length)*.25);}
+function compactWindowScore(alias,text){
+  const a=C(alias),t=C(text);
+  if(!a||!t||a.length<7)return 0;
+  if(t.includes(a))return 1;
+
+  const minLen=Math.max(6,Math.floor(a.length*.72));
+  const maxLen=Math.min(t.length,Math.ceil(a.length*1.28));
+  if(minLen>maxLen)return 0;
+
+  let best=0;
+  for(let len=minLen;len<=maxLen;len++){
+    for(let i=0;i+len<=t.length;i++){
+      const w=t.slice(i,i+len);
+      const s=1-lev(a,w)/Math.max(a.length,w.length);
+      if(s>best)best=s;
+      if(best>=.96)return best;
+    }
+  }
+  return best;
+}
+
+function globalAliasHit(customer,a,rawText){
+  const type=String(a.alias_type||"LABEL");
+  const ct=customer.customer_type||"PERSON";
+
+  // Global fuzzy detection is for stable identifiers, not arbitrary person names.
+  const allowed=
+    type==="LABEL"||
+    type==="CUSTOMER_CODE"||
+    (type==="BUSINESS_NAME"&&ct==="BUSINESS");
+  if(!allowed)return null;
+
+  const aliasCompact=C(a.alias);
+  if(aliasCompact.length<7)return null;
+
+  const score=compactWindowScore(a.alias,rawText);
+  const threshold=
+    type==="CUSTOMER_CODE" ? .90 :
+    aliasCompact.length>=16 ? .76 :
+    aliasCompact.length>=11 ? .80 : .86;
+
+  if(score<threshold)return null;
+
+  const weighted=Math.min(.94,score*typeWeight(customer,type));
+  return {
+    score:weighted,
+    evidence:"global OCR text",
+    reason:"global-fuzzy-alias",
+    alias:a.alias,
+    alias_type:type
+  };
+}
+function aliases(customer){const primaryType=(customer.customer_type||"PERSON")==="BUSINESS"?"BUSINESS_NAME":"PERSON_NAME";const out=[{alias:customer.name,alias_type:primaryType}];for(const x of (customer.aliases||[])){if(x?.alias&&!out.some(y=>N(y.alias)===N(x.alias)))out.push(x);}return out;}
+function typeWeight(customer,type){type=String(type||"LABEL");const ct=customer.customer_type||"PERSON";if(type==="CUSTOMER_CODE"||type==="LABEL")return 1.05;if(type==="PERSON_NAME")return ct==="PERSON"?1.03:.85;if(type==="BUSINESS_NAME")return ct==="BUSINESS"?1.03:.68;return 1;}
+function lineContext(lines,index){const senderStart=lines.findIndex(x=>/return\s+address|^\s*(?:ship\s*from|sender|from)\b/i.test(x));let senderEnd=-1;if(senderStart>=0){senderEnd=Math.min(lines.length-1,senderStart+4);for(let i=senderStart+1;i<Math.min(lines.length,senderStart+6);i++){if(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i.test(lines[i])){senderEnd=i;break;}}}if(senderStart>=0&&index>=senderStart&&index<=senderEnd)return .45;const line=lines[index]||"",prev=lines[index-1]||"",next=lines[index+1]||"";if(/^\s*(?:ship|deliver)\s*to\b/i.test(line))return 1.08;if(/^\s*(?:ship\s*to|deliver\s*to|to)\s*:?\s*$/i.test(prev))return 1.08;if(/^\d{3,6}\s+/.test(next)&&/\b(ave|avenue|st|street|rd|road|blvd|dr|drive|lane|ln|hwy|highway)\b/i.test(next))return 1.08;return 1;}
+function tokenSim(a,b){return sim(a,b);}function knownTokenScore(known,seen){const k=C(known),s=C(seen);if(!k||!s)return 0;if(k===s)return 1;if(s.startsWith(k)&&s.length<=k.length+5)return .96;if(k.startsWith(s)&&s.length>=4)return .92;return sim(k,s);}
+function phraseCoverage(alias,line){const at=N(alias).split(" ").filter(Boolean),lt=N(line).split(" ").filter(Boolean);if(!at.length||!lt.length)return 0;let total=0;for(const a of at){let best=0;for(const t of lt)best=Math.max(best,tokenSim(a,t));total+=best;}return total/at.length;}
+function compoundPersonHit(customer,lines){if((customer.customer_type||"PERSON")!=="PERSON")return null;const nameTokens=N(customer.name).split(" ").filter(Boolean);if(!nameTokens.length)return null;const first=nameTokens[0],last=nameTokens[nameTokens.length-1];const business=(customer.aliases||[]).filter(x=>x.alias_type==="BUSINESS_NAME"&&x.alias);if(!business.length)return null;let best=null;for(let i=0;i<lines.length;i++){const line=lines[i]+" "+(lines[i+1]||"");for(const b of business){const bs=phraseCoverage(b.alias,line);if(bs<.82)continue;const lt=N(line).split(" ").filter(Boolean);let fs=0,ls=0;for(const t of lt){fs=Math.max(fs,knownTokenScore(first,t));ls=Math.max(ls,knownTokenScore(last,t));}if(fs<.80)continue;let score=.90+Math.min(.05,(fs-.80)*.25)+Math.min(.03,Math.max(0,ls-.72)*.12);score=Math.min(.98,score*lineContext(lines,i));const hit={score,evidence:line.trim(),reason:"business-plus-known-person",alias:b.alias+" + "+customer.name,alias_type:"COMPOUND"};if(!best||score>best.score)best=hit;}}return best;}
+function scoreAlias(customer,a,lines){const ac=C(a.alias);if(!ac)return null;let best={score:0,evidence:"",reason:""};for(let i=0;i<lines.length;i++){const windows=[lines[i],lines[i]+" "+(lines[i+1]||"")];for(const w of windows){const wc=C(w),wn=N(w),an=N(a.alias);const type=String(a.alias_type||"LABEL"),ct=customer.customer_type||"PERSON";const phrase=(" "+wn+" ").includes(" "+an+" ");let s=0,reason="";if(wn===an){s=1;reason="exact-line";}else if(phrase){s=.985;reason="word-boundary-phrase";}else if(type!=="PERSON_NAME"&&wc.includes(ac)){s=.97;reason="compact-exact";}else{let minCoverage=1.1;if(type==="PERSON_NAME")minCoverage=.58;else if(type==="LABEL")minCoverage=.82;else if(type==="BUSINESS_NAME"&&ct==="BUSINESS")minCoverage=.75;s=minCoverage<=1?prefixScore(a.alias,w,minCoverage):0;reason=s?"known-target-partial":"";if(!s&&type==="PERSON_NAME"&&Math.abs(wc.length-ac.length)<=8){const f=sim(a.alias,w);if(f>=.82){s=Math.min(.88,f);reason="fuzzy-window";}}if(!s&&type==="BUSINESS_NAME"&&ct==="BUSINESS"){const coverage=phraseCoverage(a.alias,w);if(coverage>=.88){s=Math.min(.92,.84+(coverage-.88)*.65);reason="fuzzy-business";}}}if(!s)continue;s=s*typeWeight(customer,a.alias_type)*lineContext(lines,i);if(reason==="known-target-partial")s=Math.min(.89,s);else if(reason==="fuzzy-window")s=Math.min(.88,s);else if(reason==="word-boundary-phrase")s=Math.min(.90,s);else if(reason==="compact-exact")s=Math.min(.92,s);else if(reason==="fuzzy-business")s=Math.min(.92,s);else s=Math.min(1,s);if(s>best.score)best={score:s,evidence:w.trim(),reason};}}return best.score?{...best,alias:a.alias,alias_type:a.alias_type}:null;}
+function matchDirectory(customers,rawText){
+  const lines=String(rawText||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const recipientSearchText=lines
+    .filter((line,index)=>lineContext(lines,index)>=.9)
+    .join("\n");
+  const ranked=[];
+
+  for(const customer of (customers||[])){
+    const identityAliases=aliases(customer);
+    const hits=identityAliases.map(a=>scoreAlias(customer,a,lines)).filter(Boolean);
+
+    for(const a of identityAliases){
+      const global=globalAliasHit(customer,a,recipientSearchText);
+      if(global)hits.push(global);
+    }
+
+    const compound=compoundPersonHit(customer,lines);
+    if(compound)hits.push(compound);
+
+    hits.sort((a,b)=>b.score-a.score);
+    if(!hits.length)continue;
+
+    const strong=hits.find(h=>h.alias_type!=="BUSINESS_NAME"||(customer.customer_type||"PERSON")==="BUSINESS");
+    const score=strong?Math.max(hits[0].score,strong.score):Math.min(hits[0].score,.69);
+
+    ranked.push({
+      customer,
+      score,
+      evidence:hits[0],
+      hits:hits.slice(0,5)
+    });
+  }
+
+  ranked.sort((a,b)=>b.score-a.score);
+  const best=ranked[0],second=ranked[1];
+  if(!best)return {status:"NO_MATCH",customer:null,score:0,ranked:[]};
+
+  const margin=best.score-(second?.score||0);
+  const personOverBusiness=Boolean(
+    best.customer?.customer_type==="PERSON"&&
+    best.evidence?.reason==="business-plus-known-person"&&
+    second?.customer?.customer_type==="BUSINESS"&&
+    best.score>=.94&&margin>=.04
+  );
+  const exactOverFuzzy=Boolean(
+    best.score>=.97&&
+    ["exact-line","compact-exact"].includes(best.evidence?.reason)&&
+    margin>=.04&&
+    (!second||["global-fuzzy-alias","fuzzy-business","known-target-partial","fuzzy-window"].includes(second.evidence?.reason))
+  );
+
+  let status="NO_MATCH";
+  if((best.score>=.90&&margin>=.08)||personOverBusiness||exactOverFuzzy)status="MATCHED";
+  else if(best.score>=.84&&margin>=.10&&best.evidence?.reason==="global-fuzzy-alias")status="MATCHED";
+  else if(best.score>=.72)status=margin<.08?"AMBIGUOUS":"REVIEW";
+
+  return {
+    status,
+    customer:status==="MATCHED"?best.customer:null,
+    candidate:best.customer,
+    score:best.score,
+    margin,
+    evidence:best.evidence,
+    ranked:ranked.slice(0,5)
+  };
+}
+g.ParcelSnapKnownMatcher={matchDirectory,normalize:N,compact:C};
+})(typeof window!=="undefined"?window:globalThis);

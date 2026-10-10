@@ -1,0 +1,4 @@
+#previewSafetyBanner { position:sticky; top:0; z-index:99999; padding:12px 18px; color:#fff; background:#713f12; border-bottom:3px solid #facc15; font:600 14px/1.45 system-ui,sans-serif; }
+#previewSafetyBanner strong { display:block; font-size:16px; }
+#previewCaptureStatus { display:block; color:#fef08a; }
+#signUpMode,#joinStaffMode,#saveOnboarding,#saveBusinessSetup,#testBusinessSetup,#createStaffInviteButton,#addFacilityButton,#addAliasButton,#payLink,#recheckAccess,#staffTabButton,#billingTabButton,#tab-staff,#tab-billing { display:none!important; pointer-events:none!important; }

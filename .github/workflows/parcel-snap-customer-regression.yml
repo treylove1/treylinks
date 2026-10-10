@@ -5,11 +5,13 @@ on:
   pull_request:
     paths:
       - "parcel-snap-customer/**"
+      - "parcel-snap-customer-preview/**"
       - ".github/workflows/parcel-snap-customer-regression.yml"
   push:
     branches: ["main"]
     paths:
       - "parcel-snap-customer/**"
+      - "parcel-snap-customer-preview/**"
       - ".github/workflows/parcel-snap-customer-regression.yml"
 
 permissions:
@@ -77,3 +79,7 @@ jobs:
 
       - name: Tenant onboarding architecture regression
         run: node parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
+
+      - name: Reproduce and verify frozen no-write phone preview
+        working-directory: parcel-snap-customer-preview/published-dcc0aba3/parcel-snap-customer-preview
+        run: node test.mjs
