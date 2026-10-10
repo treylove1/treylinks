@@ -1,0 +1,21 @@
+{
+  "fixture_id": "parcel-snap-synthetic-20261008-a",
+  "privacy": "100% fictional / never a real shipment",
+  "carrier": "UPS",
+  "recipient_name": "JORDAN SAMPLE",
+  "address_line": "123 TEST PARCEL WAY",
+  "unit": "UNIT 04",
+  "city": "MIAMI",
+  "state": "FL",
+  "zip": "33101",
+  "tracking": "1ZTEST000000000001",
+  "return_sender": "MOCK SHIPPER",
+  "return_address": "99 TRAINING COURT, ORLANDO FL 32801",
+  "expected_behavior": {
+    "customer_match": "No automatic real-customer assignment; require manual review.",
+    "barcode": "Decorative elements are not a real carrier barcode; do not claim barcode recognition.",
+    "automatic_saving": false,
+    "notifications": false
+  },
+  "notes": "Use rasterized JPEG versions when testing the Cloudflare Worker; only JPEG data URLs accepted by Worker."
+}

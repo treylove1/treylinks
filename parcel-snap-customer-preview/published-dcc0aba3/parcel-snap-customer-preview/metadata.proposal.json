@@ -1,0 +1,30 @@
+{
+  "main_module": "worker.mjs",
+  "compatibility_date": "2026-10-08",
+  "bindings": [
+    {
+      "type": "inherit",
+      "name": "OPENAI_API_KEY",
+      "version_id": "2c980fc3-0c50-4267-a624-cf3fa7177ffe"
+    },
+    {
+      "type": "inherit",
+      "name": "RATE_LIMITER",
+      "version_id": "2c980fc3-0c50-4267-a624-cf3fa7177ffe"
+    },
+    {
+      "type": "plain_text",
+      "name": "VISION_PROVIDER",
+      "text": "openai"
+    },
+    {
+      "type": "plain_text",
+      "name": "OPENAI_MODEL",
+      "text": "gpt-4o"
+    }
+  ],
+  "annotations": {
+    "workers/message": "Review-only fictional customer UI; inference disabled",
+    "workers/tag": "parcel-snap-fictional-ui-20261009"
+  }
+}

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-label="Fictional unmarked parcel label used only for OCR testing">
+  <title>SYNTHETIC UNMARKED TEST LABEL - NOT FOR SHIPPING</title>
+  <rect width="1600" height="1000" fill="#ececea"/>
+  <rect x="90" y="70" width="1420" height="860" fill="#fff" stroke="#161616" stroke-width="8"/>
+  <rect x="110" y="90" width="1380" height="64" fill="#242424"/>
+  <text x="130" y="134" font-family="Arial,Helvetica,sans-serif" font-size="33" font-weight="700" fill="#fff">SYNTHETIC LABEL — TEST ONLY — NOT VALID FOR SHIPPING</text>
+  <text x="140" y="300" font-family="Arial,Helvetica,sans-serif" font-size="78" font-weight="700">JORDAN SAMPLE</text>
+  <text x="140" y="400" font-family="Arial,Helvetica,sans-serif" font-size="68" font-weight="700">123 TEST PARCEL WAY</text>
+  <text x="140" y="485" font-family="Arial,Helvetica,sans-serif" font-size="64">UNIT 04</text>
+  <text x="140" y="570" font-family="Arial,Helvetica,sans-serif" font-size="70" font-weight="700">MIAMI FL 33101</text>
+  <line x1="110" y1="620" x2="1490" y2="620" stroke="#000" stroke-width="5"/>
+  <text x="140" y="700" font-family="Arial,Helvetica,sans-serif" font-size="44" font-weight="700">CARRIER: UPS (FICTIONAL TEST)</text>
+  <text x="140" y="780" font-family="Arial,Helvetica,sans-serif" font-size="46" font-weight="700">TRACKING: 1ZTEST000000000001</text>
+  <text x="140" y="855" font-family="Arial,Helvetica,sans-serif" font-size="31">SYNTHETIC DATA ONLY · NO REAL CUSTOMER / NO REAL SHIPMENT</text>
+</svg>

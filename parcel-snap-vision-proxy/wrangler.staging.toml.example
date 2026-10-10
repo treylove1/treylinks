@@ -1,0 +1,25 @@
+# STAGING TEMPLATE ONLY. Do not deploy until every REPLACE marker is resolved,
+# account plan/quota and name collision checked, and authorized staging reviewed.
+# Never use the production wrangler.toml for this test.
+name = "parcel-snap-camera-staging-20261008"
+main = "worker.mjs"
+compatibility_date = "2026-10-08"
+workers_dev = true
+routes = []
+
+[ai]
+binding = "AI"
+
+[vars]
+VISION_PROVIDER = "cloudflare"
+CF_VISION_MODEL = "@cf/google/gemma-4-26b-a4b-it"
+CF_VISION_FALLBACK_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+ALLOWED_ORIGIN = "REPLACE_WITH_EXACT_AUTHENTICATED_SCAN_ONLY_PREVIEW_ORIGIN"
+SUPABASE_URL = "REPLACE_WITH_APPROVED_AUTH_WORKSPACE_URL"
+SUPABASE_PUBLISHABLE_KEY = "REPLACE_WITH_PUBLIC_PUBLISHABLE_KEY_ONLY"
+
+[[ratelimits]]
+name = "RATE_LIMITER"
+# Reserve a new numeric namespace after checking this account; never reuse 10808.
+namespace_id = "REPLACE_WITH_VERIFIED_STAGING_NAMESPACE_ID"
+simple = { limit = 30, period = 60 }

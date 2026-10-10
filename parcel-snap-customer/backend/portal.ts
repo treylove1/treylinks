@@ -1,5 +1,6 @@
 import postgres from "npm:postgres@3.4.7";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { processArrival, createArrivalRepository, reviewSavedArrival, customerContactVersion, packageReviewVersion } from "./arrival-workflow.mjs";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL")!;
 const sql = postgres(DB_URL, { prepare: false, max: 1 });
@@ -105,16 +106,6 @@ async function canOperateFacility(userId: string, companyId: string, role: strin
   return Boolean(row);
 }
 
-function dataUrlToBytes(dataUrl: string) {
-  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || "");
-  if (!match) throw new Error("Invalid photo data");
-  const mime = match[1];
-  const binary = atob(match[2]);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return { mime, bytes };
-}
-
 async function hashInviteCode(codeValue: string) {
   const data = new TextEncoder().encode(codeValue.trim().toUpperCase());
   const digest = await crypto.subtle.digest("SHA-256", data);
@@ -135,96 +126,37 @@ async function integrationSecret(name: string) {
   return row?.secret_value ? String(row.secret_value) : "";
 }
 
-async function uploadPhoto(companyId: string, packageId: string, facilityId: string | null, kind: string, dataUrl: string) {
-  const { mime, bytes } = dataUrlToBytes(dataUrl);
-  if (bytes.byteLength > 10 * 1024 * 1024) throw new Error("Photo is too large");
-  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
-  const path = companyId + "/" + packageId + "/" + crypto.randomUUID() + "." + ext;
+const arrivalRepository = createArrivalRepository(sql);
 
-  const { error } = await admin.storage.from(PHOTO_BUCKET).upload(path, bytes, {
-    contentType: mime,
-    upsert: false
-  });
-  if (error) throw new Error("Photo upload failed");
-
-  await sql.unsafe(
-    "insert into parcel_snap.package_photos(company_id,package_id,facility_id,kind,storage_path,mime_type) values ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6)",
-    [companyId, packageId, facilityId, kind, path, mime]
-  );
-  return path;
+function arrivalDependencies() {
+  return {
+    repo: arrivalRepository,
+    storage: admin.storage.from(PHOTO_BUCKET),
+    assertPrivateStorage: async () => {
+      const { data, error } = await admin.storage.getBucket(PHOTO_BUCKET);
+      if (error || !data || data.public !== false) {
+        throw Object.assign(new Error("Private package-photo storage could not be verified. No arrival saved."), { status: 503 });
+      }
+    },
+    secret: integrationSecret,
+    fetch,
+    canOperate: canOperateFacility
+  };
 }
 
-async function sendArrivalEmail(args: {
-  companyId: string;
-  packageId: string;
-  customerId: string | null;
-  customerName: string;
-  customerEmail: string;
-  facilityId: string;
-  tracking: string | null;
-  eventType: string;
-  extractedText?: string;
-}) {
-  const resendKey = await integrationSecret("resend_api_key");
-  if (!resendKey) return { status: "FAILED", error: "Resend key missing" };
+async function saveArrival(body: any, companyId: string, userId: string, role: string, actor: string, kind: string) {
+  return await processArrival({ body, companyId, userId, role, actor, kind }, arrivalDependencies());
+}
 
-  const facility = await queryOne(
-    "select name, city, address_line1, address_line2, region, postal_code, country from parcel_snap.facilities where id = $1::uuid and company_id = $2::uuid limit 1",
-    [args.facilityId, args.companyId]
-  );
-  if (!facility) return { status: "FAILED", error: "Facility not found" };
-
-  const company = await queryOne(
-    "select name from parcel_snap.companies where id=$1::uuid limit 1",
-    [args.companyId]
-  );
-  const companyName = String(company?.name || "Parcel Snap");
-  const place = String(facility.city || facility.name || "warehouse");
-  const address = [
-    facility.address_line1,
-    facility.address_line2,
-    facility.city,
-    facility.region,
-    facility.postal_code,
-    facility.country
-  ].filter(Boolean).join(", ");
-
-  const subject = "Parcel Snap: Your package arrived in " + place;
-  const text =
-    "Hello " + args.customerName + ",\n\n" +
-    "Your package has arrived at our " + place + " warehouse and has been logged in Parcel Snap.\n" +
-    (address ? "Warehouse: " + address + "\n" : "") +
-    "Reference: " + (args.tracking || "No tracking number required") + "\n\n" +
-    (args.extractedText ? "Read from package photo:\n" + args.extractedText.slice(0,8000) + "\n\n" : "") +
-    "We will update you as the package moves through the shipping process.\n\n" +
-    companyName + "\nPowered by Parcel Snap";
-
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Authorization": "Bearer " + resendKey,
-      "Content-Type": "application/json",
-      "Idempotency-Key": args.packageId + "-" + args.eventType
-    },
-    body: JSON.stringify({
-      from: "Parcel Snap <notifications@yourelectronicneeds.org>",
-      to: [args.customerEmail],
-      subject,
-      text
-    })
-  });
-
-  const result = await r.json().catch(() => ({}));
-  const status = r.ok ? "SENT" : "FAILED";
-  const providerId = r.ok && result?.id ? String(result.id) : null;
-  const errorMessage = r.ok ? null : String(result?.message || "Email send failed");
-
-  await sql.unsafe(
-    "insert into parcel_snap.notifications(package_id,customer_id,event_type,recipient,provider,provider_message_id,status,error_message,sent_at) values ($1::uuid,$2::uuid,$3,$4,'RESEND',$5,$6,$7,case when $6='SENT' then now() else null end)",
-    [args.packageId, args.customerId, args.eventType, args.customerEmail, providerId, status, errorMessage]
-  );
-
-  return { status, provider_id: providerId, error: errorMessage };
+async function markPendingOriginReviews(packages: any[], companyId: string, role: string, scopedFacilities: string[]) {
+  for (const p of packages) {
+    p.origin_review_pending = false;
+    p.review_version = await packageReviewVersion(companyId, p);
+  }
+  if (!canWrite(role)) return;
+  const pending = await arrivalRepository.pendingOriginReviews(companyId, packages.map(p => p.id));
+  const allowed = new Set(pending.filter((n: any) => isAdmin(role) || scopedFacilities.includes(n.facility_id)).map((n: any) => n.package_id));
+  for (const p of packages) p.origin_review_pending = allowed.has(p.id);
 }
 
 async function workspace(companyId: string, userId: string, role: string) {
@@ -235,10 +167,16 @@ async function workspace(companyId: string, userId: string, role: string) {
       "select p.id, p.customer_id, p.tracking_number, p.carrier, p.size_class, p.weight_lb, p.payment_status, p.stage, p.origin_received_at, p.last_arrived_at, p.storage_started_at, p.free_storage_days, p.storage_rate_per_day, p.current_location_id, p.origin_facility_id, p.destination_facility_id, p.current_facility_id, p.updated_at, c.name as customer_name, c.email as customer_email, l.code as location_code, l.shelf, l.bin, l.zone_type, (select count(*) from parcel_snap.package_photos ph where ph.package_id=p.id) as photo_count from parcel_snap.packages p left join parcel_snap.customers c on c.id = p.customer_id left join parcel_snap.warehouse_locations l on l.id = p.current_location_id where p.company_id = $1::uuid order by p.updated_at desc limit 200",
       [companyId]
     );
+    await markPendingOriginReviews(packages, companyId, role, scopedFacilities);
     const customers = await queryMany(
-      "select c.id,c.name,c.customer_type,c.email,c.phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
+      "select c.id,c.xmin::text as contact_revision,c.name,c.customer_type,c.email,c.phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
       [companyId]
     );
+    for (const customer of customers) {
+      customer.contact_version = await customerContactVersion(companyId, customer);
+      delete customer.contact_revision;
+      customer.contact_email_visible = true;
+    }
     const facilities = await queryMany(
       "select id, code, name, facility_type, address_line1, address_line2, city, region, postal_code, country, notification_label, timezone, active from parcel_snap.facilities where company_id = $1::uuid order by facility_type, name",
       [companyId]
@@ -277,10 +215,17 @@ async function workspace(companyId: string, userId: string, role: string) {
     [companyId, scopedFacilities]
   );
 
+  await markPendingOriginReviews(packages, companyId, role, scopedFacilities);
   const customers = await queryMany(
-    "select c.id,c.name,c.customer_type,null::text as email,null::text as phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
+    "select c.id,c.xmin::text as contact_revision,c.name,c.customer_type,null::text as email,null::text as phone,c.status,c.updated_at,coalesce((select jsonb_agg(jsonb_build_object('alias',ca.alias,'alias_type',ca.alias_type) order by ca.alias_type,ca.alias) from parcel_snap.customer_aliases ca where ca.customer_id=c.id and ca.active=true),'[]'::jsonb) as aliases from parcel_snap.customers c where c.company_id=$1::uuid order by lower(c.name) limit 500",
     [companyId]
   );
+  for (const customer of customers) {
+    customer.contact_version = await customerContactVersion(companyId, customer);
+    delete customer.contact_revision;
+    customer.contact_email_visible = false;
+    customer.email = null;
+  }
 
   const facilities = await queryMany(
     "select id, code, name, facility_type, address_line1, address_line2, city, region, postal_code, country, notification_label, timezone, active from parcel_snap.facilities where company_id=$1::uuid and id = any($2::uuid[]) order by facility_type, name",
@@ -827,7 +772,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const row = await queryOne(
-        "insert into parcel_snap.customers(company_id,name,email,phone,customer_type,updated_at) values ($1::uuid,$2,$3,$4,$5,now()) returning id,name,email,phone,customer_type,status",
+        "insert into parcel_snap.customers(company_id,name,email,phone,customer_type,updated_at) values ($1::uuid,$2,$3,$4,$5,now()) returning id,name,email,phone,customer_type,status,xmin::text as contact_revision",
         [companyId, name, customerEmail, phone, customerType]
       );
 
@@ -856,6 +801,9 @@ Deno.serve(async (req: Request) => {
       }
 
       row.aliases = aliases;
+      row.contact_version = await customerContactVersion(companyId, row);
+      delete row.contact_revision;
+      row.contact_email_visible = true;
       return json(req, { ok: true, customer: row });
     }
 
@@ -921,151 +869,20 @@ Deno.serve(async (req: Request) => {
       return json(req, { ok: true, location: row });
     }
 
-    if (action === "receive_package") {
-      if (!canWrite(role)) return json(req, { error: "You do not have permission to receive packages." }, 403);
-      const customerId = String(body.customer_id || "");
-      const originFacilityId = String(body.origin_facility_id || "");
-      const destinationFacilityId = body.destination_facility_id ? String(body.destination_facility_id) : null;
-      if (!customerId || !originFacilityId) return json(req, { error: "Customer and receiving warehouse are required." }, 400);
-
-      const customer = await queryOne(
-        "select id,name,email from parcel_snap.customers where id=$1::uuid and company_id=$2::uuid limit 1",
-        [customerId, companyId]
-      );
-      if (!customer) return json(req, { error: "Customer not found." }, 404);
-
-      const facility = await queryOne(
-        "select id,name,city from parcel_snap.facilities where id=$1::uuid and company_id=$2::uuid limit 1",
-        [originFacilityId, companyId]
-      );
-      if (!facility) return json(req, { error: "Receiving warehouse not found." }, 404);
-      if (!(await canOperateFacility(userId, companyId, role, originFacilityId))) {
-        return json(req, { error: "You are not assigned to this receiving warehouse." }, 403);
-      }
-
-      const intakeId = body.intake_package_id ? String(body.intake_package_id) : crypto.randomUUID();
-      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(intakeId)) return json(req,{error:"Invalid intake identifier"},400);
-      const previous = await queryOne("select id,customer_id,stage,source_photo_url from parcel_snap.packages where id=$1::uuid and company_id=$2::uuid",[intakeId,companyId]);
-      if(previous){
-        if(String(previous.customer_id)!==customerId)return json(req,{error:"Intake belongs to a different customer"},409);
-        const notice=await queryOne("select status,provider_message_id from parcel_snap.notifications where package_id=$1::uuid and event_type='ORIGIN_ARRIVAL' order by sent_at desc nulls last limit 1",[intakeId]);
-        return json(req,{ok:true,package_id:previous.id,stage:previous.stage,photo_saved:Boolean(previous.source_photo_url),duplicate:true,email:notice||{status:customer.email?"REVIEW_REQUIRED":"EMAIL_NOT_LISTED"}});
-      }
-
-      const packageRow = await queryOne(
-        "insert into parcel_snap.packages(company_id,customer_id,tracking_number,carrier,size_class,weight_lb,payment_status,stage,origin_facility_id,destination_facility_id,current_facility_id,origin_received_at,last_arrived_at,ocr_name,ocr_tracking,ocr_confidence,ocr_raw_text,ocr_recipient_address,updated_at,id) values ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,'ORIGIN_RECEIVED',$8::uuid,$9::uuid,$8::uuid,now(),now(),$10,$11,$12,$13,$14,now(),$15::uuid) returning id,tracking_number,stage",
-        [companyId, customerId, body.tracking_number || null, body.carrier || null, body.size_class || "UNKNOWN", body.weight_lb ? Number(body.weight_lb) : null, body.payment_status || "UNKNOWN", originFacilityId, destinationFacilityId, body.ocr_name || null, body.ocr_tracking || null, body.ocr_confidence ? Number(body.ocr_confidence) : null, body.ocr_raw_text || null, body.ocr_recipient_address || null,intakeId]
-      );
-
-      let photoPath = null;
-      if (body.photo_data_url) {
-        photoPath = await uploadPhoto(companyId, String(packageRow.id), originFacilityId, "ARRIVAL", String(body.photo_data_url));
-        await sql.unsafe(
-          "update parcel_snap.packages set source_photo_url=$1 where id=$2::uuid",
-          [photoPath, String(packageRow.id)]
-        );
-      }
-
-      await sql.unsafe(
-        "insert into parcel_snap.package_events(package_id,event_type,site,note,actor_label) values ($1::uuid,'ORIGIN_RECEIVED',$2,$3,$4)",
-        [String(packageRow.id), String(facility.city || facility.name), "Package received and photographed", email || "PORTAL_USER"]
-      );
-
-      const assigned = await queryOne(
-        "select parcel_snap.assign_suggested_location($1::uuid,$2) as location_id",
-        [String(packageRow.id), email || "PORTAL_USER"]
-      );
-
-      let emailResult: {status:string;provider_id:string|null;error:string|null} = { status: customer.email ? "DISABLED" : "EMAIL_NOT_LISTED", provider_id: null, error: null };
-      const companyProfile = await queryOne(
-        "select needs_customer_notifications,notification_channels from parcel_snap.company_profiles where company_id=$1::uuid limit 1",
-        [companyId]
-      );
-      const emailEnabled = companyProfile?.needs_customer_notifications !== false
-        && (!Array.isArray(companyProfile?.notification_channels)
-            || companyProfile.notification_channels.includes("EMAIL"));
-      if (customer.email && emailEnabled) {
-        emailResult = await sendArrivalEmail({
-          companyId,
-          packageId: String(packageRow.id),
-          customerId,
-          customerName: String(customer.name),
-          customerEmail: String(customer.email),
-          facilityId: originFacilityId,
-          tracking: body.tracking_number ? String(body.tracking_number) : null,
-          extractedText:String(body.ocr_raw_text||""),
-          eventType: "ORIGIN_ARRIVAL"
-        });
-      }
-
-      return json(req, {
-        ok: true,
-        package_id: packageRow.id,
-        stage: packageRow.stage,
-        photo_saved: Boolean(photoPath),
-        assigned_location_id: assigned?.location_id || null,
-        email: emailResult
-      });
+    if (action === "review_saved_arrival") {
+      if (!canWrite(role)) return json(req, { error: "You do not have permission to review saved arrivals." }, 403);
+      const result = await reviewSavedArrival({ body, companyId, userId, role }, arrivalDependencies());
+      return json(req, result);
     }
 
-    if (action === "destination_arrival") {
-      if (!canWrite(role)) return json(req, { error: "You do not have permission to update package arrivals." }, 403);
-      const packageId = String(body.package_id || "");
-      const facilityId = String(body.facility_id || "");
-      const pkg = await queryOne(
-        "select p.id,p.customer_id,p.tracking_number,c.name as customer_name,c.email as customer_email from parcel_snap.packages p left join parcel_snap.customers c on c.id=p.customer_id where p.id=$1::uuid and p.company_id=$2::uuid limit 1",
-        [packageId, companyId]
-      );
-      if (!pkg) return json(req, { error: "Package not found." }, 404);
-
-      const facility = await queryOne(
-        "select id,name,city from parcel_snap.facilities where id=$1::uuid and company_id=$2::uuid limit 1",
-        [facilityId, companyId]
-      );
-      if (!facility) return json(req, { error: "Destination warehouse not found." }, 404);
-      if (!(await canOperateFacility(userId, companyId, role, facilityId))) {
-        return json(req, { error: "You are not assigned to this destination warehouse." }, 403);
+    if (action === "receive_package" || action === "destination_arrival") {
+      if (!canWrite(role)) return json(req, { error: "You do not have permission to save package arrivals." }, 403);
+      // Rollout starts paused. This is an ordinary non-secret safety flag, not a credential.
+      if (body.reconcile_notification !== true && Deno.env.get("PARCEL_ARRIVAL_WRITES_ENABLED") !== "true") {
+        return json(req, { error: "Package arrivals are temporarily paused for verification.", photo_saved: false }, 503);
       }
-
-      let photoPath = null;
-      if (body.photo_data_url) {
-        photoPath = await uploadPhoto(companyId, packageId, facilityId, "DESTINATION", String(body.photo_data_url));
-      }
-
-      await sql.unsafe(
-        "update parcel_snap.packages set destination_facility_id=$1::uuid,current_facility_id=$1::uuid,stage='DESTINATION_RECEIVED',last_arrived_at=now(),updated_at=now() where id=$2::uuid and company_id=$3::uuid",
-        [facilityId, packageId, companyId]
-      );
-      await sql.unsafe(
-        "insert into parcel_snap.package_events(package_id,event_type,site,note,actor_label) values ($1::uuid,'DESTINATION_RECEIVED',$2,$3,$4)",
-        [packageId, String(facility.city || facility.name), String(body.note || "").trim() || "Package arrived at destination warehouse", email || "PORTAL_USER"]
-      );
-
-      const assigned = await queryOne(
-        "select parcel_snap.assign_suggested_location($1::uuid,$2) as location_id",
-        [packageId, email || "PORTAL_USER"]
-      );
-
-      let emailResult = { status: "SKIPPED", provider_id: null, error: null };
-      if (pkg.customer_email) {
-        emailResult = await sendArrivalEmail({
-          companyId,
-          packageId,
-          customerId: pkg.customer_id ? String(pkg.customer_id) : null,
-          customerName: String(pkg.customer_name || "Customer"),
-          customerEmail: String(pkg.customer_email),
-          facilityId,
-          tracking: pkg.tracking_number ? String(pkg.tracking_number) : null,
-          eventType: "FACILITY_ARRIVAL_" + facilityId
-        });
-      }
-
-      return json(req, {
-        ok: true,
-        photo_saved: Boolean(photoPath),
-        assigned_location_id: assigned?.location_id || null,
-        email: emailResult
-      });
+      const result = await saveArrival(body, companyId, userId, role, email || "PORTAL_USER", action === "receive_package" ? "origin" : "destination");
+      return json(req, result);
     }
 
     const data = await workspace(companyId, userId, role);
@@ -1082,7 +899,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (err) {
     console.error(err);
-    return json(req, { error: err instanceof Error ? err.message : "Portal request failed." }, 500);
+    return json(req, { error: err instanceof Error ? err.message : "Portal request failed." }, Number((err as any)?.status) || 500);
   }
 });
 

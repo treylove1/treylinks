@@ -30,6 +30,10 @@ button,.linkButton{border:0;border-radius:10px;padding:11px 14px;font-weight:850
 .cameraBox{display:block;border:1px dashed #476a9a;border-radius:14px;padding:16px;background:#0b1729;cursor:pointer;margin-top:14px}
 .cameraBox span{display:block;font-weight:900;color:#dfe9f8}
 .cameraBox input{margin-top:10px}
+.photoSources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.photoSources .cameraBox{min-width:0}
+.photoHelp{font-size:.9rem;line-height:1.5;margin:8px 0 14px}
+@media(max-width:560px){.photoSources{grid-template-columns:1fr;gap:0}}
 .photoPreview{margin-top:10px}
 .photoPreview img{width:min(280px,100%);border-radius:12px;border:1px solid #314f75;display:block}
 .processing{margin-top:12px;background:#0a1628;border:1px solid #345477;border-radius:12px;padding:12px}

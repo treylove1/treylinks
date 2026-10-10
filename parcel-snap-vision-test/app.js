@@ -180,8 +180,63 @@ function cleanRecipientCandidate(value){
   return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(" ");
 }
 
+const destinationStreetRegex=/^\s*\d{1,6}\s+.*\b(?:ave|avenue|st|street|rd|road|blvd|boulevard|dr|drive|lane|ln|hwy|highway|way|ct|court|pl|place|circle|cir|terrace|ter)\b/i;
+const destinationCityZipRegex=/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i;
+
+function explicitDestinationEvidence(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const to=/^(?:(?:ship|deliver)\s*to|recipient|consignee|to)\b\s*[:\-]?\s*(.*)$/i;
+  if(lines.filter(line=>to.test(line)).length===1)return true;
+  return lines.filter(line=>/^(?:(?:your\s+)?electr[\W_]*[o0]nic\s+needs|yen)\s*[\\/|:\-]/i.test(line)).length===1;
+}
+
+function destinationBlock(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const to=/^(?:(?:ship|deliver)\s*to|recipient|consignee|to)\b\s*[:\-]?\s*(.*)$/i;
+  const from=/^(?:return\s+address|ship\s*from|sender|from)\b/i;
+  const starts=lines.map((line,index)=>to.test(line)?index:-1).filter(index=>index>=0);
+  if(starts.length===1){
+    const start=starts[0], block=[];
+    const inline=lines[start].match(to)[1];
+    if(inline&&!/^(?:[\s\/|:\-]|destination|recipient|address|consignee|deliver(?:y)?)*$/i.test(inline))block.push(inline);
+    for(let i=start+1;i<lines.length;i++){
+      if(from.test(lines[i])||/^(?:tracking|package\s+tracking|order\s+reference|partner\s+order|in\s+hand\s+date|1Z[A-Z0-9]{16}\b)/i.test(lines[i]))break;
+      block.push(lines[i]);
+    }
+    return block.join("\n");
+  }
+  // Never infer a destination from an unmarked label containing sender evidence.
+  if(starts.length||lines.some(line=>from.test(line)))return "";
+  const streetIndexes=lines.map((line,index)=>destinationStreetRegex.test(line)?index:-1).filter(index=>index>=0);
+  if(streetIndexes.length>1)return "";
+  // Retain the established YEN/customer alias when it is the sole identity block.
+  const aliases=lines.filter(line=>/^(?:(?:your\s+)?electr[\W_]*[o0]nic\s+needs|yen)\s*[\\/|:\-]/i.test(line));
+  if(aliases.length===1)return lines.slice(lines.indexOf(aliases[0])).join("\n");
+  // A single unmarked name/address may be displayed as tentative evidence only.
+  // It is never enough to auto-select, save or notify a customer.
+  if(streetIndexes.length===1){
+    const streetIndex=streetIndexes[0];
+    const nameIndex=streetIndex-1;
+    const cityIndex=lines.findIndex((line,index)=>index>streetIndex&&index<=streetIndex+3&&destinationCityZipRegex.test(line));
+    if(nameIndex>=0&&cityIndex>streetIndex&&cleanRecipientCandidate(lines[nameIndex])){
+      return lines.slice(nameIndex,cityIndex+1).join("\n");
+    }
+  }
+  return "";
+}
+
+function destinationIdentity(text){
+  const block=destinationBlock(text);
+  const names=[];
+  for(const line of block.split("\n")){
+    if(/^\d|\b[A-Z]{2}\s+\d{5}\b|tracking|order\s+reference/i.test(line))break;
+    if(line)names.push(line);
+  }
+  return names.join("\n");
+}
+
 function recipientAnalysis(text){
-  const raw=String(text||"").replace(/\r/g,"");
+  const raw=destinationBlock(text);
   const lines=raw.split("\n").map(x=>x.trim()).filter(Boolean);
 
   const streetRegex=/^\s*\d{3,6}\s+.*\b(?:NW|NE|SW|SE)?\s*(?:AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|DRIVE|LANE|LN|HWY|HIGHWAY)\b/i;
@@ -195,6 +250,9 @@ function recipientAnalysis(text){
       if(name)return {name,confidence:.97,reason:"business-slash-recipient"};
     }
   }
+
+  const firstName=cleanRecipientCandidate(lines[0]||"");
+  if(firstName)return {name:firstName,confidence:.95,reason:"explicit-destination-block"};
 
   for(let i=0;i<lines.length;i++){
     if(streetRegex.test(lines[i])){
@@ -244,7 +302,9 @@ function bestCustomerFromText(text){
   if(!workspace?.customers?.length)return null;
 
   if(window.ParcelSnapKnownMatcher){
-    const result=window.ParcelSnapKnownMatcher.matchDirectory(workspace.customers,text);
+    const identity=destinationIdentity(text);
+    if(!identity)return null;
+    const result=window.ParcelSnapKnownMatcher.matchDirectory(workspace.customers,identity);
     if(result.status==="MATCHED"&&result.customer){
       return {customer:result.customer,score:result.score,knownMatch:result};
     }
@@ -260,12 +320,24 @@ function bestCustomerFromText(text){
   return clear?best:null;
 }
 
+function validatedTracking(value,carrier=""){
+  const code=String(value||"").trim();
+  if(/^1Z[A-Z0-9]{16}$/i.test(code))return code;
+  if(carrier==="FedEx"&&/^(?:\d{12}|\d{15}|\d{20}|\d{22})$/.test(code))return code;
+  if(carrier==="USPS"&&/^(?:\d{20}|\d{22}|[A-Z]{2}\d{9}US)$/i.test(code))return code;
+  if(carrier==="Amazon"&&/^TBA\d{12,16}$/i.test(code))return code;
+  return "";
+}
+
 function guessTracking(text){
-  const raw=String(text||"");
-  const anchored=raw.match(/PACKAGE\s+TRACKING\s+CODE[\s\S]{0,120}?([A-Z0-9][A-Z0-9-]{7,40})/i);
-  if(anchored?.[1])return anchored[1];
-  const tokens=raw.match(/[A-Z0-9][A-Z0-9-]{8,35}/gi)||[];
-  return tokens.find(t=>!/^(ADDRESS|PACKAGE|CUSTOMER|TRACKING|ELECTRONIC|REFERENCE)$/i.test(t))||"";
+  const raw=String(text||""), candidates=new Set();
+  for(const hit of raw.matchAll(/\b1Z[A-Z0-9]{16}\b/gi))candidates.add(hit[0]);
+  const carrier=guessCarrier(raw);
+  for(const hit of raw.matchAll(/(?:PACKAGE\s+)?TRACKING(?:\s+(?:CODE|NUMBER|NO\.?|#))?\s*[:\-]?\s*([A-Z0-9]+)/gi)){
+    const code=validatedTracking(hit[1],carrier);
+    if(code)candidates.add(code);
+  }
+  return candidates.size===1?[...candidates][0]:"";
 }
 
 function guessCarrier(text){
@@ -279,7 +351,7 @@ function guessCarrier(text){
 }
 
 function guessRecipientAddress(text){
-  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const lines=destinationBlock(text).split("\n").map(x=>x.trim()).filter(Boolean);
   const nameCandidate=extractNameCandidate(text);
   let start=-1;
 
@@ -302,9 +374,10 @@ function guessRecipientAddress(text){
 
   if(start<0)return "";
   const collected=[];
-  for(let i=start;i<Math.min(lines.length,start+3);i++){
+  for(let i=start;i<Math.min(lines.length,start+4);i++){
     if(/order reference|partner order|in hand date|tracking code/i.test(lines[i]))break;
     collected.push(lines[i]);
+    if(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/i.test(lines[i]))break;
   }
   return collected.join(", ");
 }
@@ -854,8 +927,21 @@ function hideInlineCustomer(){
 
 function decideCustomer(text){
   const customers=workspace?.customers||[];
+  const identity=destinationIdentity(text);
+  if(!identity)return {customer:null,status:"NEEDS_REVIEW",candidate:null,score:0,margin:0,evidence:null};
+  const tentative=!explicitDestinationEvidence(text);
   if(window.ParcelSnapKnownMatcher&&customers.length){
-    const r=window.ParcelSnapKnownMatcher.matchDirectory(customers,text);
+    const r=window.ParcelSnapKnownMatcher.matchDirectory(customers,identity);
+    if(tentative){
+      return {
+        customer:null,
+        status:"NEEDS_REVIEW",
+        candidate:r.customer||r.candidate||null,
+        score:r.score||0,
+        margin:r.margin||0,
+        evidence:r.evidence||null
+      };
+    }
     return {
       customer:r.status==="MATCHED"?r.customer:null,
       status:r.status,
@@ -868,7 +954,9 @@ function decideCustomer(text){
 
   if(typeof bestCustomerFromText==="function"){
     const m=bestCustomerFromText(text);
-    if(m?.customer)return {...m,status:"MATCHED",candidate:m.customer,legacy:true};
+    if(m?.customer)return tentative
+      ?{customer:null,status:"NEEDS_REVIEW",candidate:m.customer,score:m.score||0,margin:0,evidence:null,legacy:true}
+      :{...m,status:"MATCHED",candidate:m.customer,legacy:true};
   }
 
   return {customer:null,status:"NO_MATCH",candidate:null,score:0,margin:0,evidence:null};
@@ -915,6 +1003,11 @@ function canBackgroundReplaceCustomer(){
 }
 
 function applyRecoveredCustomer(recovered,combined){
+  // In camera acceptance testing, recovery is evidence, not permission to assign customers.
+  if(window.PARCEL_SNAP_REVIEW_ONLY){
+    if(recovered?.customer)$("processingDetail").textContent="Possible customer: "+recovered.customer.name+" — confirm manually";
+    return false;
+  }
   if(!recovered||!recovered.customer||!canBackgroundReplaceCustomer())return false;
 
   intakeOcrText=combined;
@@ -1050,7 +1143,7 @@ async function readPackagePhoto(source,options={}){
     };
   }
 
-  let tracking=await barcodePromise;
+  let tracking=validatedTracking(await barcodePromise,guessCarrier(merged));
   if(token!==intakeReadToken){
     return {
       superseded:true,
@@ -1066,10 +1159,13 @@ async function readPackagePhoto(source,options={}){
   if(!tracking)tracking=guessTracking(merged);
 
   intakeOcrText=merged;
-  intakeOcrName=decision.customer?.name||extractNameCandidate(merged)||"";
+  intakeOcrName=window.PARCEL_SNAP_REVIEW_ONLY
+    ?(extractNameCandidate(merged)||"")
+    :(decision.customer?.name||extractNameCandidate(merged)||"");
   intakeOcrAddress=guessRecipientAddress(merged)||"";
 
   $("receiveTracking").value=tracking||"";
+  $("receiveTracking").dataset.needsReview=tracking?"false":"true";
 
   const carrier=guessCarrier(merged);
   if(carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=carrier;
@@ -1080,7 +1176,7 @@ async function readPackagePhoto(source,options={}){
   }
   const customers=workspace?.customers||[];
 
-  if(decision.customer){
+  if(decision.customer&&!window.PARCEL_SNAP_REVIEW_ONLY){
     $("receiveCustomer").value=decision.customer.id;
     hideInlineCustomer();
     $("processingText").textContent=decision.customer.name;
@@ -1092,14 +1188,15 @@ async function readPackagePhoto(source,options={}){
     showInlineCustomer("");
     $("receiveNewCustomerName").value=intakeOcrName;
 
-    const suggestion=decision.candidate&&(decision.status==="REVIEW"||decision.status==="AMBIGUOUS")
-      ?"Possible: "+decision.candidate.name+" — please confirm · "
+    const suggestedCustomer=decision.customer||decision.candidate;
+    const suggestion=suggestedCustomer
+      ?"Possible: "+suggestedCustomer.name+" — please confirm · "
       :"";
 
     $("processingText").textContent=intakeOcrName||"Name not clear";
     $("processingDetail").textContent=suggestion+(tracking
       ?"Email not listed · tracking captured · "+elapsed+"s"
-      :"Email not listed · "+elapsed+"s");
+      :"NEEDS REVIEW · tracking not read or unverified · "+elapsed+"s");
 
     if(customers.length){
       runDeepRecovery(ocrSource,token,merged,{
@@ -1149,6 +1246,7 @@ function renderLabelReadout(){
 }
 
 async function autoReceiveMatchedPhoto(local,vision){
+  if(window.PARCEL_SNAP_REVIEW_ONLY)return; // Never save or notify unattended during camera validation.
   const token=local?.read_token;
   if(!token||token!==intakeReadToken||autoReceivedToken===token||receiveInFlight)return;
   const customer=(workspace?.customers||[]).find(c=>c.id===$("receiveCustomer").value);
@@ -1825,6 +1923,10 @@ $("addFacilityButton").onclick=async()=>{
 };
 
 async function receivePackage(){
+  if(window.PARCEL_SNAP_REVIEW_ONLY){
+    $("receiveResult").textContent="Camera review only — package saving and notifications are disabled.";
+    return;
+  }
   if(receiveInFlight)return;
   receiveInFlight=true;
   let customer_id=$("receiveCustomer").value;
@@ -2085,3 +2187,4 @@ if("requestIdleCallback" in window){
 
 sb.auth.onAuthStateChange((_event,session)=>{if(!session){$("authView").classList.remove("hidden");$("appView").classList.add("hidden")}});
 boot();
+
