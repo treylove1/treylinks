@@ -209,23 +209,27 @@
     $("receiveNewCustomerName").value="";
     $("labelReadout").classList.add("hidden");
 
+    let instantUrl=null;
     try {
       $("processingBox").classList.remove("hidden");
       $("processingText").textContent = "Reading package…";
       $("processingDetail").textContent = "";
 
       // Instant visual feedback before any OCR/image preparation work.
-      const instantUrl=URL.createObjectURL(file);
+      instantUrl=URL.createObjectURL(file);
       $("packagePhotoPreview").innerHTML=
         '<img src="' + instantUrl + '" alt="Package photo">';
 
       // Yield one frame so the employee sees the photo immediately.
       await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
-      if(selectionGeneration!==packageSelectionGeneration){URL.revokeObjectURL(instantUrl);return;}
+      if(selectionGeneration!==packageSelectionGeneration)return;
 
       const prepared=await preparePackageImages(file);
-      if(selectionGeneration!==packageSelectionGeneration){URL.revokeObjectURL(instantUrl);return;}
+      if(selectionGeneration!==packageSelectionGeneration)return;
       intakePhotoDataUrl=prepared.preview;
+      // Review the exact encoded image that receivePackage submits and stores.
+      $("packagePhotoPreview").innerHTML=
+        '<img src="' + intakePhotoDataUrl + '" alt="Package photo">';
 
       const visionPromise=analyzePackageWithVision(prepared.vision)
         .catch(error=>{
@@ -235,7 +239,6 @@
 
       // Do not wait for remote vision. Local OCR owns the fast path.
       const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt,readToken:selectionToken,editGeneration});
-      URL.revokeObjectURL(instantUrl);
       if(selectionGeneration!==packageSelectionGeneration||local?.superseded)return;
       intakeOcrAddress=local.address||"";
 
@@ -265,6 +268,7 @@
       }
       $("processingDetail").textContent = "Enter customer name and email";
     } finally {
+      if(instantUrl)URL.revokeObjectURL(instantUrl);
       if(selectionGeneration===packageSelectionGeneration)intakePhotoPending=false;
     }
   };

@@ -12,6 +12,12 @@ Checkpoint: 2026-10-10. This is reviewed source plus isolated synthetic tests. I
 - An unattempted PENDING origin draft can recover its original package ID, verified private photo and editable metadata. Corrections use that same package instead of creating a duplicate. Recovery is read-only, restricted to the authorized company/origin facility, and rejects concurrent changes.
 - Metadata-only corrections are persisted transactionally even when the existing notice fingerprint does not change. Attempted PENDING and SENT/SENDING/UNKNOWN payloads remain immutable. Existing explicit, same-payload FAILED retry behavior is retained.
 
+## Native-driver and displayed-photo follow-up
+
+The first native PostgreSQL CI run exposed a postgres.js parameter-encoding difference not represented by the earlier WASM adapter: binding already-serialized JSON directly to a jsonb parameter encoded it again as a JSON string. Both ledger INSERT and editable-PENDING UPDATE now cast the serialized parameter through text before jsonb. Regression checks cover native driver inference, stored object shape, same-ledger corrections, exact outgoing envelope and attachment bytes; read the exact commit's native CI result before relying on that gate.
+
+After image preparation, the browser now displays the exact prepared JPEG held for submission, replacing the temporary original-image preview before OCR/review. Regression checks compare displayed data with the actual receive payload and reject stale photo selections. This does not substitute for physical-camera or live Storage acceptance.
+
 ## Photo and send safety
 
 The portal requires the existing private photo bucket. Company/package/event/content-hash object paths are immutable, and downloaded bytes are checked against the saved SHA-256. The attachment relationship is checked server-side against the company, package, customer, facility and event. Client addresses or paths cannot override it.
@@ -46,7 +52,7 @@ node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test \
   parcel-snap-customer/tests/customer-arrival-integration.test.mjs
 ```
 
-On the frozen public-safe candidate, this combined command passed 279 tests with zero failures. Separate smoke and pure configuration results are recorded independently; native concurrency and real service delivery are not counted in that result.
+On the frozen public-safe candidate, this combined command passed 283 tests with zero failures. Separate smoke and pure configuration results are recorded independently; native concurrency and real service delivery are not counted in that result.
 
 The network guard fails accidental global HTTP/socket access. Application transports are injected capture functions. Cross-layer tests exercise real customer event handlers, an actual fictional JPEG, local Tesseract and the production SQL adapter on isolated PostgreSQL-WASM; DOM/auth envelopes, private Storage and mail are substituted. The workflow separately covers portal/private-bucket/default-pause, photo parser, onboarding and the previously published frozen preview.
 

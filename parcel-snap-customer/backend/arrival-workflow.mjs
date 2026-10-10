@@ -206,6 +206,8 @@ export async function reviewSavedArrival(input,deps){
 }
 
 export function createArrivalRepository(sql){
+ // Payload parameters are already JSON text. Cast through text so postgres.js
+ // binds them as text, rather than JSON-stringifying an inferred jsonb twice.
  const one=async(q,p=[],db=sql)=>(await db.unsafe(q,p))[0]||null;
  const findNotice=(c,db=sql,lock=false)=>one('select * from parcel_snap.arrival_notices where company_id=$1::uuid and package_id=$2::uuid and event_type=$3'+(lock?' for update':''),[c.companyId,c.packageId,c.eventType],db);
  const mutable=notice=>notice?.status==='PENDING'&&Number(notice.attempt_count)===0;
@@ -292,7 +294,7 @@ export function createArrivalRepository(sql){
      if(c.kind==='origin')await tx.unsafe('update parcel_snap.packages set customer_id=$1::uuid,tracking_number=$2,ocr_tracking=$2,destination_facility_id=$3::uuid,updated_at=now() where id=$4::uuid and company_id=$5::uuid',[c.customer.id,c.tracking||null,c.body.destination_facility_id||null,c.packageId,c.companyId]);
      const photo=await one('insert into parcel_snap.package_photos(company_id,package_id,facility_id,kind,storage_path,mime_type) values ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6) returning id',[c.companyId,c.packageId,c.facilityId,c.kind==='origin'?'ARRIVAL':'DESTINATION',c.photoPath,c.photo.mime],tx);
      if(c.kind==='origin')await tx.unsafe('update parcel_snap.packages set source_photo_url=$1 where id=$2::uuid and company_id=$3::uuid',[c.photoPath,c.packageId,c.companyId]);
-     notice=await one('update parcel_snap.arrival_notices set customer_id=$2::uuid,photo_id=$3::uuid,photo_path=$4,photo_mime=$5,photo_sha256=$6,fingerprint=$7,payload=$8::jsonb,updated_at=now() where id=$1::uuid and status=\'PENDING\' and attempt_count=0 returning *',[notice.id,c.customer.id,photo.id,c.photoPath,c.photo.mime,c.photo.digest,c.fingerprint,JSON.stringify(c.payload)],tx);
+     notice=await one('update parcel_snap.arrival_notices set customer_id=$2::uuid,photo_id=$3::uuid,photo_path=$4,photo_mime=$5,photo_sha256=$6,fingerprint=$7,payload=$8::text::jsonb,updated_at=now() where id=$1::uuid and status=\'PENDING\' and attempt_count=0 returning *',[notice.id,c.customer.id,photo.id,c.photoPath,c.photo.mime,c.photo.digest,c.fingerprint,JSON.stringify(c.payload)],tx);
      if(!notice)fail('This notification has already been claimed. Review before changing it.',409);
      return {notice,duplicate:true,stage:p.stage,locationId:p.current_location_id};
     }
@@ -309,7 +311,7 @@ export function createArrivalRepository(sql){
     await tx.unsafe('insert into parcel_snap.package_events(package_id,event_type,site,note,actor_label) values ($1::uuid,$2,$3,$4,$5)',[c.packageId,c.kind==='origin'?'ORIGIN_RECEIVED':'DESTINATION_RECEIVED',String(c.facility.city||c.facility.name),arrivalNote(c.body),c.actor||'PORTAL_USER']);
     await one('select parcel_snap.assign_suggested_location($1::uuid,$2) as location_id',[c.packageId,c.actor||'PORTAL_USER'],tx);
     const legacyAccepted=legacy&&['SENT','DELIVERED','BOUNCED'].includes(legacy.status);
-    notice=await one("insert into parcel_snap.arrival_notices(company_id,package_id,customer_id,facility_id,event_type,photo_id,photo_path,photo_mime,photo_sha256,fingerprint,payload,status,provider_message_id,error_message) values ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6::uuid,$7,$8,$9,$10,$11::jsonb,$12,$13,$14) returning *",[c.companyId,c.packageId,c.customer.id,c.facilityId,c.eventType,photo.id,c.photoPath,c.photo.mime,c.photo.digest,c.fingerprint,JSON.stringify(c.payload),legacyAccepted?'SENT':legacyUncertain?'UNKNOWN':'PENDING',legacy?.provider_message_id||null,legacyUncertain?'Legacy intake requires provider reconciliation before a new send.':null],tx);
+    notice=await one("insert into parcel_snap.arrival_notices(company_id,package_id,customer_id,facility_id,event_type,photo_id,photo_path,photo_mime,photo_sha256,fingerprint,payload,status,provider_message_id,error_message) values ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6::uuid,$7,$8,$9,$10,$11::text::jsonb,$12,$13,$14) returning *",[c.companyId,c.packageId,c.customer.id,c.facilityId,c.eventType,photo.id,c.photoPath,c.photo.mime,c.photo.digest,c.fingerprint,JSON.stringify(c.payload),legacyAccepted?'SENT':legacyUncertain?'UNKNOWN':'PENDING',legacy?.provider_message_id||null,legacyUncertain?'Legacy intake requires provider reconciliation before a new send.':null],tx);
     // Location assignment can also advance DESTINATION_RECEIVED to WAREHOUSED.
     // Read the committed-to-be row in this same transaction rather than the stale insert/update snapshot.
     const finalPackage=await one('select stage,current_location_id from parcel_snap.packages where id=$1::uuid and company_id=$2::uuid',[c.packageId,c.companyId],tx);

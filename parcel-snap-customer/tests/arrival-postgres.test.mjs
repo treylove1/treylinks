@@ -41,6 +41,27 @@ test('actual PostgreSQL schema/adapter validation, isolated in-memory with synth
   const n=(await db.query('select status,attempt_count,confirmed_by from parcel_snap.arrival_notices where package_id=$1',[h.input.body.intake_package_id])).rows[0];assert.equal(n.status,'SENT');assert.equal(n.attempt_count,1);assert.equal(n.confirmed_by,id(6));
   await assert.rejects(()=>db.query('insert into parcel_snap.arrival_notices(company_id,package_id,customer_id,facility_id,event_type,photo_id,photo_path,photo_mime,photo_sha256,fingerprint,payload) select company_id,package_id,customer_id,facility_id,event_type,photo_id,photo_path,photo_mime,photo_sha256,fingerprint,payload from parcel_snap.arrival_notices where package_id=$1',[h.input.body.intake_package_id]),e=>e.code==='23505');
  });
+ await t.test('serialized ledger payload binds as text on INSERT and pending UPDATE',async()=>{
+  const queries=[];
+  // Mirror the pinned postgres.js 3.4.7 serializer only for explicitly inferred
+  // jsonb parameters. This guarded check complements, not replaces, native CI.
+  const nativeLike=db=>({unsafe:async(q,args=[])=>{
+   queries.push(q);
+   const bound=args.map((value,index)=>new RegExp('\\$'+(index+1)+'::jsonb\\b').test(q)&&value!==null?JSON.stringify(value):value);
+   return (await db.query(q,bound)).rows;
+  },begin:fn=>db.transaction(tx=>fn(nativeLike(tx)))});
+  const h=await harness();h.deps.repo=createArrivalRepository(nativeLike(db));h.input.body.label_confirmed=false;
+  assert.equal((await h.run()).email.status,'REVIEW_REQUIRED');
+  const first=(await db.query('select id,payload,jsonb_typeof(payload) as shape from parcel_snap.arrival_notices where package_id=$1',[h.input.body.intake_package_id])).rows[0];
+  assert.equal(first.shape,'object');assert(Array.isArray(first.payload.to));
+  h.input.body.tracking_number='CORRECTED "QUOTE" \\ café';assert.equal((await h.run()).email.status,'REVIEW_REQUIRED');
+  const updated=(await db.query('select id,payload,jsonb_typeof(payload) as shape from parcel_snap.arrival_notices where package_id=$1',[h.input.body.intake_package_id])).rows[0];
+  assert.equal(updated.id,first.id);assert.equal(updated.shape,'object');assert(updated.payload.text.includes(h.input.body.tracking_number));
+  assert(queries.some(q=>q.startsWith('insert into parcel_snap.arrival_notices')&&q.includes('$11::text::jsonb')));
+  assert(queries.some(q=>q.startsWith('update parcel_snap.arrival_notices set customer_id=')&&q.includes('payload=$8::text::jsonb')));
+  h.input.body.label_confirmed=true;assert.equal((await h.run()).email.status,'SENT');assert.equal(h.calls.length,1);
+  const {attachments,...sent}=JSON.parse(h.calls[0].body);assert.deepEqual(sent,updated.payload);assert.equal(attachments.length,1);
+ });
  await t.test('deferred ownership FK permits only unattempted draft correction under same intake ID',async()=>{
   const h=await harness();h.input.body.label_confirmed=false;assert.equal((await h.run()).email.status,'REVIEW_REQUIRED');h.input.body.customer_id=id(22);h.input.body.confirmed_customer_id=id(22);h.input.body.confirmed_customer_contact_version=correctedContactVersion;h.input.body.tracking_number='000NEW123456';h.input.body.label_confirmed=true;assert.equal((await h.run()).email.status,'SENT');assert.deepEqual(JSON.parse(h.calls[0].body).to,['corrected@example.test']);
  });

@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {processArrival,createArrivalRepository,customerContactVersion} from '../../backend/arrival-workflow.mjs';
+import {processArrival,createArrivalRepository,customerContactVersion,buildArrivalPayload} from '../../backend/arrival-workflow.mjs';
 import {nativeTestConfig} from './native-test-config.mjs';
 const config=nativeTestConfig();
 const {default:postgres}=await import(new URL('./node_modules/postgres/src/index.js',import.meta.url));
@@ -35,6 +35,28 @@ test('native PostgreSQL independent connections, advisory locks, concurrent clai
   const deps=s=>({repo:createArrivalRepository(s),storage,assertPrivateStorage:async()=>{},canOperate:async()=>true,secret:async()=>'synthetic-only',fetch:async(url,init)=>{calls.push({url,...init});await new Promise(r=>setTimeout(r,40));if(flags.timeout)throw Error('Synthetic uncertain provider acceptance');return new Response(JSON.stringify({id:'synthetic-message'}));}});
   return {input,calls,flags,run:s=>processArrival(input,deps(s)),repo:s=>createArrivalRepository(s)};
  }
+ await t.test('pinned native driver binds serialized JSON through text without double encoding',async()=>{
+  const payload={to:['recipient@example.test'],text:'Quotes " and backslash \\ and Unicode café'};
+  const text=JSON.stringify(payload);
+  const [inferred]=await a.unsafe('select jsonb_typeof($1::jsonb) as shape',[text]);
+  assert.equal(inferred.shape,'string','pins the native-driver behavior that caused the regression');
+  const [explicit]=await a.unsafe('select jsonb_typeof($1::text::jsonb) as shape,$1::text::jsonb as payload',[text]);
+  assert.equal(explicit.shape,'object');assert.deepEqual(explicit.payload,payload);
+ });
+ await t.test('ledger INSERT and pending UPDATE preserve an object envelope and send the exact corrected payload',async()=>{
+  const h=scenario();h.input.body.label_confirmed=false;
+  assert.equal((await h.run(a)).email.status,'REVIEW_REQUIRED');
+  const [first]=await observer`select id,payload,jsonb_typeof(payload) as shape,attempt_count from parcel_snap.arrival_notices where package_id=${h.input.body.intake_package_id}`;
+  assert.equal(first.shape,'object');assert(Array.isArray(first.payload.to));assert.equal(first.attempt_count,0);
+  h.input.body.tracking_number='CORRECTED "QUOTE" \\ café';
+  assert.equal((await h.run(b)).email.status,'REVIEW_REQUIRED');
+  const [updated]=await observer`select id,payload,jsonb_typeof(payload) as shape,attempt_count from parcel_snap.arrival_notices where package_id=${h.input.body.intake_package_id}`;
+  const expected=buildArrivalPayload({customer:{name:'Synthetic Recipient',email:'recipient@example.test'},tracking:h.input.body.tracking_number,facility:{name:'Origin',city:'Test City'},companyName:'Synthetic Shipping'});
+  assert.equal(updated.id,first.id);assert.equal(updated.shape,'object');assert.equal(updated.attempt_count,0);assert.deepEqual(updated.payload,expected);
+  h.input.body.label_confirmed=true;assert.equal((await h.run(a)).email.status,'SENT');assert.equal(h.calls.length,1);
+  const sent=JSON.parse(h.calls[0].body),{attachments,...envelope}=sent;
+  assert.deepEqual(envelope,expected);assert.equal(attachments.length,1);assert.deepEqual(Buffer.from(attachments[0].content,'base64'),photo);
+ });
  await t.test('prepare waits on an advisory lock owned by an independent backend then resumes',async()=>{
   const h=scenario();let release,locked;
   const wait=new Promise(r=>release=r),ready=new Promise(r=>locked=r);
@@ -52,7 +74,7 @@ test('native PostgreSQL independent connections, advisory locks, concurrent clai
   const h=scenario();h.input.body.label_confirmed=false;await h.run(a);const [notice]=await a`select * from parcel_snap.arrival_notices where package_id=${h.input.body.intake_package_id}`;
   const wins=await Promise.all([h.repo(a).claim(notice,id(6),customerRevision.contact_revision,h.input.body.tracking_number),h.repo(b).claim(notice,id(6),customerRevision.contact_revision,h.input.body.tracking_number)]);assert.equal(wins.filter(Boolean).length,1);
  });
- await t.test('invalid input rejects before preparation and allows same-ID retry',async()=>{
+ await t.test('invalid preflight rejects before parcel, event and ledger writes, then same-ID retry succeeds',async()=>{
   const h=scenario();h.input.body.size_class='INVALID';await assert.rejects(()=>h.run(a),e=>e.status===400);const [r]=await observer`select count(*) as count from parcel_snap.packages where id=${h.input.body.intake_package_id}`;assert.equal(Number(r.count),0);assert.equal(h.calls.length,0);h.input.body.size_class='UNKNOWN';assert.equal((await h.run(b)).email.status,'SENT');
  });
  await t.test('UNKNOWN persists across independent connection/repository and blocks another send',async()=>{

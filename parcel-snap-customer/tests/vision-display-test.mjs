@@ -18,7 +18,7 @@ const candidate={recipient_name:'Jordan Sample',confidence:.8,needs_review:true,
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
 function harness({customers=[customer],localText=''}={}){
-  const nodes=new Map(),pending=[],writes=[],requests=[];
+  const nodes=new Map(),pending=[],writes=[],requests=[],revoked=[];
   const node=id=>{
     if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',innerHTML:'',dataset:{},
       classList:{add(){},remove(){},toggle(){}}});
@@ -26,7 +26,7 @@ function harness({customers=[customer],localText=''}={}){
   };
   const ctx=vm.createContext({console,performance,setTimeout,window:{},
     document:{getElementById:node},crypto:{randomUUID:()=> 'fictional-photo'},
-    URL:{createObjectURL:()=> 'blob:fictional',revokeObjectURL(){}},
+    URL:{createObjectURL:file=> 'blob:'+file.name,revokeObjectURL:url=>revoked.push(url)},
     requestAnimationFrame:fn=>fn(),
     supabase:{createClient:()=>({auth:{getSession:async()=>({data:{session:{access_token:'fictional-session'}}})}})},
     async fetch(url,options){
@@ -55,7 +55,7 @@ function harness({customers=[customer],localText=''}={}){
     preparePackageImages=async file=>({preview:'data:image/jpeg;base64,FICTIONAL',
       vision:'data:image/jpeg;base64,'+file.name,ocrCanvas:{width:800,height:500},rawOcrCanvas:{width:800,height:500}});`,ctx);
   vm.runInContext(vision,ctx);
-  return {ctx,node,pending,writes,requests,
+  return {ctx,node,pending,writes,requests,revoked,
     run:code=>vm.runInContext(code,ctx),
     async select(name='fictional-label'){await node('packagePhoto').onchange({target:{files:[{name}]}});await settle();},
     async answer(result,index=0){assert(pending[index],'vision request exists');pending[index](result);await settle();await settle();}
@@ -265,4 +265,33 @@ test('successful receive invalidates the late vision response before it can repo
   h.node('receiveOrigin').value='origin';h.node('receiveCustomer').value=other.id;h.node('receiveCustomer').onchange();
   await h.run('receivePackage()');await h.answer(candidate);
   assert.equal(h.run('intakePhotoDataUrl'),null);assert.equal(h.node('receiveNewCustomerName').value,'');
+});
+
+
+test('prepared review photo is byte-identical to saved data before OCR finishes',async()=>{
+  const h=harness(),ocr=deferred();h.ctx.ocrWait=ocr.promise;h.run('fastOcrRecognizeDetailed=()=>ocrWait');
+  const reading=h.node('packagePhoto').onchange({target:{files:[{name:'original-label'}]}});await settle();
+  assert.equal(h.node('packagePhotoPreview').innerHTML,'<img src="'+h.run('intakePhotoDataUrl')+'" alt="Package photo">');
+  assert.doesNotMatch(h.node('packagePhotoPreview').innerHTML,/blob:/);
+  ocr.resolve({text:'',blocks:[]});await reading;
+  assert.equal(h.node('packagePhotoPreview').innerHTML,'<img src="'+h.run('intakePhotoDataUrl')+'" alt="Package photo">');
+  assert.deepEqual(h.revoked,['blob:original-label']);assert.deepEqual(h.writes,[]);
+});
+
+test('late image preparation cannot replace the newer displayed or saved photo',async()=>{
+  const h=harness(),old=deferred();h.ctx.oldPrepared=old.promise;
+  h.run('preparePackageImages=file=>file.name==="old"?oldPrepared:Promise.resolve({preview:"data:image/jpeg;base64,NEW",vision:"data:image/jpeg;base64,NEW",ocrCanvas:{width:800,height:500},rawOcrCanvas:{width:800,height:500}})');
+  const first=h.node('packagePhoto').onchange({target:{files:[{name:'old'}]}});await settle();
+  await h.select('new');
+  old.resolve({preview:'data:image/jpeg;base64,OLD'});await first;
+  assert.equal(h.run('intakePhotoDataUrl'),'data:image/jpeg;base64,NEW');
+  assert.equal(h.node('packagePhotoPreview').innerHTML,'<img src="data:image/jpeg;base64,NEW" alt="Package photo">');
+  assert.deepEqual(h.revoked.sort(),['blob:new','blob:old']);assert.deepEqual(h.writes,[]);
+});
+
+test('failed image preparation revokes the transient original and leaves no saved photo',async()=>{
+  const h=harness();h.ctx.console={...console,error(){}};
+  h.run('preparePackageImages=async()=>{throw Error("Fictional image decode failed")}');
+  await h.select('bad-image');assert.equal(h.run('intakePhotoDataUrl'),null);
+  assert.equal(h.run('intakePhotoPending'),false);assert.deepEqual(h.revoked,['blob:bad-image']);assert.deepEqual(h.writes,[]);
 });
