@@ -295,3 +295,24 @@ test('failed image preparation revokes the transient original and leaves no save
   await h.select('bad-image');assert.equal(h.run('intakePhotoDataUrl'),null);
   assert.equal(h.run('intakePhotoPending'),false);assert.deepEqual(h.revoked,['blob:bad-image']);assert.deepEqual(h.writes,[]);
 });
+
+test('decoded barcode disagreement must survive a later single vision answer',async()=>{
+ const h=harness({customers:[]});
+ h.run(`detectBarcode=async()=>[{rawValue:'TBA000000000123',format:'DataMatrix',decoded:true},{rawValue:'TBA000000000456',format:'DataMatrix',decoded:true}]`);
+ await h.select();
+ assert.equal(h.run('intakeTrackingReview.status'),'CONFLICT');
+ assert.equal(h.node('receiveTracking').value,'');
+ await h.answer({recipient_name:'',tracking_code:'TBA000000000123',carrier:'Amazon',confidence:1,needs_review:false});
+ assert.equal(h.run('intakeTrackingReview.status'),'CONFLICT');
+ assert.equal(h.node('receiveTracking').value,'');
+});
+test('OCR/barcode disagreement must survive unrelated vision tracking',async()=>{
+ const h=harness({customers:[],localText:'AMAZON\nTRACKING: TBA000000000456'});
+ h.run(`detectBarcode=async()=>[{rawValue:'TBA000000000123',format:'DataMatrix',decoded:true}]`);
+ await h.select();
+ assert.equal(h.run('intakeTrackingReview.status'),'CONFLICT');
+ assert.equal(h.node('receiveTracking').value,'');
+ await h.answer({recipient_name:'',tracking_code:'TBA000000000789',carrier:'Amazon',confidence:1,needs_review:false});
+ assert.equal(h.run('intakeTrackingReview.status'),'CONFLICT');
+ assert.equal(h.node('receiveTracking').value,'');
+});

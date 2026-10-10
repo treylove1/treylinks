@@ -37,8 +37,8 @@ function harness({useVision=true}={}){
   run(`workspace={customers:[fixtureCustomer],packages:[fixtureParcel],facilities:[{id:"synthetic-destination",name:"Synthetic destination",active:true}]};loadWorkspace=async()=>{};
     toCanvas=async x=>x;estimateSkewDegrees=()=>0;deskewCanvas=x=>x;flattenOcrLines=()=>[];
     fastOcrRecognizeDetailed=async()=>({text:'',blocks:[]});detectBarcode=async()=>'';runDeepRecovery=async()=>null;`);
-  ctx.preparePackageImages=async file=>{prepared.push(file);return {preview:preview(file),vision:'data:image/jpeg;base64,VISION-'+file.name,ocrCanvas:{width:800,height:500},rawOcrCanvas:{width:800,height:500}};};
-  ctx.compressImage=async file=>{prepared.push(file);return preview(file);};ctx.prepareOcrImage=async file=>preview(file);
+  ctx.preparePackageImages=async file=>{prepared.push(file);return {preview:preview(file),vision:'data:image/jpeg;base64,VISION-'+file.name,ocrCanvas:{width:800,height:500},rawOcrCanvas:{width:800,height:500},barcodeCanvas:{width:1200,height:1800}};};
+  ctx.compressImage=async file=>{prepared.push(file);return preview(file);};ctx.prepareOcrImage=async file=>preview(file);ctx.prepareBarcodeImage=async()=>({width:1200,height:1800});
   ctx.readFileDataUrl=async file=>{prepared.push(file);return preview(file);};ctx.resizeDataUrl=async data=>data;
   ctx.analyzeTransferImage=async()=>({tracking:'',customer:null,tracking_status:'EMPTY'});
   ctx.api=async body=>{requests.push(structuredClone(body));return {photo_saved:true,email:{status:'SENT'}};};

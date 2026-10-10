@@ -146,7 +146,7 @@ test('receiving is blocked while a replacement photo is still being prepared',as
 
 test('fallback photo event clears old data immediately, reserves identity and blocks overlap',async()=>{
   const h=harness();let uuid=0;h.ctx.crypto.randomUUID=()=> 'photo-'+(++uuid);
-  h.run('compressImage=()=>new Promise(()=>{});prepareOcrImage=()=>new Promise(()=>{})');
+  h.run('compressImage=()=>new Promise(()=>{});prepareOcrImage=()=>new Promise(()=>{});prepareBarcodeImage=()=>new Promise(()=>{})');
   const start=app.indexOf('$("packagePhoto").onchange=');
   h.run(app.slice(start,app.indexOf('async function createReceiveCustomer()',start)));
   h.node('packagePhoto').onchange({target:{files:[{name:'first'}]}});
@@ -423,7 +423,7 @@ for(const field of ['receiveAddress','receiveWeight','receiveSize','receiveDesti
 
 test('a new photo event invalidates the saved-review request before its bytes can replace the photo',async()=>{
   const pending=deferred(),h=readyResume(()=>pending.promise);const first=clickResume(h);
-  h.run('compressImage=()=>new Promise(()=>{});prepareOcrImage=()=>new Promise(()=>{})');const start=app.indexOf('$("packagePhoto").onchange=');h.run(app.slice(start,app.indexOf('async function createReceiveCustomer()',start)));
+  h.run('compressImage=()=>new Promise(()=>{});prepareOcrImage=()=>new Promise(()=>{});prepareBarcodeImage=()=>new Promise(()=>{})');const start=app.indexOf('$("packagePhoto").onchange=');h.run(app.slice(start,app.indexOf('async function createReceiveCustomer()',start)));
   h.node('packagePhoto').onchange({target:{files:[{name:'new-photo.jpg'}]}});const newer=h.run('intakePackageId');
   pending.resolve(resumeSnapshot());await first;assert.equal(h.run('intakePackageId'),newer);assert.notEqual(newer,parcel.id);assert.equal(h.run('intakePhotoDataUrl'),null);assert.equal(h.run('intakePhotoPending'),true);
 });

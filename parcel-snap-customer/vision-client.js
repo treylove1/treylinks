@@ -110,7 +110,11 @@
 
     if(result.carrier&&!$("receiveCarrier").value)$("receiveCarrier").value=result.carrier;
     const trackingEdited=intakeTrackingReview?.manual||intakeTrackingReview?.status==="MANUAL";
-    if(result.tracking_candidates?.length>1){
+    // A blank field can mean conflicting local evidence, not missing evidence.
+    // A later single model answer cannot silently resolve that disagreement.
+    if(intakeTrackingReview?.status==="CONFLICT"){
+      if(!trackingEdited)$("receiveTracking").value="";
+    }else if(result.tracking_candidates?.length>1){
       intakeTrackingReview={status:"CONFLICT",manual:trackingEdited,message:"The reader returned conflicting tracking values — check the photo"};
       if(!trackingEdited)$("receiveTracking").value="";
     }else if(result.tracking_code){
@@ -239,7 +243,7 @@
         });
 
       // Do not wait for remote vision. Local OCR owns the fast path.
-      const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt,readToken:selectionToken,editGeneration});
+      const local=await readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,barcode:prepared.barcodeCanvas,startedAt,readToken:selectionToken,editGeneration});
       if(selectionGeneration!==packageSelectionGeneration||local?.superseded)return;
       intakeOcrAddress=local.address||"";
 

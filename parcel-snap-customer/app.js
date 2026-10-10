@@ -682,9 +682,11 @@ function guessTracking(text){
 
 function trackingAnalysis(text,barcode=""){
   const raw=String(text||""),carrier=guessCarrier(raw),candidates=new Map();
-  const add=(value,labelled=false)=>{
+  const add=(value,labelled=false,decodedBarcode=false)=>{
     const code=String(value||"").trim();
-    const known=Boolean(validatedTracking(code,carrier));
+    // A successfully decoded, typed TBA symbol is independent of OCR carrier text.
+    // This does not promote raw OCR fragments or unfamiliar routing identifiers.
+    const known=Boolean(validatedTracking(code,carrier))||(decodedBarcode&&/^TBA\d{12,16}$/i.test(code));
     // Unfamiliar formats require a printed tracking label or structured barcode key.
     // Keep them visibly unverified; a street/carrier word is never a tracking number.
     const plausible=labelled&&/^(?=.{6,40}$)(?=.*\d)[A-Z0-9]+(?:-[A-Z0-9]+)*$/i.test(code);
@@ -697,9 +699,11 @@ function trackingAnalysis(text,barcode=""){
     if(hit)add(hit[1]||lines[i+1]||"",true);
   }
   for(const payload of (Array.isArray(barcode)?barcode:[barcode])){
-    const decoded=String(payload||"").trim();
-    if(!decoded)continue;
-    add(decoded);
+    const typed=payload&&typeof payload==="object"&&payload.decoded===true&&
+      /^(?:data_?matrix|qr_?code|code_?128|code_?39|ean_?13|ean_?8|upc_?a|upc_?e|itf|codabar)$/i.test(payload.format||"");
+    const decoded=typeof payload==="string"?payload.trim():typed&&typeof payload.rawValue==="string"?payload.rawValue.trim():"";
+    if(!decoded||decoded.length>200)continue;
+    add(decoded,false,typed);
     try{
       const url=new URL(decoded);
       add(url.searchParams.get("tracking")||url.searchParams.get("tracking_number"),true);
@@ -1211,6 +1215,8 @@ async function preparePackageImages(file){
     preview:drawImageRegion(img,null,1600,.82),
     ocrCanvas,
     rawOcrCanvas,
+    // Barcode evidence needs the whole photo, independent of an uncertain OCR crop.
+    barcodeCanvas:drawImageRegionCanvas(img,null,3200),
     vision:drawImageRegion(img,labelRect||null,1600,.90),
     label_crop_used:Boolean(labelRect),
     crop_width:ocrCanvas.width,
@@ -1223,6 +1229,11 @@ async function preparePackageImages(file){
 async function compressImage(file){
   const original=await readFileDataUrl(file);
   return await resizeDataUrl(original,1600,.82);
+}
+
+async function prepareBarcodeImage(file){
+  const original=await readFileDataUrl(file);
+  return drawImageRegionCanvas(await loadImage(original),null,3200);
 }
 
 async function prepareOcrImage(file){
@@ -1265,13 +1276,43 @@ async function enhanceForReading(source){
 }
 
 async function detectBarcode(source){
-  if(!("BarcodeDetector" in window))return "";
   try{
     const target=typeof source==="string" ? await loadImage(source) : source;
-    const detector=new BarcodeDetector({formats:["qr_code","code_128","code_39","ean_13","ean_8","upc_a","upc_e","itf","codabar"]});
-    const codes=await detector.detect(target);
-    return [...new Set((codes||[]).map(x=>String(x.rawValue||"").trim()).filter(v=>v.length>=6&&v.length<=200))];
-  }catch{return ""}
+    // Native implementations vary by browser and OS. Never request a format
+    // the device does not support, because one unsupported format can reject all.
+    const native=async()=>{
+      const Detector=window.BarcodeDetector;
+      if(typeof Detector!=="function")return [];
+      try{
+        const wanted=["data_matrix","qr_code","code_128","code_39","ean_13","ean_8","upc_a","upc_e","itf","codabar"];
+        let detector;
+        if(typeof Detector.getSupportedFormats==="function"){
+          const supported=await Detector.getSupportedFormats();
+          const formats=wanted.filter(format=>supported.includes(format));
+          if(!formats.length)return [];
+          detector=new Detector({formats});
+        }else detector=new Detector();
+        const codes=await detector.detect(target);
+        return (codes||[]).map(code=>({rawValue:code.rawValue,format:code.format,decoded:true}));
+      }catch{return [];}
+    };
+    const boundedNative=typeof window.BarcodeDetector!=="function"?Promise.resolve([]):new Promise(resolve=>{
+      const timer=setTimeout(()=>resolve([]),2500);
+      native().then(codes=>{clearTimeout(timer);resolve(codes);},()=>{clearTimeout(timer);resolve([]);});
+    });
+    // Run the local fallback even when native returns an unrelated routing code:
+    // that must not hide another supported tracking symbol or a disagreement.
+    const local=Promise.resolve().then(()=>window.ParcelSnapBarcode?.decode(target)||[]).catch(()=>[]);
+    const batches=await Promise.all([boundedNative,local]);
+    const unique=new Map();
+    for(const code of batches.flat()){
+      const rawValue=typeof code?.rawValue==="string"?code.rawValue.trim():"";
+      if(code?.decoded===true&&rawValue.length>=6&&rawValue.length<=200){
+        unique.set(rawValue+"\n"+code.format,{rawValue,format:code.format,decoded:true});
+      }
+    }
+    return [...unique.values()];
+  }catch{return [];}
 }
 
 function showInlineCustomer(candidate=""){
@@ -1486,7 +1527,8 @@ async function readPackagePhoto(source,options={}){
   const ocrSource=await toCanvas(source);
   const rawSource=options.raw?await toCanvas(options.raw):ocrSource;
 
-  const barcodePromise=detectBarcode(rawSource);
+  const barcodeSource=options.barcode?await toCanvas(options.barcode):rawSource;
+  const barcodePromise=detectBarcode(barcodeSource);
 
   const skew=estimateSkewDegrees(ocrSource);
   const fastImage=deskewCanvas(ocrSource,skew);
@@ -2316,14 +2358,15 @@ $("packagePhoto").onchange=async e=>{
   $("receiveNewCustomerEmail").value="";
   $("receiveNewCustomerPhone").value="";
   try{
-    const [uploadImage,ocrImage]=await Promise.all([
+    const [uploadImage,ocrImage,barcodeImage]=await Promise.all([
       compressImage(file),
-      prepareOcrImage(file)
+      prepareOcrImage(file),
+      prepareBarcodeImage(file)
     ]);
     if(token!==intakeReadToken)return;
     intakePhotoDataUrl=uploadImage;
     $("packagePhotoPreview").innerHTML='<img src="'+intakePhotoDataUrl+'" alt="Package photo">';
-    const result=await readPackagePhoto(ocrImage,{readToken:token,editGeneration});
+    const result=await readPackagePhoto(ocrImage,{barcode:barcodeImage,readToken:token,editGeneration});
     if(token!==intakeReadToken||result?.superseded)return;
     intakeOcrAddress=result.address||"";
   }catch(err){

@@ -18,6 +18,7 @@ expect("old transfer three-pass OCR array removed",!app.includes("passes=[enhanc
 expect("label region detector exists",app.includes("detectBrightLabelRegion"));
 expect("OCR uses canvas-native crop",app.includes("ocrCanvas"));
 expect("vision passes true raw crop to OCR recovery",vision.includes("raw:prepared.rawOcrCanvas"));
+expect("barcode evidence uses full frame independent of OCR crop",app.includes("barcodeCanvas:drawImageRegionCanvas(img,null,3200)")&&vision.includes("barcode:prepared.barcodeCanvas"));
 expect("matcher decision is authoritative",app.includes("function decideCustomer"));
 expect("adaptive binarization exists",app.includes("adaptiveBinarizeCanvas"));
 expect("deskew estimator exists",app.includes("estimateSkewDegrees"));
@@ -35,7 +36,7 @@ expect("recipient focus uses destination street anchor",app.includes("recipientF
 expect("fast pass requests OCR layout blocks",app.includes("{text:true,blocks:true}"));
 expect("browser OCR upgraded to Tesseract v6",html.includes("tesseract.js@6"));
 expect("instant package preview exists",vision.includes("URL.createObjectURL(file)"));
-expect("local OCR uses cropped canvas with reserved photo and edit generations",vision.includes("readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,startedAt,readToken:selectionToken,editGeneration})"));
+expect("local OCR uses cropped canvas with reserved photo and edit generations",vision.includes("readPackagePhoto(prepared.ocrCanvas,{raw:prepared.rawOcrCanvas,barcode:prepared.barcodeCanvas,startedAt,readToken:selectionToken,editGeneration})"));
 expect("vision is started before local OCR completes",vision.indexOf("visionPromise=analyzePackageWithVision") < vision.indexOf("const local=await readPackagePhoto"));
 expect("remote vision is not awaited before local OCR",!vision.includes("await analyzePackageWithVision(prepared.vision)"));
 
