@@ -17,7 +17,7 @@
 
 const DESTINATION = /^(\s*(?:(?:ship|deliver)\s+to|recipient|consignee|to)(?=\s|:|$)\s*[:\-]?\s*)/i;
 const OTHER_ROLE = /^(\s*(?:return(?:\s+(?:address|to))?|ship\s+from|shipper|sender|from|remit\s+to|bill\s+to)(?=\s|:|$)\s*[:\-]?\s*)/i;
-const TRACKING_LABEL = /\b(?:package\s+)?tracking(?:\s*(?:code|number|no\.?|#))?\s*[:#\-]?\s*/ig;
+const TRACKING_LABEL = /\b(?:package\s+)?tracking(?=\s|[:#\-]|$)(?:\s+(?:code|number|id|no\.?)(?=\s|[:#\-]|$)|\s*#)?\s*[:#\-]?\s*/ig;
 const NON_TRACKING_LABEL = /\b(?:phone|telephone|tel|fax|order(?:\s+(?:number|no\.?|id|reference))?|invoice(?:\s+(?:number|no\.?|id))?|customer\s+(?:number|no\.?|id)|account\s+(?:number|no\.?|id)|reference|ref)\b\s*[:#\-]?\s*/ig;
 const METADATA = /^\s*(?:tracking\b|package\s+tracking\b|order\s*(?:number|no\b|reference|#)|invoice\b|weight\b|dimensions?\b|postage\b|barcode\b|service\b)/i;
 const STREET = /^\s*(?:\d{1,7}[a-z]?(?:[-/]\d{1,7}[a-z]?)?\s+.*\p{L}|P\.?\s*O\.?\s*BOX\s+\S+|POST\s+OFFICE\s+BOX\s+\S+)/iu;
@@ -267,6 +267,52 @@ function isNontrackingSpan(line, offset, lines) {
   const inherited = trackingContext(previous.text).at(-1);
   return inherited?.type === 'other' && !previous.text.slice(inherited.end).trim();
 }
+function rightHandTrackingFragments(heading, label, lines) {
+  // null means this is not a right-hand association. An empty list means a
+  // right-hand fragment failed the bounded rule and cannot fall back to the
+  // geometry-permissive legacy vertical path below.
+  if (label.index !== heading.text.search(/\S/) || heading.text.slice(label.index + label[0].length).trim()) return null;
+  const next = lines[heading.index + 1];
+  const validProvidedBox = line => {
+    if (!line || line.row.bbox === undefined || line.row.bbox === null) return null;
+    const b = bounds(line.row);
+    return b && b.x0 >= 0 && b.y0 >= 0 && b.x1 > b.x0 && b.y1 > b.y0 ? b : false;
+  };
+  const h = validProvidedBox(heading), n = validProvidedBox(next);
+  if (h === false || n === false) return [];
+  if (!h || !n) return null;
+  const toRight = n.x0 >= h.x1;
+  if (!toRight) return null;
+  const upright = line => {
+    const b = bounds(line.row);
+    if (!b || b.x0 < 0 || b.y0 < 0) return null;
+    const width = b.x1 - b.x0, height = b.y1 - b.y0;
+    return width > 0 && height > 0 && width >= height ? b : null;
+  };
+  const a = upright(heading);
+  if (!a || typeof heading.row.frameId !== 'string' || !heading.row.frameId.trim()) return [];
+  const result = [];
+  let previous = heading, previousBox = a;
+  for (let index = heading.index + 1; index < lines.length; index++) {
+    const line = lines[index], b = upright(line);
+    const physicallyNext = line.rowIndex === previous.rowIndex
+      ? /^(?:\r\n|\r|\n)$/.test(line.row.text.slice(previous.start + previous.text.length, line.start))
+      : line.rowIndex === previous.rowIndex + 1;
+    if (!physicallyNext || !sameFrame(heading, line) || !b || markerFor(line) || trackingContext(line.text).length) break;
+    const smallHeight = Math.min(a.y1 - a.y0, b.y1 - b.y0), bigHeight = Math.max(a.y1 - a.y0, b.y1 - b.y0);
+    const overlap = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+    const centerGap = Math.abs((a.y0 + a.y1 - b.y0 - b.y1) / 2);
+    const horizontalGap = b.x0 - previousBox.x1;
+    if (bigHeight > smallHeight * 2 || overlap < smallHeight * 0.6 || centerGap > smallHeight * 0.5
+      || horizontalGap < 0 || horizontalGap > Math.min(previousBox.y1 - previousBox.y0, b.y1 - b.y0) * 3) break;
+    const [start, end] = spanTrim(line.text, 0, line.text.length), value = line.text.slice(start, end);
+    if (!labelledTrackingValue(value)) break;
+    result.push({ line, start, end, value });
+    previous = line; previousBox = b;
+  }
+  return result;
+}
+
 function trackingProposals(lines, barcodes) {
   const candidates = new Map();
   const add = (value, itemSource, hint) => {
@@ -291,6 +337,11 @@ function trackingProposals(lines, barcodes) {
     for (const label of line.text.matchAll(TRACKING_LABEL)) {
       let candidateLine = line, start = label.index + label[0].length, end = line.text.length;
       if (!line.text.slice(start).trim()) {
+        const rightHand = rightHandTrackingFragments(line, label, lines);
+        if (rightHand) {
+          for (const item of rightHand) add(item.value, source(item.line, item.start, item.end), 'printed-tracking-label');
+          continue;
+        }
         const next = lines[line.index + 1];
         if (!next || !sameFrame(line, next) || !sameLane(line, next) || !nearby(line, next) || markerFor(next)) continue;
         candidateLine = next; start = 0; end = next.text.length;
