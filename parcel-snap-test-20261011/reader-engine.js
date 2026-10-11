@@ -1,4 +1,4 @@
-import {AUTO_RECIPE} from './auto-reading.js?v=ps-20261011-reader-05';
+import {AUTO_RECIPE} from './auto-reading.js?v=ps-20261011-reader-07';
 export const SETTINGS = Object.freeze({engine:'Tesseract.js',version:'6.0.1',coreVersion:'6.0.0',language:'eng',oem:1,psm:6,maxFileBytes:20*1024*1024,maxInputPixels:40_000_000,maxEdge:2400,maxPixels:4_000_000,timeoutMs:180_000,maxPasses:6,maxStoredBytes:16*1024*1024,maxObservationBytes:6*1024*1024,maxProposalRows:500,maxProposalRowChars:4096});
 export const WORKER_OPTIONS = Object.freeze({workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js',corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0',langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int',cacheMethod:'none',gzip:true,workerBlobURL:true});
 export class ObsoleteRead extends Error { constructor(message='This read was canceled.'){super(message);this.name='ObsoleteRead';} }

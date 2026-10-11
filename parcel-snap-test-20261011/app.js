@@ -1,6 +1,8 @@
-import {BUILD_ID,AUTO_RECIPE,wholePassScore,selectWholePass,rotationLabel} from './auto-reading.js?v=ps-20261011-reader-05';
-import {ReaderEngine,ObsoleteRead,SETTINGS,outputRows,resizePlan,immutableObservation} from './reader-engine.js?v=ps-20261011-reader-05';
-import {proposeFields,qualifyFields} from './reader-fields.js?v=ps-20261011-reader-05';
+import {proposePaddleFields} from './paddle-fields.js?v=ps-20261011-reader-07';
+import {PaddleReaderEngine,PaddleCanceled,PADDLE_SETTINGS,PADDLE_PARAMS,paddleCapabilities,paddlePreparation,drawPaddleFrame,paddleRows} from './paddle-reader.js?v=ps-20261011-reader-07';
+import {BUILD_ID,AUTO_RECIPE,wholePassScore,selectWholePass,rotationLabel} from './auto-reading.js?v=ps-20261011-reader-07';
+import {ReaderEngine,ObsoleteRead,SETTINGS,outputRows,resizePlan,immutableObservation} from './reader-engine.js?v=ps-20261011-reader-07';
+import {proposeFields,qualifyFields} from './reader-fields.js?v=ps-20261011-reader-07';
 const $=id=>document.getElementById(id);
 let generation=0,photo=null,preparing=false,passes=[],selectedPass=null,storedBytes=0;
 let automaticRun=null,automaticRuns=[],automaticSequence=0;
@@ -25,7 +27,7 @@ async function capturePreview(canvas,p,passId,rotation,budgetBytes=PREVIEW_LIMIT
       if(nativeFinished)return;nativeFinished=true;
       if(pendingCaptures.get(passId)===operation)pendingCaptures.delete(passId);
       finish(error,value);syncControls();
-      if(operation.abandoned&&photo&&!preparing&&!engine.busy)setStatus('The previous preview encode has settled. Photo ready for a new read.');
+      if(operation.abandoned&&photo&&!preparing&&!engine.busy&&!paddleEngine.busy)setStatus('The previous preview encode has settled. Photo ready for a new read.');
     };
     timer=setTimeout(()=>{operation.abandoned=true;finish(new Error('The reader-image preview did not finish within 15 seconds. No read was started. Earlier evidence is unchanged. Wait for its encoding to settle, or reload before another read.'));},PREVIEW_LIMITS.encodeTimeoutMs);
     try{canvas.toBlob(value=>complete(value?null:new Error('This browser could not retain the reader-image preview. No read was started.'),value),'image/png');}catch(error){complete(error);}
@@ -40,28 +42,34 @@ const engine=new ReaderEngine(options=>{
   if(!globalThis.Tesseract?.createWorker)throw new Error('The free reader did not load. Check your connection, then reload this page.');
   return globalThis.Tesseract.createWorker('eng',1,options);
 },{onState:s=>{syncControls();if(s.phase==='canceling-initialization'||s.phase==='canceling')setStatus(s.message);if(s.phase==='reload-required')setStatus(s.error);}});
+const paddleEngine=new PaddleReaderEngine(()=>import('./paddle-runtime/paddle-runtime.mjs'),{onState:s=>{syncControls();if(s.message)setStatus(s.message);if(s.phase==='reload-required')setStatus(s.error);}});
+function setPhotoStatus(text){const target=$('photo-status')||$('status');if(target)target.textContent=text;}
 function setStatus(text,progress=null){$('status').textContent=text;$('progress').hidden=progress===null;if(progress!==null)$('progress').value=Math.max(0,Math.min(1,progress));}
 function briefError(value){const text=String(value);return text.length>4096?text.slice(0,4096)+'… (error message shortened; this is not recognized text)':text;}
-function syncControls(){const disabled=!photo||!!automaticRun||preparing||engine.busy||pendingCaptures.size>0||passes.length>=SETTINGS.maxPasses||storedBytes>=SETTINGS.maxStoredBytes||previewBytes>=PREVIEW_LIMITS.maxTotalBytes;$('read').disabled=disabled;$('rotate').disabled=disabled;$('auto-read').disabled=disabled||passes.length+4>SETTINGS.maxPasses||automaticRuns.length>=AUTO_RECIPE.maxRunsPerPhoto||storedBytes+AUTO_RECIPE.summaryReserveBytes+4>SETTINGS.maxStoredBytes;$('cancel').disabled=!preparing&&!engine.active&&!automaticRun;}
-function clearResults(){clearPreviews();automaticRuns=[];passes=[];storedBytes=0;selectedPass=null;$('results-panel').hidden=true;$('passes').replaceChildren();$('fields').replaceChildren();$('raw-text').textContent='';$('source-rows').replaceChildren();$('unqualified-evidence').textContent='';$('reading-quality').textContent='';$('automatic-selection').textContent='';$('automatic-run-details').textContent='';$('reader-preview-info').textContent='';}
+function syncControls(){const disabled=!photo||!!automaticRun||preparing||engine.busy||paddleEngine.busy||pendingCaptures.size>0||passes.length>=SETTINGS.maxPasses||storedBytes>=SETTINGS.maxStoredBytes||previewBytes>=PREVIEW_LIMITS.maxTotalBytes;$('read').disabled=disabled;$('rotate').disabled=disabled;$('auto-read').disabled=disabled||passes.length+4>SETTINGS.maxPasses||automaticRuns.length>=AUTO_RECIPE.maxRunsPerPhoto||storedBytes+AUTO_RECIPE.summaryReserveBytes+4>SETTINGS.maxStoredBytes;if($('paddle-read'))$('paddle-read').disabled=disabled;$('cancel').disabled=!preparing&&!engine.active&&!paddleEngine.active&&!automaticRun;}
+function clearResults(){if($('unverified-label'))$('unverified-label').hidden=true;if($('unverified-label-text'))$('unverified-label-text').textContent='';clearPreviews();automaticRuns=[];passes=[];storedBytes=0;selectedPass=null;$('results-panel').hidden=true;$('passes').replaceChildren();$('fields').replaceChildren();$('raw-text').textContent='';$('source-rows').replaceChildren();$('unqualified-evidence').textContent='';$('reading-quality').textContent='';$('automatic-selection').textContent='';$('automatic-run-details').textContent='';$('reader-preview-info').textContent='';}
 async function choose(file){
   if(!file)return;
   if(automaticRun)automaticRun.canceled=true;
-  const id=++generation;engine.cancel('Photo changed; the previous read was canceled.');preparing=true;
-  if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;clearResults();$('original').removeAttribute('src');$('photo-area').hidden=true;syncControls();setStatus('Opening your photo…');
+  const id=++generation;engine.cancel('Photo changed; the previous read was canceled.');paddleEngine.cancel('Photo changed; the previous Paddle read was canceled.');preparing=true;
+  if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;clearResults();$('original').removeAttribute('src');$('photo-area').hidden=true;syncControls();setStatus('Opening your photo…');setPhotoStatus('Photo selected. Checking this file…');
   try{
     if(file.size>SETTINGS.maxFileBytes||file.size===0)throw new Error('Choose a photo between 1 byte and 20 MB.');
     if(!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type))throw new Error('Choose a JPEG, PNG, WebP, HEIC or HEIF photo. PDFs and other files are not supported.');
+    setPhotoStatus('Opening your photo…');
     const bitmap=await createImageBitmap(file);
     let width,height;
     try{width=bitmap.width;height=bitmap.height;resizePlan(width,height);}finally{bitmap.close();}
+    if(id!==generation)return;
+    setPhotoStatus('Photo opened. Finishing preparation…');
     const hash=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
     if(id!==generation)return;
     const sha256=Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('');
     photo={id:`photo-${id}`,generation:id,file,url:URL.createObjectURL(file),width,height,sha256};
     $('original').src=photo.url;$('photo-area').hidden=false;$('photo-info').textContent=`Original photo · ${width} × ${height} pixels · ${(file.size/1048576).toFixed(1)} MB. Your original file is unchanged.`;
-    setStatus(pendingCaptures.size?'Photo ready. The previous preview is still encoding; wait, or reload before another read.':engine.busy?'Photo ready. The previous reader is still stopping; wait, or reload to start fresh.':'Photo ready. Tap “Read with auto orientation”.');
-  }catch(e){if(id===generation)setStatus(`Could not open this photo: ${e.message}. If your phone uses HEIC, try a JPEG or screenshot.`);}
+    setPhotoStatus('Photo added. You can read it below.');
+    setStatus(pendingCaptures.size?'Photo ready. The previous preview is still encoding; wait, or reload before another read.':(engine.busy||paddleEngine.busy)?'Photo ready. The previous reader is still stopping; wait, or reload to start fresh.':'Photo ready. Tap “Read with Paddle”.');
+  }catch(e){if(id===generation){const message=`Could not open this photo: ${e.message}. If your phone uses HEIC, try a JPEG or screenshot.`;setStatus(message);setPhotoStatus(message);}}
   finally{if(id===generation)preparing=false;syncControls();}
 }
 async function makeCanvas(p,rotation){
@@ -78,7 +86,7 @@ async function makeCanvas(p,rotation){
   }finally{bitmap.close();}
 }
 async function read(rotation,{automatic=null}={}){
-  if(!photo||engine.busy||preparing||pendingCaptures.size>0||(automaticRun&&automatic!==automaticRun)||automatic?.canceled)return {status:'NOT_STARTED',error:'The reader is busy or this run was canceled.'};
+  if(!photo||engine.busy||paddleEngine.busy||preparing||pendingCaptures.size>0||(automaticRun&&automatic!==automaticRun)||automatic?.canceled)return {status:'NOT_STARTED',error:'The reader is busy or this run was canceled.'};
   if(passes.length>=SETTINGS.maxPasses||storedBytes>=SETTINGS.maxStoredBytes){setStatus('This photo session has reached its result limit. Download the results, then choose a photo to start a new session.');return;}
   if(previewBytes>=PREVIEW_LIMITS.maxTotalBytes){setStatus('This photo session has reached its 48 MiB reader-image preview limit. Earlier evidence is unchanged; download text results before choosing a new photo.');return;}
   const p=photo;preparing=true;syncControls();setStatus('Preparing the full photo…');let canvas,preview,passId;
@@ -108,8 +116,41 @@ async function read(rotation,{automatic=null}={}){
   }catch(e){if(p.generation===generation)setStatus(engine.blockedReason|| (e instanceof ObsoleteRead?e.message:`Reading failed: ${e.message}`));return {status:e instanceof ObsoleteRead?'CANCELED':'FAILED',error:String(e.message??e),code:e.code??null};}
   finally{if(preview&&!preview.retained&&previews.get(passId)===preview)releasePreview(passId);if(p.generation===generation)preparing=false;if(canvas){canvas.width=1;canvas.height=1;}syncControls();}
 }
+async function readPaddle(){
+  if(!photo||engine.busy||paddleEngine.busy||preparing||automaticRun||pendingCaptures.size)return;
+  const capability=paddleCapabilities();
+  if(!capability.supported){setStatus('This browser lacks the features needed for Paddle. Use one of the Tesseract buttons below.');return;}
+  if(passes.length>=SETTINGS.maxPasses||storedBytes>=SETTINGS.maxStoredBytes){setStatus('This photo session has reached its result limit. Download the results, then choose a photo.');return;}
+  const p=photo;preparing=true;syncControls();setStatus('Preparing the full photo for Paddle…');let canvas,preview,passId;
+  try{
+    const bitmap=await createImageBitmap(p.file);let plan;
+    try{if(p.generation!==generation)throw new PaddleCanceled('Photo changed or reading canceled.');plan=paddlePreparation(bitmap.width,bitmap.height);canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d',{alpha:true,willReadFrequently:true});if(!ctx)throw new Error('This browser could not prepare the full image.');drawPaddleFrame(ctx,bitmap,plan);}
+    finally{bitmap.close();}
+    passId=`${p.id}:paddle:${passes.length+1}`;
+    preview=await capturePreview(canvas,p,passId,0);
+    if(p.generation!==generation)throw new PaddleCanceled('Photo changed or reading canceled.');
+    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+    const digest=await crypto.subtle.digest('SHA-256',pixels);
+    if(p.generation!==generation)throw new PaddleCanceled('Photo changed or reading canceled.');
+    const pixelSha256=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+    const buffer=pixels.buffer.slice(pixels.byteOffset,pixels.byteOffset+pixels.byteLength);
+    preparing=false;const start=performance.now();
+    const output=await paddleEngine.read({width:plan.width,height:plan.height,buffer,pixelSha256,sourceSha256:p.sha256},{photoId:p.id,passId});
+    if(p.generation!==generation||previews.get(passId)!==preview)throw new PaddleCanceled('Photo changed or reading canceled.');
+    const native=output.result;
+    if(native.image.width!==plan.width||native.image.height!==plan.height||output.input?.pixelSha256!==pixelSha256||output.input?.sourceSha256!==p.sha256||output.input?.width!==plan.width||output.input?.height!==plan.height)throw new Error('Paddle source-frame verification failed. No result was used.');
+    const rows=paddleRows(native,passId,output.rawMethodReturns);const raw={text:native.items.map(item=>item.text).join('\n'),textProjection:'Native lines joined by one newline; no character edits',sdkResult:native,rawMethodReturns:output.rawMethodReturns};
+    let fields,originalFields,paddleProposals,fieldError=null;
+    try{const proposed=proposePaddleFields(rows,{barcodes:[]});originalFields=proposed.originalFields;paddleProposals=proposed.proposals;fields=proposed.fields;}catch(error){fieldError=String(error);fields=Object.fromEntries(['recipient','address','tracking','carrier'].map(k=>[k,{status:'UNAVAILABLE',value:null,alternatives:[]} ]));}
+    const observation=immutableObservation({schema:'parcel-snap-local-reader-test-v3',buildId:BUILD_ID,createdAt:new Date().toISOString(),photo:{id:p.id,sha256:p.sha256,width:p.width,height:p.height,bytes:p.file.size},passId,readId:output.readId,rotation:0,readingMode:'paddle',automaticRunId:null,selectionScore:null,internalDeskewRadians:null,preparation:{...plan,pixelSha256},readerPreview:preview.metadata,engine:{...PADDLE_SETTINGS,predictParams:PADDLE_PARAMS,actualRuntime:output.runtimeProvenance,initialization:output.initialization},elapsedSeconds:(performance.now()-start)/1000,raw,rows,originalFields:originalFields??null,paddleProposals:paddleProposals??null,fields,fieldError,roleVerified:false,customerSelected:null,emailSent:false});
+    const bytes=new TextEncoder().encode(JSON.stringify(observation)).byteLength;
+    if(bytes>SETTINGS.maxObservationBytes||storedBytes+bytes>SETTINGS.maxStoredBytes)throw new Error('Paddle result exceeds the local evidence budget. Earlier readings are unchanged.');
+    preview.retained=true;passes.push(observation);storedBytes+=bytes;selectedPass=passId;render();setStatus(`Paddle finished in ${observation.elapsedSeconds.toFixed(1)} seconds. Check every field against the photo. This is a separate reading.`);
+  }catch(error){if(p.generation===generation)setStatus(paddleEngine.blockedReason||(error instanceof PaddleCanceled||error instanceof ObsoleteRead?error.message:`Paddle could not finish: ${error.message}. Tesseract remains available.`));}
+  finally{if(preview&&!preview.retained&&previews.get(passId)===preview)releasePreview(passId);if(p.generation===generation)preparing=false;if(canvas){canvas.width=1;canvas.height=1;}syncControls();}
+}
 async function readAutomatic(){
-  if(!photo||automaticRun||engine.busy||preparing||pendingCaptures.size)return;
+  if(!photo||automaticRun||engine.busy||paddleEngine.busy||preparing||pendingCaptures.size)return;
   if(passes.length+AUTO_RECIPE.rotations.length>SETTINGS.maxPasses){setStatus('Automatic reading needs four free reading slots. Download earlier results and start a new photo session.');return;}
   if(automaticRuns.length>=AUTO_RECIPE.maxRunsPerPhoto||storedBytes+AUTO_RECIPE.summaryReserveBytes+4>SETTINGS.maxStoredBytes){setStatus('This session has no capacity for another automatic comparison. Download the results and choose a new photo.');return;}
   const run={id:`auto-${++automaticSequence}`,photoId:photo.id,generation,canceled:false,attempts:[],perPreviewBytes:Math.min(PREVIEW_LIMITS.maxPreviewBytes,Math.floor((PREVIEW_LIMITS.maxTotalBytes-previewBytes)/4)),perObservationBytes:Math.min(SETTINGS.maxObservationBytes,Math.floor((SETTINGS.maxStoredBytes-storedBytes-AUTO_RECIPE.summaryReserveBytes)/4)),startedAt:new Date().toISOString()};automaticRun=run;syncControls();
@@ -137,8 +178,8 @@ async function readAutomatic(){
 function appendText(parent,tag,text,className){const n=document.createElement(tag);n.textContent=text;if(className)n.className=className;parent.append(n);return n;}
 function render(){
   const pass=passes.find(p=>p.passId===selectedPass);if(!pass)return;$('results-panel').hidden=false;$('passes').replaceChildren();
-  passes.forEach((p,i)=>{const b=appendText($('passes'),'button',`${i+1}. ${rotationLabel(p.rotation)}${p.readingMode==='automatic'?' · auto':''}`);b.type='button';b.setAttribute('aria-pressed',String(p.passId===selectedPass));b.onclick=()=>{selectedPass=p.passId;render();};});
-  $('pass-info').textContent=`${rotationLabel(pass.rotation)}${pass.readingMode==='automatic'?' · sparse-text + internal deskew':''} · supplied image ${pass.preparation.width} × ${pass.preparation.height} · ${pass.elapsedSeconds.toFixed(1)} seconds · separate, unverified reading`;
+  passes.forEach((p,i)=>{const b=appendText($('passes'),'button',`${i+1}. ${p.readingMode==='paddle'?'Paddle · full photo':rotationLabel(p.rotation)+(p.readingMode==='automatic'?' · auto':' · Tesseract')}`);b.type='button';b.setAttribute('aria-pressed',String(p.passId===selectedPass));b.onclick=()=>{selectedPass=p.passId;render();};});
+  $('pass-info').textContent=`${pass.readingMode==='paddle'?'Paddle · full photo':rotationLabel(pass.rotation)+(pass.readingMode==='automatic'?' · Tesseract sparse-text + internal deskew':' · Tesseract')} · supplied image ${pass.preparation.width} × ${pass.preparation.height}${pass.readingMode==='paddle'&&pass.preparation.resized?` · full-frame downsize from ${pass.preparation.originalWidth} × ${pass.preparation.originalHeight} (scale ${pass.preparation.scaleX.toFixed(4)} × ${pass.preparation.scaleY.toFixed(4)})`:''} · ${pass.elapsedSeconds.toFixed(1)} seconds · separate, unverified reading`;
   const preview=previews.get(pass.passId);$('reader-preview').hidden=false;
   // A fresh display node binds load/error events to this pass. An old image's
   // late error cannot release a newly selected pass's retained preview.
@@ -146,24 +187,38 @@ function render(){
   readerImage.alt=`Exact processed canvas for ${pass.passId}, ${rotationLabel(pass.rotation)}, ${pass.preparation.width} by ${pass.preparation.height} pixels`;
   readerImage.onerror=()=>{if($('reader-image')!==readerImage||selectedPass!==pass.passId||previews.get(pass.passId)!==preview||!preview)return;previewFailures.set(pass.passId,'This reading’s captured preview could not be displayed. Its image URL was released; the recorded dimensions, raw text and original proposals are unchanged.');releasePreview(pass.passId);render();syncControls();};
   $('reader-image-container').replaceChildren(readerImage);if(preview)readerImage.src=preview.url;
-  $('reader-preview-info').textContent=preview?`Exact processed canvas captured before OCR · ${pass.passId} · ${rotationLabel(pass.rotation)} · ${preview.metadata.width} × ${preview.metadata.height} pixels · full frame. Not regenerated.${pass.readingMode==='automatic'?` This is the canvas supplied before Tesseract’s internal deskew (${pass.internalDeskewRadians===null?'angle unavailable':(pass.internalDeskewRadians*180/Math.PI).toFixed(2)+'°'}), not the final deskewed raster.`:''} The reader result does not establish image readability.`:(previewFailures.get(pass.passId)||'This reading’s image preview is no longer available. Its text evidence is unchanged.');
-  $('reading-quality').textContent=pass.fields.status==='REVIEW_REQUIRED'?'Structurally supported proposals. Check every character against the image; optical correctness has not been assessed.':'Couldn’t read reliably. Some fields are incomplete or unclassified; all raw text and original proposal evidence are retained below. This is a structural check, not a measure of optical accuracy.';
+  $('reader-preview-info').textContent=preview?`Exact processed canvas captured before OCR · ${pass.passId} · ${rotationLabel(pass.rotation)} · ${preview.metadata.width} × ${preview.metadata.height} pixels · full frame.${pass.readingMode==='paddle'&&pass.preparation.resized?` Downscaled from ${pass.preparation.originalWidth} × ${pass.preparation.originalHeight}; no crop. Large-photo reading accuracy has not been measured.`:''} Not regenerated.${pass.readingMode==='automatic'?` This is the canvas supplied before Tesseract’s internal deskew (${pass.internalDeskewRadians===null?'angle unavailable':(pass.internalDeskewRadians*180/Math.PI).toFixed(2)+'°'}), not the final deskewed raster.`:''} The reader result does not establish image readability.`:(previewFailures.get(pass.passId)||'This reading’s image preview is no longer available. Its text evidence is unchanged.');
+  if($('unverified-label'))$('unverified-label').hidden=pass.readingMode!=='paddle';
+  if($('unverified-label-text'))$('unverified-label-text').textContent=pass.readingMode==='paddle'?(pass.raw.text||'(The reader returned no text.)'):'';
+  $('reading-quality').textContent=pass.readingMode==='paddle'?'Literal text is shown beside the photo. Field roles may remain unresolved; check every character and do not treat these proposals as accepted records.':pass.fields.status==='REVIEW_REQUIRED'?'Structurally supported proposals. Check every character against the image; optical correctness has not been assessed.':'Couldn’t read reliably. Some fields are incomplete or unclassified; all raw text and original proposal evidence are retained below. This is a structural check, not a measure of optical accuracy.';
   $('fields').replaceChildren();
   for(const [key,label]of[['recipient','Recipient / name'],['address','Address'],['tracking','Tracking'],['carrier','Carrier']]){
     const field=pass.fields[key]||{status:'missing',value:null,alternatives:[]};const card=appendText($('fields'),'section','','field');appendText(card,'h3',label);appendText(card,'div',String(field.status||'unverified').replaceAll('_',' '),'state');
-    appendText(card,'div',field.value||(field.withheld?.length?'Couldn’t read reliably. See retained evidence below.':'No single proposal. Check the full text.'),'value');
+    appendText(card,'div',field.value||(pass.readingMode==='paddle'?'No verified field role. Review the literal text beside the photo.':field.withheld?.length?'Couldn’t read reliably. See retained evidence below.':'No single proposal. Check the full text.'),'value');
     if(field.reasons?.length)appendText(card,'p',field.reasons.join(' '),'hint');
+    if(key==='tracking'&&field.unassigned?.length){appendText(card,'p','Unassigned number/code evidence, not selected tracking:','hint');for(const item of field.unassigned)appendText(card,'div',item.value,'source');}
     const alternatives=field.alternatives||[];
     if(alternatives.length){appendText(card,'p','Source proposals (unverified):','hint');const ul=document.createElement('ul');card.append(ul);for(const a of alternatives){const li=appendText(ul,'li',a.value??a.text??a.literal??'');const ids=a.rowIds??a.sourceRowIds??a.rows??[];if(ids.length)appendText(li,'div',`Rows: ${ids.join(', ')}`,'source');}}
   }
-  $('unqualified-evidence').textContent=JSON.stringify({notice:'Original unqualified proposals are diagnostic evidence, not reliable extracted fields. Structural checks do not establish optical correctness.',originalFields:pass.originalFields,qualification:pass.fields},null,2);
+  $('unqualified-evidence').textContent=JSON.stringify({notice:'Original unqualified proposals are diagnostic evidence, not reliable extracted fields. Structural checks do not establish optical correctness.',originalFields:pass.originalFields,paddleSourcePolicy:pass.paddleProposals??null,qualification:pass.fields},null,2);
   const autoSummary=automaticRuns.find(r=>r.id===pass.automaticRunId);
   const comparisonDetails=autoSummary||(pass.automaticRunId?{id:pass.automaticRunId,status:automaticRun?.id===pass.automaticRunId?'IN_PROGRESS':'UNAVAILABLE',notice:'Comparison details for this selected reading are not final. No ranking winner is established.'}:{notice:'The selected reading is manual. Any comparison below is the latest separate automatic run.',comparison:automaticRuns.at(-1)??null});$('automatic-run-details').textContent=JSON.stringify({...comparisonDetails,displayedPassId:pass.passId,displayedAutomaticRunId:pass.automaticRunId,allRecordedComparisons:automaticRuns},null,2);
   $('automatic-selection').textContent=pass.readingMode==='automatic'?`${autoSummary&&!autoSummary.comparisonComplete?'Comparison incomplete; no ranking winner. This retained attempt is for manual review.':autoSummary?.selectedPassId===pass.passId?'Initially shown because it had the highest whole-reading score.':'A separate automatic orientation attempt.'} Engine confidence ranks readings; it does not measure field accuracy. No fields are combined across readings.`:'';
   $('field-warnings').textContent=pass.fieldError|| (pass.fields.warnings||[]).join(' ');
-  $('raw-text').textContent=pass.raw.text||'(The reader returned no text.)';$('source-rows').replaceChildren();for(const row of pass.rows){const n=appendText($('source-rows'),'div',row.text,'row');appendText(n,'code',`${row.id} · ${row.source}${row.confidence===null?'':` · engine recognition score ${row.confidence.toFixed(1)} (not field accuracy)`}`);}
+  $('raw-text').textContent=pass.raw.text||'(The reader returned no text.)';$('source-rows').replaceChildren();for(const row of pass.rows){const n=appendText($('source-rows'),'div',row.text,'row');appendText(n,'code',`${row.id} · ${row.source}${row.nativeScore!==undefined?` · Paddle model score ${row.nativeScore.toFixed(3)} (not field accuracy)`:row.confidence===null?'':` · engine recognition score ${row.confidence.toFixed(1)} (not field accuracy)`}`);}
 }
-$('camera').addEventListener('change',e=>{choose(e.target.files[0]);e.target.value='';});$('gallery').addEventListener('change',e=>{choose(e.target.files[0]);e.target.value='';});$('auto-read').onclick=()=>readAutomatic();$('read').onclick=()=>read(0);$('rotate').onclick=()=>read(90);
-$('cancel').onclick=()=>{if(automaticRun){automaticRun.canceled=true;automaticRun.cancelReason='Canceled by you.';setStatus('Automatic reading canceled. Waiting for current preparation or reader cleanup to settle.');}if(preparing&&(!automaticRun||automaticRun.generation!==generation)){generation++;preparing=false;setStatus('Photo preparation canceled. Choose the photo again.');if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;$('photo-area').hidden=true;$('original').removeAttribute('src');}releasePendingPreviews();engine.cancel();syncControls();};
+function photoSelectionCanceled(){setPhotoStatus(photo?'Selection canceled. Your current photo is unchanged.':preparing?'Selection canceled. The photo already opening is unchanged.':'No photo selected. Take a photo or choose one from your gallery.');}
+function acceptPhotoInput(input){const file=input.files?.[0];if(!file){photoSelectionCanceled();return;}input.value='';return choose(file);}
+for(const id of ['camera','gallery']){const input=$(id);input.addEventListener('change',()=>acceptPhotoInput(input));input.addEventListener('cancel',photoSelectionCanceled);}
+if($('paddle-read'))$('paddle-read').onclick=()=>readPaddle();$('auto-read').onclick=()=>readAutomatic();$('read').onclick=()=>read(0);$('rotate').onclick=()=>read(90);
+$('cancel').onclick=()=>{if(automaticRun){automaticRun.canceled=true;automaticRun.cancelReason='Canceled by you.';setStatus('Automatic reading canceled. Waiting for current preparation or reader cleanup to settle.');}if(preparing&&(!automaticRun||automaticRun.generation!==generation)){generation++;preparing=false;setStatus('Photo preparation canceled. Choose the photo again.');setPhotoStatus('Photo preparation canceled. Choose the photo again.');if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;$('photo-area').hidden=true;$('original').removeAttribute('src');}releasePendingPreviews();engine.cancel();paddleEngine.cancel();syncControls();};
 $('export').onclick=()=>{if(!passes.length&&!automaticRuns.length)return;const blob=new Blob([JSON.stringify({buildId:BUILD_ID,notice:'Local unverified OCR test. No customer selection or email action.',observations:passes,automaticRuns},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='parcel-snap-reader-test.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-addEventListener('pagehide',()=>{if(automaticRun)automaticRun.canceled=true;generation++;preparing=false;engine.cancel('Page closed.');if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;clearResults();$('original').removeAttribute('src');$('photo-area').hidden=true;setStatus('Choose a photo to begin.');syncControls();});
+addEventListener('pagehide',()=>{if(automaticRun)automaticRun.canceled=true;generation++;preparing=false;engine.cancel('Page closed.');paddleEngine.cancel('Page closed.');if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;clearResults();$('original').removeAttribute('src');$('photo-area').hidden=true;setStatus('Choose a photo to begin.');setPhotoStatus('Ready to choose a photo.');syncControls();});
+
+// A native selection may happen before this module and its dependencies finish
+// loading. Recover its File reference once handlers exist; do not guess between
+// two pre-start selections whose event order is no longer available.
+setPhotoStatus('Ready to choose a photo.');
+const startupSelections=['camera','gallery'].map(id=>$(id)).filter(input=>input.files?.length);
+if(startupSelections.length===1)acceptPhotoInput(startupSelections[0]);
+else if(startupSelections.length>1){for(const input of startupSelections)input.value='';setPhotoStatus('More than one photo was selected while loading. Choose the photo you want again.');}

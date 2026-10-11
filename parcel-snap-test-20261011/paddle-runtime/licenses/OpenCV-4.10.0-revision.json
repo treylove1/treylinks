@@ -1,0 +1,7 @@
+{
+  "repository": "opencv/opencv",
+  "ref": "4.10.0",
+  "commit": "71d3237a093b60a27601c20e9ee6c3e52154e8b1",
+  "apiURL": "https://api.github.com/repos/opencv/opencv/commits/4.10.0",
+  "sourceURL": "https://github.com/opencv/opencv/commit/71d3237a093b60a27601c20e9ee6c3e52154e8b1"
+}

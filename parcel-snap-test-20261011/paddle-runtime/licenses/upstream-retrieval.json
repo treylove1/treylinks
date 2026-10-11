@@ -1,0 +1,52 @@
+[
+  {
+    "file": "PaddleOCR-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/LICENSE",
+    "resolvedUrl": "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/LICENSE",
+    "bytes": 11376,
+    "sha256": "3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e",
+    "contentType": "text/plain; charset=utf-8"
+  },
+  {
+    "file": "PaddleOCR-NOTICE.txt",
+    "url": "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/NOTICE",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "file": "ORT-v1.22.0-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.22.0/LICENSE",
+    "resolvedUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.22.0/LICENSE",
+    "bytes": 1073,
+    "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    "contentType": "text/plain; charset=utf-8"
+  },
+  {
+    "file": "ORT-v1.22.0-ThirdPartyNotices.txt",
+    "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.22.0/ThirdPartyNotices.txt",
+    "resolvedUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.22.0/ThirdPartyNotices.txt",
+    "bytes": 326866,
+    "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc",
+    "contentType": "text/plain; charset=utf-8"
+  },
+  {
+    "file": "OpenCV-4.10.0-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/opencv/opencv/4.10.0/LICENSE",
+    "resolvedUrl": "https://raw.githubusercontent.com/opencv/opencv/4.10.0/LICENSE",
+    "bytes": 11358,
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "contentType": "text/plain; charset=utf-8"
+  },
+  {
+    "file": "Boost-LICENSE_1_0.txt",
+    "url": "https://www.boost.org/LICENSE_1_0.txt",
+    "resolvedUrl": "https://www.boost.org/LICENSE_1_0.txt",
+    "bytes": 1338,
+    "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+    "contentType": "text/plain"
+  },
+  {
+    "file": "JSBN-TomWu-LICENSE.txt",
+    "url": "https://www-cs-students.stanford.edu/~tjw/jsbn/LICENSE",
+    "error": "HTTP Error 502: Bad Gateway"
+  }
+]
