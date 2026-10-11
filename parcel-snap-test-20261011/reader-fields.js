@@ -370,3 +370,109 @@ export function proposeFields(rows, { barcodes = [] } = {}) {
     tracking: trackingProposals(lines, rawBarcodes), carrier: carrierProposals(lines), warnings
   };
 }
+
+/**
+ * A separate, deterministic structural review layer. proposeFields remains the
+ * literal evidence extractor; its output is neither mutated nor replaced here.
+ *
+ * This deliberately recognizes only a supported subset of address layouts:
+ * a numbered street (more than a single letter after the premise number) or
+ * post-office box, corroborated by a separate locality/postal part in the same
+ * block and frame. Other layouts are INCOMPLETE/UNCLASSIFIED, never "invalid".
+ * Unmarked names require that supported same-block address. An explicit TO
+ * marker is independent name-role evidence, including a name without address.
+ * Names, companies, digits, Unicode and confidence scores are not rewritten,
+ * scored or filtered. A structurally sufficient reading can still be wrong.
+ *
+ * Return: { schema, reviewOnly, opticalAccuracy, status, reasons, warnings,
+ * recipient, address, tracking, carrier }. Each identity field is { status, value, alternatives,
+ * withheld: [{ proposal, reasons }], reasons }. Every candidate appears exactly
+ * once, unchanged, in alternatives or withheld[].proposal. Source offsets and
+ * metadata remain literal. Original rawRows/blocks/tracking/carrier should be
+ * stored alongside this result; this layer does not replace that evidence.
+ * Tracking and carrier proposals are copied without additional qualification.
+ */
+function supportedStreetPart(part) {
+  if (part?.kind !== 'street' || typeof part.value !== 'string') return false;
+  if (/^\s*(?:P\.?\s*O\.?\s*BOX|POST\s+OFFICE\s+BOX)\s+\S+/iu.test(part.value)) return true;
+  const numbered = part.value.match(/^\s*\d{1,7}[a-z]?(?:[-/]\d{1,7}[a-z]?)?\s+(.+)$/iu);
+  // "2 e" carries only a number and one letter. Additional independently
+  // classified postal evidence cannot reconstruct missing street text.
+  return !!numbered && (numbered[1].match(/\p{L}/gu) || []).length > 1;
+}
+function separatePart(a, b) {
+  return a?.kind === 'row' && b?.kind === 'row' && a.frameId === b.frameId
+    && (a.rowIndex !== b.rowIndex || a.end <= b.start || b.end <= a.start);
+}
+function addressQualificationReasons(proposal) {
+  const parts = Array.isArray(proposal.parts) ? proposal.parts : [];
+  const streets = parts.filter(supportedStreetPart);
+  const reasons = [];
+  if (!streets.length) {
+    reasons.push('No sufficiently structured street or post-office-box anchor was identified. This may be partial evidence or an unsupported address layout.');
+  }
+  const supported = streets.some(street => parts.some(part =>
+    /^(?:locality-postal|postal)$/.test(part.kind)
+    && separatePart(street.source, part.source)));
+  if (!supported) {
+    reasons.push('A street or post-office-box anchor needs separate locality/postal evidence in the same block and frame.');
+  }
+  return reasons;
+}
+function qualifiedIdentityField(original, decisions, hasRawEvidence) {
+  const alternatives = [], withheld = [];
+  decisions.forEach(({ proposal, reasons }) => {
+    if (reasons.length) withheld.push({ proposal: copy(proposal), reasons: [...reasons] });
+    else alternatives.push(copy(proposal));
+  });
+  const reasons = unique(withheld.flatMap(item => item.reasons));
+  let status, value = '';
+  if (!alternatives.length) {
+    status = withheld.length ? 'INCOMPLETE' : hasRawEvidence ? 'UNCLASSIFIED' : 'MISSING';
+    if (!withheld.length && hasRawEvidence) reasons.push('The literal reading has no classified proposal for this field. Raw evidence remains available; absence of a proposal does not establish absence on the label.');
+  } else {
+    // Filtering weak evidence must never manufacture certainty or select among
+    // previously ambiguous destinations. Preserve the original review status.
+    status = original.status;
+    if (status === 'REVIEW_REQUIRED' && alternatives.length === 1
+      && alternatives[0].value === original.value) value = original.value;
+    if (status === 'AMBIGUOUS') reasons.push('Original destination or candidate ambiguity remains unresolved.');
+  }
+  return { status, value, alternatives, withheld, reasons };
+}
+
+export function qualifyFields(proposals) {
+  if (!proposals || !Array.isArray(proposals.recipient?.alternatives)
+    || !Array.isArray(proposals.address?.alternatives)) {
+    throw new TypeError('qualifyFields requires a proposeFields result');
+  }
+  const hasRawEvidence = Array.isArray(proposals.rawRows)
+    && proposals.rawRows.some(row => typeof row?.text === 'string' && row.text.trim());
+  const addressDecisions = proposals.address.alternatives.map(proposal => ({
+    proposal, reasons: addressQualificationReasons(proposal)
+  }));
+  const supportedAddresses = addressDecisions.filter(item => !item.reasons.length).map(item => item.proposal);
+  const recipientDecisions = proposals.recipient.alternatives.map(proposal => {
+    const explicitDestination = proposal.role === 'destination';
+    const supportedBlock = supportedAddresses.some(address => address.blockId === proposal.blockId
+      && proposal.sources.some(nameSource => address.sources.some(addressSource =>
+        nameSource.kind === 'row' && addressSource.kind === 'row' && nameSource.frameId === addressSource.frameId)));
+    return { proposal, reasons: explicitDestination || supportedBlock ? [] : [
+      'An unmarked name needs a sufficiently structured address in the same block. Its literal text is retained as incomplete evidence.'
+    ] };
+  });
+  const recipient = qualifiedIdentityField(proposals.recipient, recipientDecisions, hasRawEvidence);
+  const address = qualifiedIdentityField(proposals.address, addressDecisions, hasRawEvidence);
+  const bothSupported = recipient.alternatives.length > 0 && address.alternatives.length > 0;
+  const anyCandidates = recipientDecisions.length > 0 || addressDecisions.length > 0;
+  const status = bothSupported ? 'REVIEW_REQUIRED' : anyCandidates ? 'INCOMPLETE' : hasRawEvidence ? 'UNCLASSIFIED' : 'MISSING';
+  const reasons = unique([...recipient.reasons, ...address.reasons]);
+  const warnings = [
+    ...(Array.isArray(proposals.warnings) ? copy(proposals.warnings) : []),
+    'Structural checks only. They do not measure optical accuracy, verify a recipient, or validate address deliverability. Review every literal against the photo.',
+    'Incomplete and unclassified evidence is retained for review. Other address layouts may be legitimate.'
+  ];
+  return { schema: 'parcel-snap-field-qualification-v1', reviewOnly: true,
+    opticalAccuracy: 'NOT_ASSESSED', status, reasons, warnings, recipient, address,
+    tracking: copy(proposals.tracking), carrier: copy(proposals.carrier) };
+}
