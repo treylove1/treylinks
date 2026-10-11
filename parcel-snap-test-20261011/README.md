@@ -1,6 +1,19 @@
-# Parcel Snap reader07 private candidate
+# Parcel Snap reader08 private timing/copy candidate
 
-Build: ps-20261011-reader-07. Browser and phone execution are not yet verified. Publication requires separate approval and live header/asset verification.
+Build: ps-20261011-reader-08. Browser and phone execution are not yet verified. Publication requires separate approval and live header/asset verification.
+
+
+## Reader08: smaller speed investigation
+
+This candidate preserves the one-shot reader lifecycle. Every Paddle action still creates, initializes and terminates a dedicated worker. There is no prewarm, persistent worker, model change, optical tuning, cache-policy change, telemetry or new network destination. The complete reader07 runtime directory is byte-identical, including the untouched SDK, model shards, exact hashes, ORT kernel and notices.
+
+The normal canvas ImageData path now transfers its existing RGBA ArrayBuffer rather than copying it again. Direct transfer is permitted only for an exact whole-buffer view; an offset or shorter view still copies its exact range. Pixel hashing and exact PNG capture finish first. The prepared full-frame canvas is reset before worker initialization, and its local reference is dropped. At the existing 10 MP limit this avoids one 40,000,000-byte JavaScript buffer copy on the normal path and shortens canvas retention. Actual peak memory and phone speed were not measured. Browser resource reclamation is not guaranteed immediately.
+
+A prominent Download results (JSON) button appears by the completion status when evidence exists. It shares the existing explicit local export path. The export contains recognized text, existing source hashes and evidence, and new timings; it contains no photo bytes, PNGs or blob URLs. It is not a redacted report: share only with intended recipients. The older result-panel button remains available. Canceled attempts do not replace completed evidence, and a new photo or pagehide clears local observations and timings.
+
+For successful Paddle reads, top-level timingReports bind to passId. tapToResultMs spans entry to the Read handler through the first synchronous result DOM update. It includes photo decoding/drawing, preview encoding, RGBA extraction, pixel hashing, transfer-buffer preparation, canvas release, module/setup/prediction, source verification, fields, storage and DOM work. It excludes earlier photo selection and the physical display paint. Engine stages and native SDK stages are nested, so adding them all double-counts time. Missing native stages are null, not measured zero. The legacy observation elapsedSeconds remains explicitly labeled as engine/evidence-only. Tesseract observations and automatic-batch timings are unchanged. Timing records reserve 4 KiB each within the unchanged 6 MiB observation and 16 MiB session evidence caps; at most six records exist per photo. Existing preview caps remain 16/48 MiB.
+
+Asset requests remain credential-free GET with cache:'default' and byte/SHA-256 validation. This permits normal HTTP caching but does not prove a phone cache hit, distinguish network transfer from cached bytes or avoid model-session startup. The first owner reading was reported as about 15 seconds; no measured reader08 speedup is claimed. New tests are synthetic lifecycle/allocation fixtures and saved-output replay only. Actual phone first/repeat timings and browser image behavior still require an authorized test.
 
 ## Free Paddle reading
 

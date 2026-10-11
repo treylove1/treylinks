@@ -1,11 +1,18 @@
-import {proposePaddleFields} from './paddle-fields.js?v=ps-20261011-reader-07';
-import {PaddleReaderEngine,PaddleCanceled,PADDLE_SETTINGS,PADDLE_PARAMS,paddleCapabilities,paddlePreparation,drawPaddleFrame,paddleRows} from './paddle-reader.js?v=ps-20261011-reader-07';
-import {BUILD_ID,AUTO_RECIPE,wholePassScore,selectWholePass,rotationLabel} from './auto-reading.js?v=ps-20261011-reader-07';
-import {ReaderEngine,ObsoleteRead,SETTINGS,outputRows,resizePlan,immutableObservation} from './reader-engine.js?v=ps-20261011-reader-07';
-import {proposeFields,qualifyFields} from './reader-fields.js?v=ps-20261011-reader-07';
+import {proposePaddleFields} from './paddle-fields.js?v=ps-20261011-reader-08';
+import {PaddleReaderEngine,PaddleCanceled,PADDLE_SETTINGS,PADDLE_PARAMS,paddleCapabilities,paddlePreparation,drawPaddleFrame,paddleRows} from './paddle-reader.js?v=ps-20261011-reader-08';
+import {BUILD_ID,AUTO_RECIPE,wholePassScore,selectWholePass,rotationLabel} from './auto-reading.js?v=ps-20261011-reader-08';
+import {ReaderEngine,ObsoleteRead,SETTINGS,outputRows,resizePlan,immutableObservation} from './reader-engine.js?v=ps-20261011-reader-08';
+import {proposeFields,qualifyFields} from './reader-fields.js?v=ps-20261011-reader-08';
 const $=id=>document.getElementById(id);
 let generation=0,photo=null,preparing=false,passes=[],selectedPass=null,storedBytes=0;
 let automaticRun=null,automaticRuns=[],automaticSequence=0;
+// At most six fixed-size timing reports per photo. Reserve this allowance in
+// the existing evidence budget before storing each Paddle observation.
+const TIMING_REPORT_RESERVE_BYTES=4096,timingReports=new Map();
+function durationOrNull(value){return Number.isFinite(value)&&value>=0?value:null;}
+function exactPixelBuffer(pixels){return pixels.byteOffset===0&&pixels.byteLength===pixels.buffer.byteLength?pixels.buffer:pixels.buffer.slice(pixels.byteOffset,pixels.byteOffset+pixels.byteLength);}
+function syncExportControls(){const available=passes.length>0||automaticRuns.length>0;for(const id of ['export','export-near-status'])if($(id))$(id).disabled=!available;if($('download-results'))$('download-results').hidden=!available;}
+
 // PNGs capture the actual prepared canvas, never a reconstruction. Keep image
 // bytes and transient URLs outside immutable observations and JSON exports.
 const PREVIEW_LIMITS=Object.freeze({maxPreviewBytes:16*1024*1024,maxTotalBytes:48*1024*1024,encodeTimeoutMs:15_000});
@@ -46,8 +53,8 @@ const paddleEngine=new PaddleReaderEngine(()=>import('./paddle-runtime/paddle-ru
 function setPhotoStatus(text){const target=$('photo-status')||$('status');if(target)target.textContent=text;}
 function setStatus(text,progress=null){$('status').textContent=text;$('progress').hidden=progress===null;if(progress!==null)$('progress').value=Math.max(0,Math.min(1,progress));}
 function briefError(value){const text=String(value);return text.length>4096?text.slice(0,4096)+'… (error message shortened; this is not recognized text)':text;}
-function syncControls(){const disabled=!photo||!!automaticRun||preparing||engine.busy||paddleEngine.busy||pendingCaptures.size>0||passes.length>=SETTINGS.maxPasses||storedBytes>=SETTINGS.maxStoredBytes||previewBytes>=PREVIEW_LIMITS.maxTotalBytes;$('read').disabled=disabled;$('rotate').disabled=disabled;$('auto-read').disabled=disabled||passes.length+4>SETTINGS.maxPasses||automaticRuns.length>=AUTO_RECIPE.maxRunsPerPhoto||storedBytes+AUTO_RECIPE.summaryReserveBytes+4>SETTINGS.maxStoredBytes;if($('paddle-read'))$('paddle-read').disabled=disabled;$('cancel').disabled=!preparing&&!engine.active&&!paddleEngine.active&&!automaticRun;}
-function clearResults(){if($('unverified-label'))$('unverified-label').hidden=true;if($('unverified-label-text'))$('unverified-label-text').textContent='';clearPreviews();automaticRuns=[];passes=[];storedBytes=0;selectedPass=null;$('results-panel').hidden=true;$('passes').replaceChildren();$('fields').replaceChildren();$('raw-text').textContent='';$('source-rows').replaceChildren();$('unqualified-evidence').textContent='';$('reading-quality').textContent='';$('automatic-selection').textContent='';$('automatic-run-details').textContent='';$('reader-preview-info').textContent='';}
+function syncControls(){syncExportControls();const disabled=!photo||!!automaticRun||preparing||engine.busy||paddleEngine.busy||pendingCaptures.size>0||passes.length>=SETTINGS.maxPasses||storedBytes>=SETTINGS.maxStoredBytes||previewBytes>=PREVIEW_LIMITS.maxTotalBytes;$('read').disabled=disabled;$('rotate').disabled=disabled;$('auto-read').disabled=disabled||passes.length+4>SETTINGS.maxPasses||automaticRuns.length>=AUTO_RECIPE.maxRunsPerPhoto||storedBytes+AUTO_RECIPE.summaryReserveBytes+4>SETTINGS.maxStoredBytes;if($('paddle-read'))$('paddle-read').disabled=disabled;$('cancel').disabled=!preparing&&!engine.active&&!paddleEngine.active&&!automaticRun;}
+function clearResults(){timingReports.clear();if($('unverified-label'))$('unverified-label').hidden=true;if($('unverified-label-text'))$('unverified-label-text').textContent='';clearPreviews();automaticRuns=[];passes=[];storedBytes=0;selectedPass=null;$('results-panel').hidden=true;$('passes').replaceChildren();$('fields').replaceChildren();$('raw-text').textContent='';$('source-rows').replaceChildren();$('unqualified-evidence').textContent='';$('reading-quality').textContent='';$('automatic-selection').textContent='';$('automatic-run-details').textContent='';$('reader-preview-info').textContent='';if($('timing-summary'))$('timing-summary').textContent='';syncExportControls();}
 async function choose(file){
   if(!file)return;
   if(automaticRun)automaticRun.canceled=true;
@@ -117,35 +124,51 @@ async function read(rotation,{automatic=null}={}){
   finally{if(preview&&!preview.retained&&previews.get(passId)===preview)releasePreview(passId);if(p.generation===generation)preparing=false;if(canvas){canvas.width=1;canvas.height=1;}syncControls();}
 }
 async function readPaddle(){
+  // Start before preparation, unlike the legacy engine-only duration.
+  const tapStarted=performance.now();
   if(!photo||engine.busy||paddleEngine.busy||preparing||automaticRun||pendingCaptures.size)return;
   const capability=paddleCapabilities();
   if(!capability.supported){setStatus('This browser lacks the features needed for Paddle. Use one of the Tesseract buttons below.');return;}
   if(passes.length>=SETTINGS.maxPasses||storedBytes>=SETTINGS.maxStoredBytes){setStatus('This photo session has reached its result limit. Download the results, then choose a photo.');return;}
   const p=photo;preparing=true;syncControls();setStatus('Preparing the full photo for Paddle…');let canvas,preview,passId;
+  const phases={};let stage=performance.now();
   try{
-    const bitmap=await createImageBitmap(p.file);let plan;
+    const bitmap=await createImageBitmap(p.file);phases.decodeMs=performance.now()-stage;stage=performance.now();let plan;
     try{if(p.generation!==generation)throw new PaddleCanceled('Photo changed or reading canceled.');plan=paddlePreparation(bitmap.width,bitmap.height);canvas=document.createElement('canvas');canvas.width=plan.width;canvas.height=plan.height;const ctx=canvas.getContext('2d',{alpha:true,willReadFrequently:true});if(!ctx)throw new Error('This browser could not prepare the full image.');drawPaddleFrame(ctx,bitmap,plan);}
     finally{bitmap.close();}
-    passId=`${p.id}:paddle:${passes.length+1}`;
-    preview=await capturePreview(canvas,p,passId,0);
+    phases.drawAndCloseMs=performance.now()-stage;
+    passId=`${p.id}:paddle:${passes.length+1}`;stage=performance.now();
+    preview=await capturePreview(canvas,p,passId,0);phases.previewEncodeMs=performance.now()-stage;
     if(p.generation!==generation)throw new PaddleCanceled('Photo changed or reading canceled.');
-    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
-    const digest=await crypto.subtle.digest('SHA-256',pixels);
+    stage=performance.now();let pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;phases.rgbaReadMs=performance.now()-stage;
+    stage=performance.now();const digest=await crypto.subtle.digest('SHA-256',pixels);phases.pixelHashMs=performance.now()-stage;
     if(p.generation!==generation)throw new PaddleCanceled('Photo changed or reading canceled.');
     const pixelSha256=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
-    const buffer=pixels.buffer.slice(pixels.byteOffset,pixels.byteOffset+pixels.byteLength);
+    stage=performance.now();const transferBufferCopied=pixels.byteOffset!==0||pixels.byteLength!==pixels.buffer.byteLength;
+    const buffer=exactPixelBuffer(pixels);pixels=null;phases.transferBufferMs=performance.now()-stage;
+    // The exact PNG and hashed transfer bytes are now secured. Release the
+    // full-frame canvas before worker initialization, without using it again.
+    stage=performance.now();canvas.width=1;canvas.height=1;canvas=null;phases.canvasReleaseMs=performance.now()-stage;
     preparing=false;const start=performance.now();
-    const output=await paddleEngine.read({width:plan.width,height:plan.height,buffer,pixelSha256,sourceSha256:p.sha256},{photoId:p.id,passId});
+    const output=await paddleEngine.read({width:plan.width,height:plan.height,buffer,pixelSha256,sourceSha256:p.sha256},{photoId:p.id,passId});phases.engineRoundTripMs=performance.now()-start;
     if(p.generation!==generation||previews.get(passId)!==preview)throw new PaddleCanceled('Photo changed or reading canceled.');
-    const native=output.result;
+    stage=performance.now();const native=output.result;
     if(native.image.width!==plan.width||native.image.height!==plan.height||output.input?.pixelSha256!==pixelSha256||output.input?.sourceSha256!==p.sha256||output.input?.width!==plan.width||output.input?.height!==plan.height)throw new Error('Paddle source-frame verification failed. No result was used.');
-    const rows=paddleRows(native,passId,output.rawMethodReturns);const raw={text:native.items.map(item=>item.text).join('\n'),textProjection:'Native lines joined by one newline; no character edits',sdkResult:native,rawMethodReturns:output.rawMethodReturns};
-    let fields,originalFields,paddleProposals,fieldError=null;
-    try{const proposed=proposePaddleFields(rows,{barcodes:[]});originalFields=proposed.originalFields;paddleProposals=proposed.proposals;fields=proposed.fields;}catch(error){fieldError=String(error);fields=Object.fromEntries(['recipient','address','tracking','carrier'].map(k=>[k,{status:'UNAVAILABLE',value:null,alternatives:[]} ]));}
-    const observation=immutableObservation({schema:'parcel-snap-local-reader-test-v3',buildId:BUILD_ID,createdAt:new Date().toISOString(),photo:{id:p.id,sha256:p.sha256,width:p.width,height:p.height,bytes:p.file.size},passId,readId:output.readId,rotation:0,readingMode:'paddle',automaticRunId:null,selectionScore:null,internalDeskewRadians:null,preparation:{...plan,pixelSha256},readerPreview:preview.metadata,engine:{...PADDLE_SETTINGS,predictParams:PADDLE_PARAMS,actualRuntime:output.runtimeProvenance,initialization:output.initialization},elapsedSeconds:(performance.now()-start)/1000,raw,rows,originalFields:originalFields??null,paddleProposals:paddleProposals??null,fields,fieldError,roleVerified:false,customerSelected:null,emailSent:false});
-    const bytes=new TextEncoder().encode(JSON.stringify(observation)).byteLength;
+    const rows=paddleRows(native,passId,output.rawMethodReturns);const raw={text:native.items.map(item=>item.text).join('\n'),textProjection:'Native lines joined by one newline; no character edits',sdkResult:native,rawMethodReturns:output.rawMethodReturns};phases.sourceValidationMs=performance.now()-stage;
+    stage=performance.now();let fields,originalFields,paddleProposals,fieldError=null;
+    try{const proposed=proposePaddleFields(rows,{barcodes:[]});originalFields=proposed.originalFields;paddleProposals=proposed.proposals;fields=proposed.fields;}catch(error){fieldError=String(error);fields=Object.fromEntries(['recipient','address','tracking','carrier'].map(k=>[k,{status:'UNAVAILABLE',value:null,alternatives:[]} ]));}phases.fieldProjectionMs=performance.now()-stage;
+    stage=performance.now();
+    const observation=immutableObservation({schema:'parcel-snap-local-reader-test-v3',buildId:BUILD_ID,createdAt:new Date().toISOString(),photo:{id:p.id,sha256:p.sha256,width:p.width,height:p.height,bytes:p.file.size},passId,readId:output.readId,rotation:0,readingMode:'paddle',automaticRunId:null,selectionScore:null,internalDeskewRadians:null,preparation:{...plan,pixelSha256},readerPreview:preview.metadata,engine:{...PADDLE_SETTINGS,predictParams:PADDLE_PARAMS,actualRuntime:output.runtimeProvenance,initialization:output.initialization},elapsedSeconds:(performance.now()-start)/1000,elapsedSecondsScope:'Legacy engine and evidence preparation only; see timingReports for Read tap to result DOM update',raw,rows,originalFields:originalFields??null,paddleProposals:paddleProposals??null,fields,fieldError,roleVerified:false,customerSelected:null,emailSent:false});
+    const bytes=new TextEncoder().encode(JSON.stringify(observation)).byteLength+TIMING_REPORT_RESERVE_BYTES;
     if(bytes>SETTINGS.maxObservationBytes||storedBytes+bytes>SETTINGS.maxStoredBytes)throw new Error('Paddle result exceeds the local evidence budget. Earlier readings are unchanged.');
-    preview.retained=true;passes.push(observation);storedBytes+=bytes;selectedPass=passId;render();setStatus(`Paddle finished in ${observation.elapsedSeconds.toFixed(1)} seconds. Check every field against the photo. This is a separate reading.`);
+    preview.retained=true;passes.push(observation);storedBytes+=bytes;selectedPass=passId;phases.evidenceStoreMs=performance.now()-stage;
+    stage=performance.now();render();phases.resultDomUpdateMs=performance.now()-stage;
+    const tapToResultMs=performance.now()-tapStarted;
+    const timing=immutableObservation({passId,readingMode:'paddle',unit:'milliseconds',tapToResultMs,scope:'Read handler entry through first synchronous result DOM update; excludes photo selection and physical screen paint',phases,engine:Object.fromEntries(['runtimeModuleMs','workerInitializeMs','predictRoundTripMs','envelopeCheckMs','hardCleanupMs','engineTotalMs'].map(key=>[key,durationOrNull(output.timings?.[key])])),nativeSdk:{initializationMs:durationOrNull(output.initialization?.elapsedMs),detectionMs:durationOrNull(native.metrics?.detMs),recognitionMs:durationOrNull(native.metrics?.recMs),pipelineMs:durationOrNull(native.metrics?.totalMs)},transferBufferCopied,workerLifecycle:'fresh one-shot worker',overlapNotice:'Engine and native SDK timings are nested inside engineRoundTripMs; do not sum nested timings. HTTP cache hits are not measured.'});
+    if(new TextEncoder().encode(JSON.stringify(timing)).byteLength>TIMING_REPORT_RESERVE_BYTES)throw new Error('Timing report exceeded its reserved evidence budget.');
+    timingReports.set(passId,timing);renderPassInfo(observation);
+
+    setStatus(`Paddle finished in ${(tapToResultMs/1000).toFixed(1)} seconds from Read tap. Check every character against the photo. Download results below to keep the text and timings.`);
   }catch(error){if(p.generation===generation)setStatus(paddleEngine.blockedReason||(error instanceof PaddleCanceled||error instanceof ObsoleteRead?error.message:`Paddle could not finish: ${error.message}. Tesseract remains available.`));}
   finally{if(preview&&!preview.retained&&previews.get(passId)===preview)releasePreview(passId);if(p.generation===generation)preparing=false;if(canvas){canvas.width=1;canvas.height=1;}syncControls();}
 }
@@ -176,10 +199,20 @@ async function readAutomatic(){
   finally{clearTimeout(timer);if(automaticRun===run)automaticRun=null;syncControls();}
 }
 function appendText(parent,tag,text,className){const n=document.createElement(tag);n.textContent=text;if(className)n.className=className;parent.append(n);return n;}
+function renderPassInfo(pass){
+  const timing=timingReports.get(pass.passId),summary=$('timing-summary');
+  if(summary){
+    const seconds=value=>Number.isFinite(value)?`${(value/1000).toFixed(1)} s`:'not available';
+    const prep=timing?['decodeMs','drawAndCloseMs','previewEncodeMs','rgbaReadMs','pixelHashMs','transferBufferMs','canvasReleaseMs'].reduce((n,key)=>n+timing.phases[key],0):null;
+    summary.textContent=timing?`Selected Paddle reading: ${seconds(timing.tapToResultMs)} from Read tap to result · preparation ${seconds(prep)} · reader setup ${seconds(timing.engine?.workerInitializeMs)} · detection + recognition ${seconds(timing.nativeSdk.pipelineMs)}. Full timings are in the download.`:'';
+  }
+
+  $('pass-info').textContent=`${pass.readingMode==='paddle'?'Paddle · full photo':rotationLabel(pass.rotation)+(pass.readingMode==='automatic'?' · Tesseract sparse-text + internal deskew':' · Tesseract')} · supplied image ${pass.preparation.width} × ${pass.preparation.height}${pass.readingMode==='paddle'&&pass.preparation.resized?` · full-frame downsize from ${pass.preparation.originalWidth} × ${pass.preparation.originalHeight} (scale ${pass.preparation.scaleX.toFixed(4)} × ${pass.preparation.scaleY.toFixed(4)})`:''} · ${((timingReports.get(pass.passId)?.tapToResultMs??pass.elapsedSeconds*1000)/1000).toFixed(1)} seconds${timingReports.has(pass.passId)?' from Read tap':''} · separate, unverified reading`;
+}
 function render(){
   const pass=passes.find(p=>p.passId===selectedPass);if(!pass)return;$('results-panel').hidden=false;$('passes').replaceChildren();
   passes.forEach((p,i)=>{const b=appendText($('passes'),'button',`${i+1}. ${p.readingMode==='paddle'?'Paddle · full photo':rotationLabel(p.rotation)+(p.readingMode==='automatic'?' · auto':' · Tesseract')}`);b.type='button';b.setAttribute('aria-pressed',String(p.passId===selectedPass));b.onclick=()=>{selectedPass=p.passId;render();};});
-  $('pass-info').textContent=`${pass.readingMode==='paddle'?'Paddle · full photo':rotationLabel(pass.rotation)+(pass.readingMode==='automatic'?' · Tesseract sparse-text + internal deskew':' · Tesseract')} · supplied image ${pass.preparation.width} × ${pass.preparation.height}${pass.readingMode==='paddle'&&pass.preparation.resized?` · full-frame downsize from ${pass.preparation.originalWidth} × ${pass.preparation.originalHeight} (scale ${pass.preparation.scaleX.toFixed(4)} × ${pass.preparation.scaleY.toFixed(4)})`:''} · ${pass.elapsedSeconds.toFixed(1)} seconds · separate, unverified reading`;
+  renderPassInfo(pass);
   const preview=previews.get(pass.passId);$('reader-preview').hidden=false;
   // A fresh display node binds load/error events to this pass. An old image's
   // late error cannot release a newly selected pass's retained preview.
@@ -212,7 +245,8 @@ function acceptPhotoInput(input){const file=input.files?.[0];if(!file){photoSele
 for(const id of ['camera','gallery']){const input=$(id);input.addEventListener('change',()=>acceptPhotoInput(input));input.addEventListener('cancel',photoSelectionCanceled);}
 if($('paddle-read'))$('paddle-read').onclick=()=>readPaddle();$('auto-read').onclick=()=>readAutomatic();$('read').onclick=()=>read(0);$('rotate').onclick=()=>read(90);
 $('cancel').onclick=()=>{if(automaticRun){automaticRun.canceled=true;automaticRun.cancelReason='Canceled by you.';setStatus('Automatic reading canceled. Waiting for current preparation or reader cleanup to settle.');}if(preparing&&(!automaticRun||automaticRun.generation!==generation)){generation++;preparing=false;setStatus('Photo preparation canceled. Choose the photo again.');setPhotoStatus('Photo preparation canceled. Choose the photo again.');if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;$('photo-area').hidden=true;$('original').removeAttribute('src');}releasePendingPreviews();engine.cancel();paddleEngine.cancel();syncControls();};
-$('export').onclick=()=>{if(!passes.length&&!automaticRuns.length)return;const blob=new Blob([JSON.stringify({buildId:BUILD_ID,notice:'Local unverified OCR test. No customer selection or email action.',observations:passes,automaticRuns},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='parcel-snap-reader-test.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+function downloadResults(){if(!passes.length&&!automaticRuns.length)return;const blob=new Blob([JSON.stringify({buildId:BUILD_ID,notice:'Local unverified OCR test. No customer selection or email action.',observations:passes,automaticRuns,timingReports:[...timingReports.values()]},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='parcel-snap-reader-test.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+$('export').onclick=downloadResults;if($('export-near-status'))$('export-near-status').onclick=downloadResults;syncExportControls();
 addEventListener('pagehide',()=>{if(automaticRun)automaticRun.canceled=true;generation++;preparing=false;engine.cancel('Page closed.');paddleEngine.cancel('Page closed.');if(photo?.url)URL.revokeObjectURL(photo.url);photo=null;clearResults();$('original').removeAttribute('src');$('photo-area').hidden=true;setStatus('Choose a photo to begin.');setPhotoStatus('Ready to choose a photo.');syncControls();});
 
 // A native selection may happen before this module and its dependencies finish

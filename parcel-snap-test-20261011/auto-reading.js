@@ -1,6 +1,6 @@
 // Frozen recipe measured with six private photos using Tesseract.js6.0.1 Node/WASM.
 // Engine confidence chooses a whole reading only. It cannot establish correctness.
-export const BUILD_ID='ps-20261011-reader-07';
+export const BUILD_ID='ps-20261011-reader-08';
 export const AUTO_RECIPE=Object.freeze({id:'sparse-four-orientation-deskew-v1',rotations:Object.freeze([0,90,180,270]),psm:11,rotateAuto:true,perReadTimeoutMs:90_000,batchTimeoutMs:360_000,maxRunsPerPhoto:6,summaryReserveBytes:65_536,score:'sum Unicode letters/digits per word × max(0, finite native confidence − 50); missing/nonfinite confidence contributes0; ties keep earliest0/90/180/270',opticalAccuracy:'NOT_ASSESSED'});
 export function wholePassScore(data){
  let score=0;
