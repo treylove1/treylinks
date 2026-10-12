@@ -1,0 +1,11 @@
+{
+  "name": "parcel-snap-isolated-ocr-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned, test-only native canvas and browser-major-compatible OCR runtime. No app dependency or install scripts.",
+  "dependencies": {
+    "@napi-rs/canvas": "0.1.100",
+    "tesseract.js": "6.0.1",
+    "tesseract.js-core": "6.0.0"
+  }
+}

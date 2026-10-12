@@ -3,23 +3,34 @@ const {createCanvas}=require('@napi-rs/canvas');const {createWorker}=require('te
 (async()=>{
  const source=fs.readFileSync(__dirname+'/../app.js','utf8');
  const matcher=fs.readFileSync(__dirname+'/../known-customer-matcher.js','utf8');
- const nodes={};const node=id=>nodes[id]||(nodes[id]={value:'',textContent:'',classList:{add(){},remove(){},toggle(){}}});
- const worker=await createWorker('eng',1,{langPath:'/usr/share/tesseract-ocr/5/tessdata',gzip:false});
+ const nodes={};const node=id=>nodes[id]||(nodes[id]={value:'',textContent:'',dataset:{},checked:false,classList:{add(){},remove(){},toggle(){}}});
+ const langPath=process.env.TESSDATA_PREFIX||'/usr/share/tesseract-ocr/5/tessdata';
+ if(!fs.existsSync(require('node:path').join(langPath,'eng.traineddata')))throw Error('Set TESSDATA_PREFIX to installed English OCR data; this fixture does not download language data.');
+ const worker=await createWorker('eng',1,{langPath,gzip:false});
+ try{
  const adapter={setParameters:p=>worker.setParameters(p),recognize:(image,...args)=>worker.recognize(image.toBuffer('image/png'),...args),terminate:()=>worker.terminate()};
  const context={console,performance,setTimeout,window:{},document:{getElementById:node,createElement:()=>createCanvas(1,1)},supabase:{createClient:()=>({})},Tesseract:{createWorker:async()=>adapter}};
  vm.createContext(context);vm.runInContext(matcher,context);vm.runInContext(source.slice(0,source.indexOf('function setMode(')),context);
- vm.runInContext(`workspace={customers:Array.from({length:99},(_,i)=>({id:'test-'+i,name:'Client Number '+i,customer_type:'PERSON',email:'client@example.test'})).concat([{id:'correct',name:'Trevon Humes',customer_type:'PERSON',email:'owner@example.test'}])};`,context);
+ vm.runInContext(`workspace={customers:Array.from({length:99},(_,i)=>({id:'test-'+i,name:'Client Number '+i,customer_type:'PERSON',email:'client@example.invalid',contact_email_visible:true,contact_version:'fictional-contact-'+i})).concat([{id:'correct',name:'Jordan Sample',customer_type:'PERSON',email:'recipient@example.invalid',contact_email_visible:true,contact_version:'fictional-contact-correct'}])};`,context);
  node('receiveOrigin').value='test-warehouse';
- const canvas=createCanvas(800,400),c=canvas.getContext('2d');c.fillStyle='white';c.fillRect(0,0,800,400);c.fillStyle='black';c.font='32px sans-serif';c.fillText('Trevon Humes',35,100);c.fillText('16600 NW 54TH AVE UNIT 9',35,155);c.fillText('HIALEAH FL 33014',35,210);c.fillText('TRACKING: 123456789012',35,270);
+ const canvas=createCanvas(800,400),c=canvas.getContext('2d');c.fillStyle='white';c.fillRect(0,0,800,400);c.fillStyle='black';c.font='32px sans-serif';c.fillText('Jordan Sample',35,100);c.fillText('123 TEST PARCEL WAY UNIT 004',35,155);c.fillText('MIAMI FL 33101',35,210);c.fillText('TRACKING: 123456789012',35,270);
  await context.getParcelSnapOcrWorker();
+ let recoveryPromise;const actualRecovery=context.runDeepRecovery;
+ context.runDeepRecovery=(...args)=>(recoveryPromise=actualRecovery(...args));
  const result=await context.readPackagePhoto(canvas);
- assert.equal(result.match.customer.id,'correct');assert(node('labelRawText').textContent.includes('Trevon Humes'));
+ // Let the actual background OCR complete before terminating its shared test adapter.
+ if(recoveryPromise)await recoveryPromise;
+ assert.equal(result.match,null);assert.equal(result.candidate,'Jordan Sample');assert.equal(result.suggestion,'Jordan Sample');
+ assert.equal(result.status,'NEEDS_REVIEW');assert(node('labelRawText').textContent.includes('Jordan Sample'));
  let saves=0;context.receivePackage=async()=>{saves++};
- await context.autoReceiveMatchedPhoto(result,null);await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,1,'one save per photo');
+ await context.autoReceiveMatchedPhoto(result,null);await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,0,'unreviewed OCR must not save or notify');
  vm.runInContext('autoReceivedToken=0; workspace.customers.find(c=>c.id==="correct").email="";',context);
- await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,1);assert.equal(node('receiveResult').textContent,'Email not listed');
- vm.runInContext('workspace.customers.find(c=>c.id==="correct").email="owner@example.test"; intakeReadToken++;',context);
- await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,1,'stale photo must not send');
- console.log(JSON.stringify({tests:'100-client photo matching, extracted text, one auto-save, missing email, stale-photo protection',ocr_seconds:result.elapsed_seconds,target_met:result.elapsed_seconds<1}));
- await worker.terminate();
+ node('receiveCustomer').value='correct';context.renderLabelReadout();
+ await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,0);assert(node('labelFields').textContent.includes('Email not listed'));
+ vm.runInContext('workspace.customers.find(c=>c.id==="correct").email="recipient@example.invalid"; intakeReadToken++;',context);
+ await context.autoReceiveMatchedPhoto(result,null);assert.equal(saves,0,'stale photo must not send');
+ console.log(JSON.stringify({runtime:{tesseract:require('tesseract.js/package.json').version,tesseract_core:require('tesseract.js-core/package.json').version,canvas:require('@napi-rs/canvas/package.json').version},tests:'100-client candidate recognition, actual OCR text, no automatic save, missing email, stale-photo protection',fixture_ocr_seconds:result.elapsed_seconds,physical_camera_test:false,actual_email_sent:false}));
+ }finally{
+  await worker.terminate();
+ }
 })().catch(e=>{console.error(e);process.exitCode=1});

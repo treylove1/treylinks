@@ -19,3 +19,23 @@ OPENAI_MODEL = "gpt-4o"
 name = "RATE_LIMITER"
 namespace_id = "10808"
 simple = { limit = 30, period = 60 }
+
+# Preview bindings do not inherit production bindings. This harness has no
+# storage/email bindings; workspace authorization is read-only and checked per scan.
+[previews.vars]
+STAGING_SCAN_ONLY = "true"
+VISION_PROVIDER = "cloudflare"
+CF_VISION_MODEL = "@cf/google/gemma-4-26b-a4b-it"
+CF_VISION_FALLBACK_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+ALLOWED_ORIGIN = "https://parcel-snap-camera-readiness-20261008-parcel-snap-vision.humestrevon.workers.dev"
+SUPABASE_URL = "https://evjoitqnogmpedrulepv.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wv2cDeErfEorwoGCLl9rMA_yo01I01X"
+
+[previews.ai]
+binding = "AI"
+
+# Dedicated camera preview rate-limit namespace; production remains 10808.
+[[previews.ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "2026100801"
+simple = { limit = 30, period = 60 }

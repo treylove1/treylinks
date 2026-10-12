@@ -1,0 +1,20 @@
+# REVIEWED LOCAL PROPOSAL ONLY. This file has not been uploaded or deployed.
+# Matches the existing production provider and public bindings verified 2026-10-09.
+# Do not deploy with wrangler.toml: that file selects Cloudflare AI instead.
+# Retain the existing OPENAI_API_KEY Worker secret; never retrieve or copy it.
+name = "parcel-snap-vision"
+account_id = "30e9da5770a97e88b866786e979164b8"
+main = "worker.mjs"
+compatibility_date = "2026-10-08"
+
+[vars]
+VISION_PROVIDER = "openai"
+OPENAI_MODEL = "gpt-4o"
+ALLOWED_ORIGIN = "https://treylove1.github.io"
+SUPABASE_URL = "https://evjoitqnogmpedrulepv.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wv2cDeErfEorwoGCLl9rMA_yo01I01X"
+
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "10808"
+simple = { limit = 30, period = 60 }

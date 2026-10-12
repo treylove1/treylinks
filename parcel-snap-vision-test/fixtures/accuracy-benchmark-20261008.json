@@ -1,0 +1,304 @@
+{
+  "scope": "Direct hosted model calls only; not authenticated /scan or physical camera proof",
+  "source_head": "31dc19e6a5941ab96745e45cbfbfd2156e34a3e7",
+  "original": {
+    "rotated": {
+      "fixture": "rotated",
+      "call_wall_ms": 17224,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 698,
+        "neurons": 22.490909576416016,
+        "prompt_tokens": 380,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 1078
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST000000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    },
+    "dim": {
+      "fixture": "dim",
+      "call_wall_ms": 15681,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 679,
+        "neurons": 22.045455932617188,
+        "prompt_tokens": 388,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 1067
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST000000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    },
+    "tracking-obscured": {
+      "fixture": "tracking-obscured",
+      "call_wall_ms": 18862,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 804,
+        "neurons": 25.454545974731445,
+        "prompt_tokens": 388,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 1192
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": null,
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    }
+  },
+  "rejected_fast_setting": {
+    "clean": {
+      "fixture": "clean",
+      "call_wall_ms": 7080,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 138,
+        "neurons": 7.627272605895996,
+        "prompt_tokens": 425,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 563
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "reasoning_chars": 0,
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST000000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    },
+    "soft-blur": {
+      "fixture": "soft-blur",
+      "call_wall_ms": 7179,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 138,
+        "neurons": 7.627272605895996,
+        "prompt_tokens": 425,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 563
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "reasoning_chars": 0,
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST000000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    },
+    "dim": {
+      "fixture": "dim",
+      "call_wall_ms": 7557,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 137,
+        "neurons": 7.599999904632568,
+        "prompt_tokens": 425,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 562
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "reasoning_chars": 0,
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST00000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    },
+    "tracking-obscured": {
+      "fixture": "tracking-obscured",
+      "call_wall_ms": 6817,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 123,
+        "neurons": 7.218181610107422,
+        "prompt_tokens": 425,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 548
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "reasoning_chars": 0,
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": null,
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    }
+  },
+  "accepted_unit_prompt": {
+    "clean": {
+      "fixture": "clean",
+      "call_wall_ms": 12659,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 561,
+        "neurons": 19.14545440673828,
+        "prompt_tokens": 423,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 984
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST000000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    },
+    "soft-blur": {
+      "fixture": "soft-blur",
+      "call_wall_ms": 10951,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 551,
+        "neurons": 18.881818771362305,
+        "prompt_tokens": 424,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 975
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it",
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST000000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    },
+    "dim": {
+      "fixture": "dim",
+      "call_wall_ms": 15004,
+      "error": "",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 689,
+        "neurons": 22.636363983154297,
+        "prompt_tokens": 423,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 1112
+      },
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "fields": {
+        "recipient_name": "JORDAN SAMPLE",
+        "address_line": "123 TEST PARCEL WAY",
+        "unit": "UNIT 04",
+        "city": "MIAMI",
+        "state": "FL",
+        "zip": "33101",
+        "tracking": "1ZTEST000000000001",
+        "order_reference": null,
+        "partner_order": null,
+        "carrier": "UPS (FICTIONAL TEST)",
+        "confidence": 1
+      }
+    }
+  }
+}

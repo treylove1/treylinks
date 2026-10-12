@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Parcel Snap Business Portal</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Parcel Snap Business Portal · Private local review</title>
+  <link rel="stylesheet" href="styles.css?v=20261010-gallery">
 </head>
 <body>
   <div id="authView" class="screen">
     <section class="authCard">
       <div class="brand">PARCEL SNAP</div>
       <h1>Business Portal</h1>
-      <p>Private package intake, recipient recognition, courier operations, and customer notifications tailored to each business.</p>
+      <p>Private local-reader review. Sign in with an existing account to review your directory. Changes, uploads, new accounts, sends and live portal access are disabled until a compatible backend is separately approved.</p>
 
       <div class="segmented three">
         <button id="signInMode" class="active">Sign in</button>
@@ -248,7 +249,13 @@
         <section id="tab-receive" class="panel">
           <article class="card">
             <span class="eyebrow">PACKAGE INTAKE</span>
-            <h2>Take Package Photo</h2>
+            <h2>Read and review a package</h2>
+            <section class="localReviewNotice" aria-label="Private review build">
+              <strong>Private review only</strong>
+              <p>The label reader runs on this device. Review printed text separately from your registered customer. This build cannot save packages, upload photos or send arrival emails. Live portal access is also locked until a compatible read-only backend is separately approved.</p>
+              <p id="arrivalCapabilityStatus" role="status">Arrival safety contract has not been verified. Saving and sending are blocked.</p>
+              <button id="checkArrivalCapability" type="button" class="ghost">Check backend readiness</button>
+            </section>
 
             <div class="formGrid">
               <label id="receiveOriginWrap">Receiving warehouse
@@ -260,11 +267,24 @@
             </div>
             <div id="receiveRouteSummary" class="routeSummary hidden"></div>
 
-            <label class="cameraBox">
-              <span>📷 Take Package Photo</span>
-              <input id="packagePhoto" type="file" accept="image/*" capture="environment">
-            </label>
+            <div class="photoSources" role="group" aria-label="Package label photo" aria-describedby="packagePhotoHelp">
+              <label class="cameraBox">
+                <span>📷 Take photo</span>
+                <input id="packagePhoto" type="file" accept="image/*" capture="environment" aria-describedby="packagePhotoHelp">
+              </label>
+              <label class="cameraBox">
+                <span>🖼️ Choose from gallery</span>
+                <input id="packagePhotoGallery" type="file" accept="image/*" aria-describedby="packagePhotoHelp">
+              </label>
+            </div>
+            <p id="packagePhotoHelp" class="photoHelp">Choose one label photo. Browse your photos or use your phone’s search if available. Review the photo and customer before receiving or sending.</p>
+            <p id="localPhotoStatus" role="status" aria-live="polite">Choose a photo. No reading starts until you tap Read label locally.</p>
+            <div class="localReaderActions"><button id="readLocalLabel" type="button" class="primary" disabled>Read label locally</button><button id="cancelLocalLabel" type="button" class="ghost" disabled>Cancel reading</button></div>
+            <small>Free Paddle reader, one full-frame reading. Maximum 20 MiB and 40 megapixels; full frames over 10 megapixels are reduced. First use loads about 53 MB of verified reader assets. Phone speed and camera behavior need separate testing.</small>
             <div id="packagePhotoPreview" class="photoPreview"></div>
+            <details><summary>Exact frame supplied to the reader</summary><img id="localReaderFrame" class="localReaderFrame" alt="Exact full-frame canvas captured before Paddle OCR" hidden><p>Native OCR proposals come only from this single frame. Model scores do not measure field accuracy.</p></details>
+            <section id="localLabelBlocks" class="localLabelBlocks" aria-live="polite"></section>
+            <section id="localDirectoryCandidates" class="localDirectoryCandidates" aria-live="polite"></section>
 
             <div id="processingBox" class="processing hidden">
               <strong id="processingText">Processing package…</strong>
@@ -272,12 +292,12 @@
             </div>
 
             <section id="labelReadout" class="notice hidden" aria-live="polite">
-              <strong>Read from photo</strong>
+              <strong>Photo reading and reviewed fields</strong>
               <pre id="labelFields" style="white-space:pre-wrap"></pre>
               <details open><summary>All extracted text</summary><pre id="labelRawText" style="white-space:pre-wrap"></pre></details>
             </section>
 
-            <label>Customer
+            <label>Registered customer, chosen after checking this photo
               <select id="receiveCustomer"></select>
             </label>
 
@@ -328,9 +348,27 @@
               </label>
             </div>
 
-            <input id="receiveTracking" type="hidden">
-            <button id="receivePackageButton" class="primary wide">Receive Package</button>
+            <label>Name as printed, reviewed from this photo
+              <input id="receiveLabelName" placeholder="Enter the printed name if the reader missed it">
+              <small>Manual entries remain separate from the original OCR evidence and registered customer name.</small>
+            </label>
+            <label>Recipient address read from photo
+              <input id="receiveAddress" placeholder="Not read — enter from the label">
+            </label>
+            <label>Tracking number
+              <input id="receiveTracking" placeholder="Not read — enter from the label">
+            </label>
+            <label><input id="receiveLabelConfirmed" type="checkbox">
+              <span id="receiveConfirmationText">I checked the photo, recipient, address, tracking and customer email. Send the arrival notice to this customer.</span>
+            </label>
+            <small>Unconfirmed scans can be saved for review and reopened from Packages. No customer email is sent automatically.</small>
+            <button id="receivePackageButton" class="primary wide" disabled>Save and send unavailable in private review</button>
             <div id="receiveResult" class="message"></div>
+            <div id="receiveEmailRecovery" class="message hidden">
+              <div id="receiveEmailStatus" role="status" aria-live="polite"></div>
+              <button id="receiveCheckEmailStatus" type="button">Check email status</button>
+              <small>This checks the saved notice only. It does not resend the email.</small>
+            </div>
           </article>
         </section>
 
@@ -338,16 +376,23 @@
           <article class="card">
             <span class="eyebrow">PACKAGE MOVEMENT</span>
             <h2>Record Arrival at Another Warehouse</h2>
-            <p>Photograph the package again. Parcel Snap will use tracking and the known-customer directory to find the existing package.</p>
+            <p>Take an arrival photo or choose one you already have. Parcel Snap will use tracking and the known-customer directory to find the existing package.</p>
 
             <label>Arriving warehouse
               <select id="transferFacility"></select>
             </label>
 
-            <label class="cameraBox">
-              <span>📷 Take Arrival Photo</span>
-              <input id="transferPhoto" type="file" accept="image/*" capture="environment">
-            </label>
+            <div class="photoSources" role="group" aria-label="Arrival label photo" aria-describedby="transferPhotoHelp">
+              <label class="cameraBox">
+                <span>📷 Take photo</span>
+                <input id="transferPhoto" type="file" disabled accept="image/*" capture="environment" aria-describedby="transferPhotoHelp">
+              </label>
+              <label class="cameraBox">
+                <span>🖼️ Choose from gallery</span>
+                <input id="transferPhotoGallery" type="file" disabled accept="image/*" aria-describedby="transferPhotoHelp">
+              </label>
+            </div>
+            <p id="transferPhotoHelp" class="photoHelp">Choose one arrival photo. Browse your photos or use your phone’s search if available. Review the photo, package and customer before sending.</p>
             <div id="transferPhotoPreview" class="photoPreview"></div>
 
             <div id="transferProcessing" class="processing hidden">
@@ -363,8 +408,18 @@
               <input id="transferNote" placeholder="Optional receiving note">
             </label>
 
-            <button id="saveTransfer" class="primary wide">Save Arrival</button>
+            <div id="transferRecipient" class="message" role="status" aria-live="polite">Choose a package to review its customer email.</div>
+            <label><input id="transferLabelConfirmed" type="checkbox">
+              <span id="transferConfirmationText">I checked this arrival photo, selected package, tracking and customer email. Send the arrival notice.</span>
+            </label>
+
+            <button id="saveTransfer" class="primary wide" disabled>Save Arrival · paused in private review</button>
             <div id="transferResult" class="message"></div>
+            <div id="transferEmailRecovery" class="message hidden">
+              <div id="transferEmailStatus" role="status" aria-live="polite"></div>
+              <button id="transferCheckEmailStatus" type="button">Check email status</button>
+              <small>This checks the saved notice only. It does not resend the email.</small>
+            </div>
           </article>
         </section>
 
@@ -532,9 +587,9 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
   <script src="known-customer-matcher.js"></script>
-  <script src="app.js?v=20261008-ocr"></script>
-  <script src="vision-client.js?v=20261008-ocr"></script>
+  <script src="barcode-reader.js?v=20261010-datamatrix"></script>
+  <script src="intake-review.js?v=ps-fullapp-local-review-01"></script>
+  <script src="app.js?v=ps-fullapp-local-review-01"></script>
 </body>
 </html>

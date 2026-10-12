@@ -1,5 +1,11 @@
 (() => {
+ // One gate shared with the older local OCR fallback, which loads before this script.
+ window.PARCEL_SNAP_REVIEW_ONLY=true;
+ const saveButton=document.getElementById('receivePackageButton');
+ if(saveButton){saveButton.disabled=true;saveButton.textContent='Camera review only — saving disabled';}
  let generation=0;
+ let lastVisionMetrics=null;
+ let lastVisionWarnings=[];
  const keys=['recipient_name','address_line','unit','city','state','zip','tracking','order_reference','partner_order','carrier'];
  const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
  function rank(result){
@@ -14,29 +20,50 @@
  async function fullPhoto(file){
   let image;
   try{image=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{image=await loadImage(await readFileDataUrl(file));}
-  const scale=Math.min(1,1600/Math.max(image.width,image.height));
-  const canvas=document.createElement('canvas');canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);
-  canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);image.close?.();
-  return canvas.toDataURL('image/jpeg',.85);
+  // Keep the full frame and preserve legibility before sacrificing resolution.
+  // The Worker caps incoming JSON at 4 MB, so return a JPEG well below that limit.
+  try{
+    for(const maxSide of [2400,2100,1800,1600]){
+      const scale=Math.min(1,maxSide/Math.max(image.width,image.height));
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(image.width*scale));
+      canvas.height=Math.max(1,Math.round(image.height*scale));
+      canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+      for(const quality of [.86,.77,.66]){
+        const data=canvas.toDataURL('image/jpeg',quality);
+        if(data.length<=3500000)return data;
+      }
+    }
+    throw Error('Photo exceeds upload limit — photograph the label closer');
+  }finally{image.close?.();}
+ }
+ async function fullFrameFallback(file){
+  let image;
+  try{image=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{image=await loadImage(await readFileDataUrl(file));}
+  try{return drawImageRegionCanvas(image,null,2400);}finally{image.close?.();}
  }
  function trackingFromBarcode(raw){
   if(!raw)return null;
   const text=raw.trim();
-  if(/^[a-z0-9][a-z0-9 ._-]{5,99}$/i.test(text))return text;
-  try{const u=new URL(text);return u.searchParams.get('tracking')||u.searchParams.get('tracking_number')||null;}catch{}
-  try{const j=JSON.parse(text);return typeof j.tracking==='string'?j.tracking:null;}catch{return null;}
+  // A QR payload is not automatically a tracking number. Accept only recognizable plain codes.
+  const carrier=guessCarrier(intakeOcrText);
+  const valid=validatedTracking(text,carrier);if(valid)return valid;
+  try{const u=new URL(text);return validatedTracking(u.searchParams.get('tracking')||u.searchParams.get('tracking_number'),carrier)||null;}catch{}
+  try{const j=JSON.parse(text);return typeof j.tracking==='string'?(validatedTracking(j.tracking,carrier)||null):null;}catch{return null;}
  }
  async function vision(photo){
   if(!window.PARCEL_VISION_URL)throw Error('Vision proxy is not configured');
   const {data:{session}}=await sb.auth.getSession();if(!session)throw Error('Please sign in');
-  const response=await fetch(window.PARCEL_VISION_URL,{method:'POST',signal:AbortSignal.timeout(25000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({image_data_url:photo})});
+  const response=await fetch(window.PARCEL_VISION_URL,{method:'POST',signal:AbortSignal.timeout(60000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({image_data_url:photo})});
   const body=await response.json();if(!response.ok)throw Error(body.error||'Vision unavailable');
+  lastVisionWarnings=Array.isArray(body.review_warnings)?body.review_warnings:[];
+  lastVisionMetrics=body.timing_ms?{...body.timing_ms,model_attempts:body.model_attempts||1,model:body.model||'unknown'}:null;
   const r=body.result;if(!r||keys.some(k=>!(k in r)||(r[k]!==null&&typeof r[k]!=='string'))||!Number.isFinite(r.confidence)||r.confidence<0||r.confidence>1)throw Error('Invalid vision result');return r;
  }
  function editor(result,rawBarcode,fallback=false){
   let box=$('visionFields');if(!box){box=document.createElement('div');box.id='visionFields';$('labelReadout').append(box);}box.replaceChildren();
-  const title=document.createElement('p');title.textContent=fallback?'Local OCR fallback — low confidence, please verify':'AI reading confidence: '+Math.round(result.confidence*100)+'% · Review highlighted fields';box.append(title);
-  for(const key of keys){const label=document.createElement('label');label.textContent=key.replaceAll('_',' ')+(result[key]===null?' — not read':'');const input=document.createElement('input');input.value=result[key]||'';input.dataset.field=key;if(result[key]===null){input.style.border='2px solid #f0ad4e';input.placeholder='Not read — enter manually';}input.oninput=()=>{result[key]=input.value.trim()||null;sync(result);renderLabelReadout();};label.append(input);box.append(label);}
+  const title=document.createElement('p');title.textContent=fallback?'Local OCR fallback — verify every field':'AI-estimated confidence: '+Math.round(result.confidence*100)+'% (not verified) · Review all fields';box.append(title);
+  for(const key of keys){const label=document.createElement('label');label.textContent=key.replaceAll('_',' ')+(result[key]===null?' — not read':'');const input=document.createElement('input');input.value=result[key]||'';input.dataset.field=key;if(result[key]===null){input.style.border='2px solid #f0ad4e';input.placeholder='Not read — enter manually';}input.oninput=()=>{result[key]=input.value.trim()||null;sync(result);renderLabelReadout();};label.append(input);if(!fallback)for(const warning of lastVisionWarnings.filter(w=>w.field===key)){input.style.border='2px solid #f0ad4e';const note=document.createElement('p');note.textContent=warning.message;label.append(note);}box.append(label);}
   if(rawBarcode){const p=document.createElement('p');p.textContent='Decoded barcode: '+rawBarcode;box.append(p);}
  }
  function sync(r){intakeOcrName=r.recipient_name||'';intakeOcrAddress=[r.address_line,r.unit,r.city,r.state,r.zip].filter(Boolean).join(', ');intakeOcrText=keys.map(k=>k+': '+(r[k]??'Not read')).join('\n');$('receiveTracking').value=r.tracking||'';$('receiveCarrier').value=r.carrier||'';if(!$('receiveCustomer').value)$('receiveNewCustomerName').value=intakeOcrName;}
@@ -46,40 +73,69 @@
  }
  $('packagePhoto').onchange=async event=>{
   const file=event.target.files?.[0];if(!file||receiveInFlight)return;
-  const current=++generation;const started=performance.now();stopRecoveryOcr();intakeReadToken++;const token=intakeReadToken;
+  const current=++generation;const started=performance.now();lastVisionMetrics=null;lastVisionWarnings=[];stopRecoveryOcr();intakeReadToken++;const token=intakeReadToken;
   intakePackageId=crypto.randomUUID();intakeOcrText='';intakeOcrName='';intakeOcrAddress='';
   for(const id of ['receiveTracking','receiveCarrier','receiveCustomer','receiveNewCustomerName','receiveNewCustomerEmail','receiveNewCustomerPhone'])$(id).value='';
   $('visionFields')?.remove();$('receiveResult').textContent='';$('processingBox').classList.remove('hidden');$('processingText').textContent='Reading full photo with AI…';$('processingDetail').textContent='';
+  let barcodeResult=null, activeResult=null;
   const codePromise=window.ParcelBarcode.decodePhoto(file,()=>current===generation).catch(()=>({raw:null,status:'Barcode decoder failed — refresh and retry'}));
   const barcodeStatus=document.createElement('p');barcodeStatus.id='barcodeStatus';$('barcodeStatus')?.remove();$('processingBox').append(barcodeStatus);barcodeStatus.textContent='Scanning QR / barcode…';
-  codePromise.then(decoded=>{if(current!==generation)return;barcodeStatus.textContent=decoded.raw?'Decoded barcode: '+decoded.raw:decoded.status;const tracking=trackingFromBarcode(decoded.raw);if(tracking){$('receiveTracking').value=tracking;renderLabelReadout();}else if(decoded.raw){barcodeStatus.textContent+=' · Tracking not identified in payload — verify manually';}});
+  // Barcode decoding must not block the completed AI reading or overwrite a different tracking number.
+  codePromise.then(decoded=>{
+    if(current!==generation)return;
+    barcodeResult=decoded;
+    barcodeStatus.textContent=decoded.raw?'Decoded barcode: '+decoded.raw:decoded.status;
+    const tracking=trackingFromBarcode(decoded.raw);
+    if(!tracking){if(decoded.raw)barcodeStatus.textContent+=' · Verify whether this is a tracking number';return;}
+    const currentTracking=activeResult?.tracking||$('receiveTracking').value.trim();
+    if(currentTracking&&norm(currentTracking)!==norm(tracking)){barcodeStatus.textContent+=' · CONFLICT with AI tracking — verify manually';return;}
+    if(!currentTracking){
+      $('receiveTracking').value=tracking;
+      if(activeResult){
+        activeResult.tracking=tracking;
+        const input=$('visionFields')?.querySelector('[data-field="tracking"]');
+        if(input)input.value=tracking;
+        renderLabelReadout();
+      }
+    }
+  });
   try{
    const photo=await fullPhoto(file);if(current!==generation)return;intakePhotoDataUrl=photo;$('packagePhotoPreview').innerHTML='<img src="'+photo+'" alt="Package photo">';
 
    let result;
+   const visionStarted=performance.now();
    try{result=await vision(photo);}catch(error){
     if(current!==generation)return;
-    // Full frame fallback avoids the clipped label detector entirely.
-    let img;try{img=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{img=await loadImage(await readFileDataUrl(file));}
-    let rect;try{rect=detectBrightLabelRegion(img);}catch{}
-    if(rect){const px=rect.w*.15,py=rect.h*.15;const x=Math.max(0,rect.x-px),y=Math.max(0,rect.y-py);rect={x,y,w:Math.min(img.width,rect.x+rect.w+px)-x,h:Math.min(img.height,rect.y+rect.h+py)-y};}
-    const canvas=drawImageRegionCanvas(img,rect||null,2400);img.close?.();
-    const local=await readPackagePhoto(prepareFastOcrCanvas(fitForOcr(canvas,900,1300)),{raw:fitForOcr(canvas,1100,1600),startedAt:started});stopRecoveryOcr();if(current!==generation||local?.superseded)return;
-    const code=await codePromise;const raw=code.raw;if(current!==generation)return;const tracking=trackingFromBarcode(raw);if(tracking)$('receiveTracking').value=tracking;
+    // Keep the original full frame and its detail when the hosted reader is unavailable.
+    const canvas=await fullFrameFallback(file);
+    const local=await readPackagePhoto(canvas,{raw:canvas,startedAt:started});stopRecoveryOcr();if(current!==generation||local?.superseded)return;
+    const raw=barcodeResult?.raw||null;if(current!==generation)return;const tracking=trackingFromBarcode(raw);if(tracking&&!$('receiveTracking').value)$('receiveTracking').value=tracking;
     $('processingDetail').textContent='Low confidence, please verify · '+error.message+' · '+((performance.now()-started)/1000).toFixed(1)+'s';
-    $('receiveResult').textContent='Verify all fields before saving. '+((workspace?.customers||[]).find(c=>c.id===$('receiveCustomer').value)?.email?'':'Email not listed');renderLabelReadout();editor({...Object.fromEntries(keys.map(k=>[k,null])),recipient_name:intakeOcrName||null,address_line:intakeOcrAddress||null,tracking:$('receiveTracking').value||null,confidence:0},raw,true);return;
+    $('receiveResult').textContent='Verify all fields before saving. '+((workspace?.customers||[]).find(c=>c.id===$('receiveCustomer').value)?.email?'':'Email not listed');renderLabelReadout();activeResult={...Object.fromEntries(keys.map(k=>[k,null])),recipient_name:intakeOcrName||null,address_line:intakeOcrAddress||null,tracking:$('receiveTracking').value||null,confidence:0};editor(activeResult,raw,true);return;
    }
-   const code=await codePromise;const raw=code.raw;if(current!==generation)return;const decoded=trackingFromBarcode(raw);if(decoded)result.tracking=decoded;
+   // Render the AI result immediately; the independent barcode scan may finish later.
+   const raw=barcodeResult?.raw||null;
+   const decoded=trackingFromBarcode(raw);
+   if(decoded){
+     if(!result.tracking||norm(result.tracking)===norm(decoded))result.tracking=decoded;
+     else barcodeStatus.textContent='Barcode and AI tracking differ — verify manually';
+   }
+   activeResult=result;
    sync(result);const ranked=rank(result);const best=ranked[0];const gap=best?best.score-(ranked[1]?.score||0):0;
    const high=result.confidence>=.90&&result.recipient_name&&best?.name>=.94&&best.score>=.93&&gap>=.10&&(best.address===null||best.address>=.80);
-   if(high){$('receiveCustomer').value=best.customer.id;hideInlineCustomer();}else{showInlineCustomer(result.recipient_name||'');}
-   renderLabelReadout();editor(result,raw);if(!high)suggestions(result,ranked);
-   $('processingText').textContent=result.recipient_name||'Name not read';$('processingDetail').textContent='AI confidence '+Math.round(result.confidence*100)+'% · '+((performance.now()-started)/1000).toFixed(1)+'s';
-   const customer=high?best.customer:null;
-   $('receiveResult').textContent=customer?.email?'Verify highlighted fields':'Email not listed';
-   // Missing required identity/address/tracking fields block unattended sending.
-   if(high&&customer.email&&result.address_line&&result.city&&result.zip&&result.tracking&&$('receiveOrigin').value&&token===intakeReadToken){autoReceivedToken=token;await receivePackage();}
+   // Candidate matching is only a suggestion until a person selects the intended customer.
+   $('receiveCustomer').value='';
+   showInlineCustomer(result.recipient_name||'');
+   renderLabelReadout();editor(result,raw);suggestions(result,ranked);
+   $('processingText').textContent=result.recipient_name||'Name not read';
+   const m=lastVisionMetrics;
+   const stages=m?' · Auth '+(m.authorization/1000).toFixed(1)+'s · Model '+(m.inference/1000).toFixed(1)+'s · Model attempts '+m.model_attempts:'';
+   $('processingDetail').textContent='AI '+((performance.now()-visionStarted)/1000).toFixed(1)+'s · Total '+((performance.now()-started)/1000).toFixed(1)+'s'+stages+' · Verify name, address and tracking';
+   $('receiveResult').textContent='Select the correct customer, verify all fields, then save.';
+   // CAMERA-READINESS FREEZE: no automatic parcel saving or customer email before human review.
+   // Model confidence is self-reported, not calibrated against real package-label evaluations.
   }catch(error){if(current!==generation)return;$('processingText').textContent='Photo could not be read';$('processingDetail').textContent='Low confidence, please verify · '+error.message;showInlineCustomer('');}
  };
- window.ParcelVisionInternals={rank,trackingFromBarcode,fullPhoto};
+ window.ParcelVisionInternals={rank,trackingFromBarcode,fullPhoto,fullFrameFallback};
 })();
+

@@ -1,0 +1,52 @@
+import './isolated-network-guard.mjs';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {pathToFileURL} from 'node:url';
+import {processArrival,createArrivalRepository,customerContactVersion,packageReviewVersion,reviewSavedArrival,sha256} from '../backend/arrival-workflow.mjs';
+const {PGlite}=await import(process.env.PGLITE_MODULE?pathToFileURL(process.env.PGLITE_MODULE):new URL('./sql-runtime/node_modules/@electric-sql/pglite/dist/index.js',import.meta.url));
+export const id=n=>String(n).padStart(8,'0')+'-7777-4777-8777-777777777777';
+export const I={company:id(1),customer:id(2),us:id(3),nassau:id(4),package:id(5),user:id(6),otherCustomer:id(7),otherCompany:id(11),foreignCustomer:id(12),foreignFacility:id(13),wrongDestination:id(14)};
+export const US=fs.readFileSync(new URL('../../parcel-snap-vision-test/fixtures/synthetic-label-unmarked.jpg',import.meta.url));
+export const NS=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nHsAAAAASUVORK5CYII=','base64');
+export const data=(bytes=US)=>'data:'+(bytes===NS?'image/png':'image/jpeg')+';base64,'+bytes.toString('base64');
+export const createDB=async()=>{const db=new PGlite();await db.exec(fs.readFileSync(new URL('./arrival-baseline-fixture.sql',import.meta.url),'utf8'));await db.exec(fs.readFileSync(new URL('../backend/schema-proposals/arrival-notices.sql',import.meta.url),'utf8'));return db;};
+export async function harness(db){
+ await db.exec('truncate parcel_snap.arrival_notices,parcel_snap.package_photos,parcel_snap.package_events,parcel_snap.notifications,parcel_snap.packages,parcel_snap.customers,parcel_snap.facilities,parcel_snap.company_profiles,parcel_snap.companies restart identity cascade');
+ await db.query('insert into parcel_snap.companies(id,name) values($1,$2),($3,$4)',[I.company,'Fictional Island Shipping',I.otherCompany,'Other Fictional Company']);
+ await db.query('insert into parcel_snap.customers(id,company_id,name,email) values($1,$2,$3,$4),($5,$2,$6,$7),($8,$9,$10,$11)',[I.customer,I.company,'Jordan Sample','jordan@example.invalid',I.otherCustomer,'Jordan Samples','jordan.second@example.invalid',I.foreignCustomer,I.otherCompany,'Foreign Fictional Customer','foreign@example.invalid']);
+ await db.query("insert into parcel_snap.facilities(id,company_id,code,name,facility_type,city,address_line1,country) values($1,$2,'US','U.S. Origin','ORIGIN','Miami','100 Fictional Way','US'),($3,$2,'NAS','Nassau Warehouse','DESTINATION','Nassau','200 Fictional Bay','BS'),($4,$5,'OTHER','Other Tenant Warehouse','DESTINATION','Elsewhere','300 Fictional Road','BS'),($6,$2,'WRONG','Unplanned Warehouse','DESTINATION','Freeport','400 Fictional Road','BS')",[I.us,I.company,I.nassau,I.foreignFacility,I.otherCompany,I.wrongDestination]);
+ await db.query("insert into parcel_snap.company_profiles(company_id,needs_customer_notifications,notification_channels) values($1,true,array['EMAIL'])",[I.company]);
+ const queries=[],calls=[],objects=new Map(),responses=[],providerRecords=new Map();
+ const flags={operate:true,private:true,secret:true,uploadFail:false,downloadFail:false,corrupt:false,provider:200,finishFailures:0,prepareFail:false,afterContext:null,beforePrepare:null,beforeClaim:null,afterClaim:null,onDownload:null,providerMismatch:false};
+ const effects={uploads:0,downloads:0,secrets:0};
+ const unsafe=async(q,p=[],connection=db)=>{queries.push(q);if(flags.prepareFail&&q.startsWith('insert into parcel_snap.arrival_notices'))throw Error('Synthetic transaction failure');return (await connection.query(q,p)).rows;};
+ const sql={unsafe:(q,p=[])=>unsafe(q,p),begin:fn=>db.transaction(tx=>fn({unsafe:(q,p=[])=>unsafe(q,p,tx)}))};
+ let repository=createArrivalRepository(sql);
+ const repo={...repository,context:async c=>{const r=await repository.context(c);if(flags.afterContext){const hook=flags.afterContext;flags.afterContext=null;await hook();}return r;},prepare:async c=>{if(flags.beforePrepare){const hook=flags.beforePrepare;flags.beforePrepare=null;await hook();}return repository.prepare(c);},claim:async(...args)=>{if(flags.beforeClaim){const hook=flags.beforeClaim;flags.beforeClaim=null;await hook();}const claimed=await repository.claim(...args);if(flags.afterClaim){const hook=flags.afterClaim;flags.afterClaim=null;await hook();}return claimed;},finish:async(...args)=>{if(flags.finishFailures-->0)throw Error('Synthetic status failure');return repository.finish(...args);}};
+ const deps={repo,canOperate:async(user,company,role,facility)=>flags.operate&&company===I.company&&['OWNER','MANAGER','STAFF'].includes(role)&&(role!=='STAFF'||facility===(flags.staffFacility||I.us)),assertPrivateStorage:async()=>{if(!flags.private)throw Object.assign(Error('Private bucket required'),{status:503});},secret:async()=>{effects.secrets++;return flags.secret?'synthetic-in-memory-only':'';},storage:{upload:async(path,bytes)=>{effects.uploads++;if(flags.uploadFail)return {error:Error('Synthetic upload failure')};if(objects.has(path))return {error:Error('Already exists')};objects.set(path,Buffer.from(bytes));return {error:null};},download:async path=>{effects.downloads++;if(flags.onDownload){const hook=flags.onDownload;flags.onDownload=null;await hook();}if(flags.downloadFail||!objects.has(path))return {error:Error('Unavailable')};return {data:new Blob([flags.corrupt?Buffer.from('corrupt'):objects.get(path)])};}},fetch:async(url,init={})=>{
+   assert(/^https:\/\/api\.resend\.com\/emails(?:\/[A-Za-z0-9-]+)?$/.test(url));
+   const call={url,method:init.method||'GET',body:init.body?JSON.parse(init.body):null,headers:init.headers};calls.push(call);
+   if(call.method==='GET'){const providerId=url.split('/').at(-1),record=providerRecords.get(providerId);return Response.json(flags.providerMismatch?{id:'mismatch'}:record?{...structuredClone(record),last_event:'delivered'}:{error:'not found'},{status:record?200:404});}
+   assert(call.body.to.every(x=>typeof x==='string'&&x.endsWith('@example.invalid')),'Only reserved fictional inboxes');assert(!call.body.cc&&!call.body.bcc);
+   if(flags.provider==='timeout')throw Error('Synthetic provider timeout');
+   if(flags.provider==='malformed')return new Response('not json');
+   if(flags.provider==='missing-id')return Response.json({});
+   const providerId='fictional-message-'+calls.length;
+   if(flags.provider===200||flags.provider==='network-after-accept'){const {attachments,...envelope}=call.body;providerRecords.set(providerId,{id:providerId,...structuredClone(envelope)});}
+   if(flags.provider==='network-after-accept')throw Error('Synthetic response lost after acceptance');
+   return Response.json({id:providerId},{status:flags.provider});
+ }};
+ const contact=async(customerId=I.customer)=>(await db.query('select *,xmin::text as contact_revision from parcel_snap.customers where id=$1',[customerId])).rows[0];
+ const version=async(customerId=I.customer)=>customerContactVersion(I.company,await contact(customerId));
+ const input={companyId:I.company,userId:I.user,role:'OWNER',kind:'origin',actor:'tester@example.invalid',body:{intake_package_id:I.package,customer_id:I.customer,origin_facility_id:I.us,destination_facility_id:I.nassau,tracking_number:'0012345678901234567890',ocr_name:'Jordan Sample',ocr_recipient_address:'123 Fictional Recipient Lane, Unit 04, Miami FL 33101',ocr_raw_text:'Synthetic reviewed label',carrier:'UPS',size_class:'SMALL',weight_lb:'2.50',payment_status:'UNPAID',photo_data_url:data(US),label_confirmed:true,confirmed_customer_id:I.customer,confirmed_customer_contact_version:await version()}};
+ const packageRow=async()=>(await db.query('select * from parcel_snap.packages where id=$1',[I.package])).rows[0];
+ const notices=async()=>(await db.query('select * from parcel_snap.arrival_notices order by created_at,id')).rows;
+ const run=async()=>{const r=await processArrival(input,deps);responses.push(r);return r;};
+ const destination=async()=>{const p=await packageRow();input.kind='destination';input.body={package_id:I.package,facility_id:I.nassau,photo_data_url:data(NS),label_confirmed:true,confirmed_customer_id:p.customer_id,confirmed_customer_contact_version:await version(p.customer_id),confirmed_package_review_version:await packageReviewVersion(I.company,p)};if(input.role==='STAFF')flags.staffFacility=I.nassau;};
+ const read=()=>reviewSavedArrival({...input,body:{package_id:I.package,origin_facility_id:I.us}},deps);
+ const posts=()=>calls.filter(c=>c.method==='POST');
+ const checkMail=async(index,{city,bytes,customerId=I.customer,tracking='0012345678901234567890'}={})=>{const m=posts()[index]?.body;assert(m,'Expected captured email');const c=await contact(customerId);assert.deepEqual(m.to,[c.email]);assert(m.subject.includes(city));assert(m.text.includes('Tracking: '+tracking));assert(m.text.includes('Hello '+c.name+','));assert.equal(m.attachments.length,1);assert.deepEqual(Buffer.from(m.attachments[0].content,'base64'),bytes);assert(!m.attachments[0].path);return m;};
+ const journey=async()=>{assert.equal((await run()).email.status,'SENT');await checkMail(0,{city:'Miami',bytes:US});await destination();assert.equal((await run()).email.status,'SENT');await checkMail(1,{city:'Nassau',bytes:NS});assert.equal((await packageRow()).current_facility_id,I.nassau);assert.equal((await packageRow()).stage,'DESTINATION_RECEIVED');assert.equal(posts().length,2);};
+ const snapshot=async()=>({packages:(await db.query('select id,customer_id,tracking_number,stage,current_facility_id,current_location_id from parcel_snap.packages order by id')).rows,notices:(await notices()).map(n=>({event:n.event_type,status:n.status,attempts:n.attempt_count,customer:n.customer_id,facility:n.facility_id,photo_sha256:n.photo_sha256})),photos:(await db.query('select package_id,facility_id,kind from parcel_snap.package_photos')).rows,events:(await db.query('select package_id,event_type,site from parcel_snap.package_events order by id')).rows,mail:await Promise.all(posts().map(async c=>({to:c.body.to,subject:c.body.subject,tracking:c.body.text.match(/Tracking: ([^\n]*)/)?.[1],photo_sha256:await sha256(Buffer.from(c.body.attachments[0].content,'base64'))}))),provider_gets:calls.filter(c=>c.method==='GET').length,storage_objects:objects.size});
+ return {db,input,flags,deps,repo,sql,queries,objects,calls,responses,providerRecords,effects,run,destination,contact,version,packageRow,notices,posts,checkMail,journey,read,snapshot};
+}

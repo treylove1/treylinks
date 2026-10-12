@@ -1,0 +1,9 @@
+// Always prepare fresh assets before Node imports runtime modules. No shared-output race.
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+const cwd=fileURLToPath(new URL('.',import.meta.url));
+for(const args of [['build.mjs'],['--test','tests/security.test.mjs','tests/ui-integration.test.mjs']]){
+  const result=spawnSync(process.execPath,args,{cwd,stdio:'inherit',env:process.env});
+  if(result.error)throw result.error;
+  if(result.status!==0)process.exit(result.status??1);
+}

@@ -1,0 +1,151 @@
+{
+  "format": 1,
+  "purpose": "Frozen source reproducing published preview version 10",
+  "published_version_id": "dcc0aba3-0d30-46a0-8181-3f74544392c1",
+  "verified_version_url": "https://dcc0aba3-parcel-snap-vision.humestrevon.workers.dev",
+  "source_snapshot": "Six originals reconstructed by reversing reviewed transformations, then checked against locked source SHA-256 values. No later customer source used.",
+  "manifest_scope": "All included files except SOURCE-MANIFEST.json itself; generated dist is excluded.",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "9d9f755208a277753b8d04cdd7546f2636624bd18f91494d6f81ae1636bb2096",
+      "bytes": 35
+    },
+    {
+      "path": "README.md",
+      "sha256": "2c8e788bcbea99ed3df44674c94aa25d683aa3bed0d3ca6d42ef804991608994",
+      "bytes": 6419
+    },
+    {
+      "path": "parcel-snap-customer/app.js",
+      "sha256": "ea7a1817e0682570ef488abc936a92315de4407c3f58f74c526e4947cc321e26",
+      "bytes": 92964
+    },
+    {
+      "path": "parcel-snap-customer/index.html",
+      "sha256": "dc8f83916698c743b1dfd30979f4b9807e77fdc591ca7d517986fd195770c131",
+      "bytes": 25969
+    },
+    {
+      "path": "parcel-snap-customer/known-customer-matcher.js",
+      "sha256": "7ed5d1454e861d7c6502d200ee6cc930bf85eea6aafdb5c7ebd2467e77003e10",
+      "bytes": 9293
+    },
+    {
+      "path": "parcel-snap-customer/styles.css",
+      "sha256": "4636ccdd69463a8326fd0f0a463dbc5bcfed2d1da9994e2f970b4772312ac6f2",
+      "bytes": 5875
+    },
+    {
+      "path": "parcel-snap-customer/vision-client.js",
+      "sha256": "54f73f23c57c763894ce6b8a54b58d2e4e80ba7b3022053c5fb42dd68b364959",
+      "bytes": 11011
+    },
+    {
+      "path": "parcel-snap-customer/vision-result.js",
+      "sha256": "9020f8e08ed7a350da5a4d2e54f01af396e4448853c06f2e8c983139c0390b30",
+      "bytes": 6486
+    },
+    {
+      "path": "parcel-snap-customer-preview/README.md",
+      "sha256": "5bb7c9a6faf0bcfacf71003e7acf18e33d1ea7812219730f1df6e309dee1df7c",
+      "bytes": 801
+    },
+    {
+      "path": "parcel-snap-customer-preview/build.mjs",
+      "sha256": "206c5ccb4ad12786a82657ca4645ff7e64f1491fa87b29083153ce63815e67f7",
+      "bytes": 6637
+    },
+    {
+      "path": "parcel-snap-customer-preview/metadata.proposal.json",
+      "sha256": "57d501ce06ee39ffbd9bfbc536fa572782ec04dbe038058c4a49174a910ec80a",
+      "bytes": 698
+    },
+    {
+      "path": "parcel-snap-customer-preview/package.json",
+      "sha256": "e8135d8531cb11807d47d184fefc711a0ebfae6821202b79440d554c2df581e2",
+      "bytes": 169
+    },
+    {
+      "path": "parcel-snap-customer-preview/preview-bootstrap.js",
+      "sha256": "769b62e31e7bd4a72d9affc6079e52fa216a5891f34bcf06fbe86e0da321dfa0",
+      "bytes": 9949
+    },
+    {
+      "path": "parcel-snap-customer-preview/preview-policy.js",
+      "sha256": "e71410fd1e2f8f7aea718208a74fea1a75185d4dc9a039b6556a2821c596e747",
+      "bytes": 4045
+    },
+    {
+      "path": "parcel-snap-customer-preview/preview.css",
+      "sha256": "f38e8514ffc87de48e14608790726ce5117d5d1871e2c4a808a6816b23d93cf8",
+      "bytes": 590
+    },
+    {
+      "path": "parcel-snap-customer-preview/sources.lock.json",
+      "sha256": "182e61dec510895620391520e26688d3c4bfa3e581988974a8ff821d4f867e6d",
+      "bytes": 530
+    },
+    {
+      "path": "parcel-snap-customer-preview/test.mjs",
+      "sha256": "3d724bd9897de6c06c65eab64ba00bc24016ebbda4274e78466025c078585c2b",
+      "bytes": 519
+    },
+    {
+      "path": "parcel-snap-customer-preview/tests/security.test.mjs",
+      "sha256": "be4fc1db66c60fca0efe578008a495d6cfa7a46b747790f3a0db8528dc1aef8b",
+      "bytes": 10175
+    },
+    {
+      "path": "parcel-snap-customer-preview/tests/ui-integration.test.mjs",
+      "sha256": "47fbb9354386a2952288de93ea5c45616597b9966c5c738d4d66f45a4ae2e6c2",
+      "bytes": 13390
+    },
+    {
+      "path": "parcel-snap-customer-preview/worker.mjs",
+      "sha256": "9fe7f0808b15390ac41b32ab13ce920c34b363a6970e077933e70be6f943057f",
+      "bytes": 5567
+    }
+  ],
+  "expected_generated_outputs": [
+    {
+      "path": "parcel-snap-customer-preview/dist/worker.mjs",
+      "sha256": "9fe7f0808b15390ac41b32ab13ce920c34b363a6970e077933e70be6f943057f",
+      "bytes": 5567
+    },
+    {
+      "path": "parcel-snap-customer-preview/dist/assets.mjs",
+      "sha256": "c0df274976b39b07f8fb70208944ca8285cad889ca3ae91fe50f406b9306e589",
+      "bytes": 175141
+    },
+    {
+      "path": "parcel-snap-customer-preview/dist/preview-policy.js",
+      "sha256": "e71410fd1e2f8f7aea718208a74fea1a75185d4dc9a039b6556a2821c596e747",
+      "bytes": 4045
+    },
+    {
+      "path": "parcel-snap-customer-preview/dist/MANIFEST.json",
+      "sha256": "39594d181301fef09ae6d0dd497d7a3a0365b7880e8d58302d71a4135603a390",
+      "bytes": 4866
+    }
+  ],
+  "verification": {
+    "fresh_isolated_build": "PASS",
+    "mock_tests_passed": 29,
+    "mock_tests_failed": 0,
+    "uploaded_module_hash_reproduction": "EXACT",
+    "reviewed_build_manifest_reproduction": "EXACT",
+    "network_calls": 0,
+    "uploads_or_pushes": 0
+  },
+  "excluded": [
+    "generated dist/",
+    "backend/proxy source",
+    "private evidence/tool responses/connection metadata/logs",
+    "photo files",
+    "binary language data/vendor bundles",
+    "credentials/secret values/tokens/environment files/auth state",
+    "git metadata/caches/dependency directories",
+    "later customer email-status changes"
+  ]
+}

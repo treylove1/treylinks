@@ -1,0 +1,206 @@
+{
+  "marker": "parcel-snap-arrival-ledger-v1",
+  "columns": [
+    {
+      "name": "attempt_count",
+      "type": "integer",
+      "not_null": true
+    },
+    {
+      "name": "claim_token",
+      "type": "uuid",
+      "not_null": false
+    },
+    {
+      "name": "company_id",
+      "type": "uuid",
+      "not_null": true
+    },
+    {
+      "name": "confirmed_at",
+      "type": "timestamp with time zone",
+      "not_null": false
+    },
+    {
+      "name": "confirmed_by",
+      "type": "uuid",
+      "not_null": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "not_null": true
+    },
+    {
+      "name": "customer_id",
+      "type": "uuid",
+      "not_null": true
+    },
+    {
+      "name": "error_message",
+      "type": "text",
+      "not_null": false
+    },
+    {
+      "name": "event_type",
+      "type": "text",
+      "not_null": true
+    },
+    {
+      "name": "facility_id",
+      "type": "uuid",
+      "not_null": true
+    },
+    {
+      "name": "fingerprint",
+      "type": "text",
+      "not_null": true
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "not_null": true
+    },
+    {
+      "name": "package_id",
+      "type": "uuid",
+      "not_null": true
+    },
+    {
+      "name": "payload",
+      "type": "jsonb",
+      "not_null": true
+    },
+    {
+      "name": "photo_id",
+      "type": "uuid",
+      "not_null": true
+    },
+    {
+      "name": "photo_mime",
+      "type": "text",
+      "not_null": true
+    },
+    {
+      "name": "photo_path",
+      "type": "text",
+      "not_null": true
+    },
+    {
+      "name": "photo_sha256",
+      "type": "text",
+      "not_null": true
+    },
+    {
+      "name": "provider_event",
+      "type": "text",
+      "not_null": false
+    },
+    {
+      "name": "provider_message_id",
+      "type": "text",
+      "not_null": false
+    },
+    {
+      "name": "started_at",
+      "type": "timestamp with time zone",
+      "not_null": false
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "not_null": true
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "not_null": true
+    }
+  ],
+  "constraints": [
+    {
+      "name": "arrival_notices_attempt_count_check",
+      "type": "c",
+      "validated": true,
+      "definition": "CHECK ((attempt_count >= 0))"
+    },
+    {
+      "name": "arrival_notices_check",
+      "type": "c",
+      "validated": true,
+      "definition": "CHECK (((event_type = 'ORIGIN_ARRIVAL'::text) OR (event_type = ('FACILITY_ARRIVAL_'::text || (facility_id)::text))))"
+    },
+    {
+      "name": "arrival_notices_company_id_fkey",
+      "type": "f",
+      "validated": true,
+      "definition": "FOREIGN KEY (company_id) REFERENCES parcel_snap.companies(id)"
+    },
+    {
+      "name": "arrival_notices_company_id_package_id_event_type_key",
+      "type": "u",
+      "validated": true,
+      "definition": "UNIQUE (company_id, package_id, event_type)"
+    },
+    {
+      "name": "arrival_notices_customer_id_company_id_fkey",
+      "type": "f",
+      "validated": true,
+      "definition": "FOREIGN KEY (customer_id, company_id) REFERENCES parcel_snap.customers(id, company_id)"
+    },
+    {
+      "name": "arrival_notices_facility_id_company_id_fkey",
+      "type": "f",
+      "validated": true,
+      "definition": "FOREIGN KEY (facility_id, company_id) REFERENCES parcel_snap.facilities(id, company_id)"
+    },
+    {
+      "name": "arrival_notices_fingerprint_check",
+      "type": "c",
+      "validated": true,
+      "definition": "CHECK ((fingerprint ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "name": "arrival_notices_package_id_company_id_customer_id_fkey",
+      "type": "f",
+      "validated": true,
+      "definition": "FOREIGN KEY (package_id, company_id, customer_id) REFERENCES parcel_snap.packages(id, company_id, customer_id) DEFERRABLE INITIALLY DEFERRED"
+    },
+    {
+      "name": "arrival_notices_payload_check",
+      "type": "c",
+      "validated": true,
+      "definition": "CHECK ((jsonb_typeof(payload) = 'object'::text))"
+    },
+    {
+      "name": "arrival_notices_photo_id_company_id_package_id_facility_id_fkey",
+      "type": "f",
+      "validated": true,
+      "definition": "FOREIGN KEY (photo_id, company_id, package_id, facility_id) REFERENCES parcel_snap.package_photos(id, company_id, package_id, facility_id)"
+    },
+    {
+      "name": "arrival_notices_photo_mime_check",
+      "type": "c",
+      "validated": true,
+      "definition": "CHECK ((photo_mime = ANY (ARRAY['image/jpeg'::text, 'image/png'::text, 'image/webp'::text])))"
+    },
+    {
+      "name": "arrival_notices_photo_sha256_check",
+      "type": "c",
+      "validated": true,
+      "definition": "CHECK ((photo_sha256 ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "name": "arrival_notices_pkey",
+      "type": "p",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "arrival_notices_status_check",
+      "type": "c",
+      "validated": true,
+      "definition": "CHECK ((status = ANY (ARRAY['PENDING'::text, 'SENDING'::text, 'SENT'::text, 'FAILED'::text, 'UNKNOWN'::text])))"
+    }
+  ]
+}

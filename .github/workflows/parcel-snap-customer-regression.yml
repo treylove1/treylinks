@@ -2,10 +2,18 @@ name: Parcel Snap Customer Regression
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "parcel-snap-customer/**"
+      - "parcel-snap-customer-preview/**"
+      - "parcel-snap-vision-test/fixtures/**"
+      - ".github/workflows/parcel-snap-customer-regression.yml"
   push:
     branches: ["main"]
     paths:
       - "parcel-snap-customer/**"
+      - "parcel-snap-customer-preview/**"
+      - "parcel-snap-vision-test/fixtures/**"
       - ".github/workflows/parcel-snap-customer-regression.yml"
 
 permissions:
@@ -13,17 +21,166 @@ permissions:
 
 jobs:
   regression:
+    name: Guarded mocks and synthetic SQL (no optical inference)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Known-customer matcher regression
-        run: node parcel-snap-customer/tests/known-customer-matcher-test.mjs
+      - name: Select reviewed Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
 
-      - name: OCR speed architecture regression
-        run: node parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
+      - name: Validate reviewed customer and arrival workflow syntax
+        run: |
+          node --check parcel-snap-customer/barcode-reader.js
+          node --check parcel-snap-customer/barcode-worker.js
+          node --check parcel-snap-customer/app.js
+          node --check parcel-snap-customer/free-intake-reader.mjs
+          node --check parcel-snap-customer/intake-review.js
+          node --check parcel-snap-customer/paddle-label-blocks.js
+          node --check parcel-snap-customer/vision-client.js
+          node --check parcel-snap-customer/vision-result.js
+          node --check parcel-snap-customer/backend/arrival-workflow.mjs
+          node --check parcel-snap-customer/backend/portal.ts
+          node --check parcel-snap-customer/backend/arrival-capabilities.mjs
+          node --check parcel-snap-customer/tests/native-postgres/native-candidate.test.mjs
 
-      - name: Tenant onboarding architecture regression
-        run: node parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
+      - name: Install pinned synthetic SQL test runtime only
+        run: npm ci --prefix parcel-snap-customer/tests/sql-runtime --ignore-scripts --no-audit --no-fund
+
+      # Explicit file lists are intentional. Do not glob tests/: retained legacy
+      # suites include real Tesseract inference and incompatible write-enabled UI.
+      # Coverage and every exclusion are documented in tests/local-intake/README.md.
+      - name: Guarded reviewed local-reader, policy, adversarial and auth mocks
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
+          parcel-snap-customer/tests/local-intake/intake-policy.test.mjs
+          parcel-snap-customer/tests/local-intake/free-intake-reader-lifecycle.test.mjs
+          parcel-snap-customer/tests/local-intake/local-intake-integration.test.mjs
+          parcel-snap-customer/tests/local-intake/independent-regression.test.mjs
+          parcel-snap-customer/tests/workspace-recovery.test.mjs
+          parcel-snap-customer/tests/signout-recovery.test.mjs
+          parcel-snap-customer/tests/auth-signout-interaction.test.mjs
+
+      - name: Guarded retained text-parser and legacy normalizer unit checks
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
+          parcel-snap-customer/tests/known-customer-matcher-test.mjs
+          parcel-snap-customer/tests/ocr-parser-test.mjs
+          parcel-snap-customer/tests/customer-label-safety-test.mjs
+          parcel-snap-customer/tests/vision-result-test.mjs
+
+      - name: Guarded unchanged backend, saved-review and synthetic SQL checks
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
+          parcel-snap-customer/tests/arrival-workflow.test.mjs
+          parcel-snap-customer/tests/arrival-review.test.mjs
+          parcel-snap-customer/tests/arrival-warehouse-safety.test.mjs
+          parcel-snap-customer/tests/arrival-postgres.test.mjs
+          parcel-snap-customer/tests/portal-contact-review.test.mjs
+
+      - name: Guarded portal routing and onboarding static smoke checks
+        run: |
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/backend-intake-test.cjs
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
+
+      - name: Check candidate request and CI configuration guards without connections
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
+          parcel-snap-customer/tests/native-postgres/candidate-review.test.mjs
+
+      - name: Reject private schema capture paths
+        run: |
+          test ! -e parcel-snap-customer/tests/schema-fixture
+          test ! -e parcel-snap-customer/tests/arrival-full-schema.test.mjs
+
+  native-postgres:
+    name: Native PostgreSQL (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: existing-workflow
+            test_file: native-concurrency.test.mjs
+          - suite: additive-candidate
+            test_file: native-candidate.test.mjs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_DB: parcel_snap_synthetic
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - '127.0.0.1:55437:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d parcel_snap_synthetic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select reviewed Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+
+      - name: Verify PostgreSQL service publishes only to loopback
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          docker inspect "$POSTGRES_SERVICE_ID" --format '{{json .HostConfig.PortBindings}}' > "$RUNNER_TEMP/parcel-native-ports.json"
+          node -e 'const p=require(process.argv[1]); const b=p["5432/tcp"]; if(!Array.isArray(b)||b.length!==1||b[0].HostIp!=="127.0.0.1"||b[0].HostPort!=="55437") throw Error("Disposable service must bind only to the fixed loopback port");' "$RUNNER_TEMP/parcel-native-ports.json"
+
+      - name: Install pinned synthetic native SQL client
+        run: npm ci --prefix parcel-snap-customer/tests/native-postgres --ignore-scripts --no-audit --no-fund
+
+      - name: Reject unsafe native test configuration without connecting
+        run: node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test parcel-snap-customer/tests/native-postgres/native-test-config.test.mjs
+
+      # Each matrix entry gets its own fresh service and schema. No DROP/reset
+      # of a previous suite and no newly captured production-schema fixture.
+      - name: Validate ${{ matrix.suite }} on its own fresh native service
+        env:
+          PARCEL_NATIVE_CI_DISPOSABLE: 'true'
+          PARCEL_NATIVE_CANDIDATE: 'true'
+          PARCEL_NATIVE_PORT: '55437'
+          PARCEL_NATIVE_DATABASE: parcel_snap_synthetic
+          PARCEL_NATIVE_USER: postgres
+        run: node --test parcel-snap-customer/tests/native-postgres/${{ matrix.test_file }}
+
+  deno-check:
+    name: Pinned Deno portal syntax and types (no startup)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Exact official runtime version, not latest. Container tag is version-pinned,
+    # not a verified immutable digest. Resolve/review a digest before release use.
+    container: denoland/deno:2.4.5
+    env:
+      DENO_NO_PROMPT: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify pinned runtime and check actual portal module without executing it
+        run: |
+          deno --version
+          deno --version | head -n 1 | grep -Eq '^deno 2\.4\.5( |$)'
+          deno check --no-config --no-lock --node-modules-dir=none parcel-snap-customer/backend/portal.ts
+        # deno check resolves/types the module graph but does not evaluate portal.ts:
+        # no Deno.serve, SQL connection, service credentials, Storage or mail call.
+        # Source still imports supabase-js@2 without a lock. This is a real check of
+        # that source, not a reproducibly locked deployment/bundling claim.
