@@ -1,0 +1,20 @@
+[
+  {
+    "file": "JSBN-TomWu-LICENSE-retry.txt",
+    "url": "https://www-cs-students.stanford.edu/~tjw/jsbn/LICENSE",
+    "error": "HTTP Error 502: Bad Gateway"
+  },
+  {
+    "file": "JSBN-TomWu-LICENSE-http.txt",
+    "url": "http://www-cs-students.stanford.edu/~tjw/jsbn/LICENSE",
+    "resolvedUrl": "http://www-cs-students.stanford.edu/~tjw/jsbn/LICENSE",
+    "bytes": 1544,
+    "sha256": "e0e396530fd1624126e9a7e0df94811e4062e03baeccb07bc33c934b0fd93a85",
+    "contentType": "text/plain; charset=UTF-8"
+  },
+  {
+    "file": "Clipper-repository-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/junmer/clipper-lib/master/LICENSE",
+    "error": "HTTP Error 404: Not Found"
+  }
+]

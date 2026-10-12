@@ -1,0 +1,114 @@
+{
+  "formatVersion": 1,
+  "exactTextFiles": [
+    "Vite-6.4.1-LICENSE.md",
+    "PaddleOCR-LICENSE.txt",
+    "OpenCV-Apache-2.0.txt",
+    "OpenCV-4.10.0-LICENSE.txt",
+    "ORT-v1.22.0-LICENSE.txt",
+    "ORT-v1.22.0-ThirdPartyNotices.txt",
+    "ORT-source-banner.txt",
+    "Clipper-JSBN-source-notices.txt",
+    "Boost-LICENSE_1_0.txt",
+    "JSBN-TomWu-LICENSE-http.txt",
+    "js-yaml-MIT.txt"
+  ],
+  "sourcesOnly": "Official npm packages, official upstream repositories/sites, and official PaddlePaddle model repositories",
+  "files": {
+    "Boost-LICENSE_1_0.txt": {
+      "bytes": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+      "source": "https://www.boost.org/LICENSE_1_0.txt"
+    },
+    "Clipper-JSBN-source-notices.txt": {
+      "bytes": 5328,
+      "sha256": "d1326a49e9b54eb36cacde5c57c018a6f06bd785496bc4ddb8bf2d7965142d8a",
+      "source": "npm:clipper-lib@6.4.2/clipper.js (exact initial source notice block)"
+    },
+    "DEPENDENCY-PINS.json": {
+      "bytes": 4479,
+      "sha256": "c93b66d85b175a19f4ee2b653477961e2a2f68ca08d179835d22c4c8aebe8d10"
+    },
+    "JSBN-TomWu-LICENSE-http.txt": {
+      "bytes": 1544,
+      "sha256": "e0e396530fd1624126e9a7e0df94811e4062e03baeccb07bc33c934b0fd93a85",
+      "source": "http://www-cs-students.stanford.edu/~tjw/jsbn/LICENSE"
+    },
+    "MODEL-LICENSE-PROVENANCE.json": {
+      "bytes": 6235,
+      "sha256": "3bf3f09ad5aa2d3a4ed788c3578e9943fc0d98868defc4c6a123c594555f3101"
+    },
+    "NOTICE-INDEX.md": {
+      "bytes": 3699,
+      "sha256": "2b047fa276c832ff6608af32e8719802ca82799da34684519f3bfd8004746ba1"
+    },
+    "ORT-source-banner.txt": {
+      "bytes": 132,
+      "sha256": "85d829adcdee0fe0a5caa95c238f9e4d49758f2b222944171f5d2e8f926e01b4",
+      "source": "npm:onnxruntime-web@1.22.0/dist/ort.wasm.min.mjs"
+    },
+    "ORT-v1.22.0-LICENSE.txt": {
+      "bytes": 1073,
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "source": "https://github.com/microsoft/onnxruntime/blob/v1.22.0/LICENSE"
+    },
+    "ORT-v1.22.0-ThirdPartyNotices.txt": {
+      "bytes": 326866,
+      "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc",
+      "source": "https://github.com/microsoft/onnxruntime/blob/v1.22.0/ThirdPartyNotices.txt"
+    },
+    "ORT-v1.22.0-revision.json": {
+      "bytes": 309,
+      "sha256": "68e308b455e4ed2250728ac1fdf488d1439bd55ca8eab0f23d3f7de451c44a6f"
+    },
+    "OpenCV-4.10.0-LICENSE.txt": {
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "source": "https://github.com/opencv/opencv/blob/4.10.0/LICENSE"
+    },
+    "OpenCV-4.10.0-revision.json": {
+      "bytes": 283,
+      "sha256": "382978e56df3862b3a0a86961759ff02eaceca02b1b7498420be828264b48b8c"
+    },
+    "OpenCV-Apache-2.0.txt": {
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "source": "npm:@techstark/opencv-js@4.10.0-release.1/LICENSE"
+    },
+    "PP-OCRv6_small_det-official-model-metadata.json": {
+      "bytes": 1526,
+      "sha256": "cceb50c98e1304c2f948fb65998c5823e3c554145b88924c633586c12d798bdc"
+    },
+    "PP-OCRv6_small_rec-official-model-metadata.json": {
+      "bytes": 1506,
+      "sha256": "83f46f5a4bebbfca7a6b6658fbca8d40a3a1652779f7bb0b9faf7b915e96e6f8"
+    },
+    "PaddleOCR-LICENSE.txt": {
+      "bytes": 11376,
+      "sha256": "3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e",
+      "source": "https://github.com/PaddlePaddle/PaddleOCR/blob/main/LICENSE"
+    },
+    "PaddleOCR-main-revision.json": {
+      "bytes": 306,
+      "sha256": "9cec43c90c965d0058c96118aedff1c4ad4b9387cce34c55e46e70c2be153353"
+    },
+    "Vite-6.4.1-LICENSE.md": {
+      "bytes": 115630,
+      "sha256": "c6bfec08b0e78a198c5ec0c579e699d2843fd1bf81243f648620731d03f43593",
+      "source": "npm:vite@6.4.1/LICENSE.md (full installed text; core MIT applies to injected preload helper)"
+    },
+    "js-yaml-MIT.txt": {
+      "bytes": 1084,
+      "sha256": "a07bc24468b9654ce76a547d47a2db282d07733b715db4c73a98bd63961f9550",
+      "source": "npm:js-yaml@4.1.0/LICENSE"
+    },
+    "jsbn-retrieval.json": {
+      "bytes": 690,
+      "sha256": "2fdf68f37991256b6bee2f587184b82f65dafc24d8fb8c8501852a2d9ce8a96d"
+    },
+    "upstream-retrieval.json": {
+      "bytes": 2146,
+      "sha256": "e3b87bb8997f3c8663386004bc5fa768473d62565358c7d125df72c15622b1dd"
+    }
+  }
+}

@@ -69,3 +69,12 @@ textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #304d72;bac
 #processingBox.bg-matched{outline:3px solid #f5a623;outline-offset:2px}
 
 .routeSummary{margin:10px 0 14px;padding:10px 12px;border:1px solid #29486f;border-radius:10px;background:#0a1628;color:#bcd0ea;font-weight:700}
+
+/* Private local reader review; original app layout and navigation are retained. */
+.localReviewNotice { padding: 16px; margin-bottom: 18px; border: 1px solid #c6ac64; border-radius: 12px; background: #fff8df; color: #35280d; }
+.localReaderActions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.localReaderFrame { max-width: 100%; height: auto; margin-top: 10px; }
+.localLabelBlocks, .localDirectoryCandidates { margin: 16px 0; }
+.labelProposal, .directoryProposal { border: 1px solid #cad1db; border-radius: 10px; padding: 12px; margin: 10px 0; overflow-wrap: anywhere; }
+.labelProposal pre { white-space: pre-wrap; font: inherit; margin: 8px 0; }
+.labelProposal button, .directoryProposal button { margin-top: 10px; }

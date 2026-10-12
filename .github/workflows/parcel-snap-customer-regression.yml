@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   regression:
+    name: Guarded mocks and synthetic SQL (no optical inference)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -34,70 +35,80 @@ jobs:
         with:
           node-version: '24.19.0'
 
-      - name: Validate customer and arrival workflow syntax
+      - name: Validate reviewed customer and arrival workflow syntax
         run: |
           node --check parcel-snap-customer/barcode-reader.js
           node --check parcel-snap-customer/barcode-worker.js
           node --check parcel-snap-customer/app.js
+          node --check parcel-snap-customer/free-intake-reader.mjs
+          node --check parcel-snap-customer/intake-review.js
+          node --check parcel-snap-customer/paddle-label-blocks.js
           node --check parcel-snap-customer/vision-client.js
           node --check parcel-snap-customer/vision-result.js
           node --check parcel-snap-customer/backend/arrival-workflow.mjs
           node --check parcel-snap-customer/backend/portal.ts
+          node --check parcel-snap-customer/backend/arrival-capabilities.mjs
+          node --check parcel-snap-customer/tests/native-postgres/native-candidate.test.mjs
 
-      - name: Install pinned isolated test runtimes and local English data
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tesseract-ocr-eng
-          npm ci --prefix parcel-snap-customer/tests/sql-runtime --ignore-scripts --no-audit --no-fund
-          npm ci --prefix parcel-snap-customer/tests/ocr-runtime --ignore-scripts --no-audit --no-fund
-          test -f /usr/share/tesseract-ocr/5/tessdata/eng.traineddata
+      - name: Install pinned synthetic SQL test runtime only
+        run: npm ci --prefix parcel-snap-customer/tests/sql-runtime --ignore-scripts --no-audit --no-fund
 
-      - name: Guarded customer, saved-review, contact and cross-layer regressions
-        env:
-          NODE_PATH: ${{ github.workspace }}/parcel-snap-customer/tests/ocr-runtime/node_modules
-          TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
+      # Explicit file lists are intentional. Do not glob tests/: retained legacy
+      # suites include real Tesseract inference and incompatible write-enabled UI.
+      # Coverage and every exclusion are documented in tests/local-intake/README.md.
+      - name: Guarded reviewed local-reader, policy, adversarial and auth mocks
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
+          parcel-snap-customer/tests/local-intake/intake-policy.test.mjs
+          parcel-snap-customer/tests/local-intake/free-intake-reader-lifecycle.test.mjs
+          parcel-snap-customer/tests/local-intake/local-intake-integration.test.mjs
+          parcel-snap-customer/tests/local-intake/independent-regression.test.mjs
+          parcel-snap-customer/tests/workspace-recovery.test.mjs
+          parcel-snap-customer/tests/signout-recovery.test.mjs
+          parcel-snap-customer/tests/auth-signout-interaction.test.mjs
+
+      - name: Guarded retained text-parser and legacy normalizer unit checks
         run: >-
           node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
           parcel-snap-customer/tests/known-customer-matcher-test.mjs
           parcel-snap-customer/tests/ocr-parser-test.mjs
-          parcel-snap-customer/tests/ocr-speed-architecture-test.mjs
-          parcel-snap-customer/tests/vision-display-test.mjs
-          parcel-snap-customer/tests/photo-source-selection.test.mjs
-          parcel-snap-customer/tests/barcode-detection.test.mjs
           parcel-snap-customer/tests/customer-label-safety-test.mjs
-          parcel-snap-customer/tests/intake-confirmation-flow-test.mjs
-          parcel-snap-customer/tests/workspace-recovery.test.mjs
-          parcel-snap-customer/tests/signout-recovery.test.mjs
-          parcel-snap-customer/tests/auth-signout-interaction.test.mjs
           parcel-snap-customer/tests/vision-result-test.mjs
+
+      - name: Guarded unchanged backend, saved-review and synthetic SQL checks
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
           parcel-snap-customer/tests/arrival-workflow.test.mjs
           parcel-snap-customer/tests/arrival-review.test.mjs
           parcel-snap-customer/tests/arrival-warehouse-safety.test.mjs
-          parcel-snap-customer/tests/arrival-conflict-ui.test.mjs
           parcel-snap-customer/tests/arrival-postgres.test.mjs
           parcel-snap-customer/tests/portal-contact-review.test.mjs
-          parcel-snap-customer/tests/customer-arrival-integration.test.mjs
 
-      - name: Guarded portal, parser and onboarding smoke checks
-        env:
-          NODE_PATH: ${{ github.workspace }}/parcel-snap-customer/tests/ocr-runtime/node_modules
-          TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
+      - name: Guarded portal routing and onboarding static smoke checks
         run: |
           node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/backend-intake-test.cjs
-          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/photo-intake-flow-test.cjs
           node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
+
+      - name: Check candidate request and CI configuration guards without connections
+        run: >-
+          node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test
+          parcel-snap-customer/tests/native-postgres/candidate-review.test.mjs
 
       - name: Reject private schema capture paths
         run: |
           test ! -e parcel-snap-customer/tests/schema-fixture
           test ! -e parcel-snap-customer/tests/arrival-full-schema.test.mjs
 
-      - name: Reproduce and verify frozen no-write phone preview
-        working-directory: parcel-snap-customer-preview/published-dcc0aba3/parcel-snap-customer-preview
-        run: node test.mjs
-
   native-postgres:
-    name: Native PostgreSQL independent connections
+    name: Native PostgreSQL (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: existing-workflow
+            test_file: native-concurrency.test.mjs
+          - suite: additive-candidate
+            test_file: native-candidate.test.mjs
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -138,10 +149,38 @@ jobs:
       - name: Reject unsafe native test configuration without connecting
         run: node --import ./parcel-snap-customer/tests/isolated-network-guard.mjs --test parcel-snap-customer/tests/native-postgres/native-test-config.test.mjs
 
-      - name: Validate concurrent claims, locking, retries and unknown outcomes
+      # Each matrix entry gets its own fresh service and schema. No DROP/reset
+      # of a previous suite and no newly captured production-schema fixture.
+      - name: Validate ${{ matrix.suite }} on its own fresh native service
         env:
           PARCEL_NATIVE_CI_DISPOSABLE: 'true'
+          PARCEL_NATIVE_CANDIDATE: 'true'
           PARCEL_NATIVE_PORT: '55437'
           PARCEL_NATIVE_DATABASE: parcel_snap_synthetic
           PARCEL_NATIVE_USER: postgres
-        run: node --test parcel-snap-customer/tests/native-postgres/native-concurrency.test.mjs
+        run: node --test parcel-snap-customer/tests/native-postgres/${{ matrix.test_file }}
+
+  deno-check:
+    name: Pinned Deno portal syntax and types (no startup)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Exact official runtime version, not latest. Container tag is version-pinned,
+    # not a verified immutable digest. Resolve/review a digest before release use.
+    container: denoland/deno:2.4.5
+    env:
+      DENO_NO_PROMPT: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify pinned runtime and check actual portal module without executing it
+        run: |
+          deno --version
+          deno --version | head -n 1 | grep -Eq '^deno 2\.4\.5( |$)'
+          deno check --no-config --no-lock --node-modules-dir=none parcel-snap-customer/backend/portal.ts
+        # deno check resolves/types the module graph but does not evaluate portal.ts:
+        # no Deno.serve, SQL connection, service credentials, Storage or mail call.
+        # Source still imports supabase-js@2 without a lock. This is a real check of
+        # that source, not a reproducibly locked deployment/bundling claim.

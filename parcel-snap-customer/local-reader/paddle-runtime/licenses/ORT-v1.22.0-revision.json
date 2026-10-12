@@ -1,0 +1,7 @@
+{
+  "repository": "microsoft/onnxruntime",
+  "ref": "v1.22.0",
+  "commit": "f217402897f40ebba457e2421bc0a4702771968e",
+  "apiURL": "https://api.github.com/repos/microsoft/onnxruntime/commits/v1.22.0",
+  "sourceURL": "https://github.com/microsoft/onnxruntime/commit/f217402897f40ebba457e2421bc0a4702771968e"
+}

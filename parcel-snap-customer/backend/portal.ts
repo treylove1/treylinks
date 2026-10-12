@@ -2,6 +2,8 @@ import postgres from "npm:postgres@3.4.7";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { processArrival, createArrivalRepository, reviewSavedArrival, customerContactVersion, packageReviewVersion } from "./arrival-workflow.mjs";
 
+import { arrivalCapabilities, assertArrivalRequest } from "./arrival-capabilities.mjs";
+
 const DB_URL = Deno.env.get("SUPABASE_DB_URL")!;
 const sql = postgres(DB_URL, { prepare: false, max: 1 });
 
@@ -250,6 +252,23 @@ async function workspace(companyId: string, userId: string, role: string) {
   return { packages, customers, facilities, route_destinations, locations, attention, facility_scope: scopedFacilities };
 }
 
+
+async function workspaceSnapshot(companyId: string, userId: string, role: string, membership: any) {
+    const data = await workspace(companyId, userId, role);
+    const companyProfile = await queryOne(
+      "select * from parcel_snap.company_profiles where company_id=$1::uuid limit 1",
+      [companyId]
+    );
+    return {
+      state: "ACTIVE",
+      company: { id: companyId, name: membership.company_name, role },
+      subscription: { status: membership.subscription_status, current_period_end: membership.current_period_end },
+      profile: companyProfile,
+      capabilities: {arrival_review: await arrivalCapabilities({queryOne, companyId, userId, role,
+        writesFlag: Deno.env.get("PARCEL_ARRIVAL_WRITES_ENABLED")})},
+      ...data
+    };
+}
 
 function normalizeBusinessSetup(profile: any, locations: any[], fallbackName: string) {
   const businessType = String(profile?.business_type || "").trim();
@@ -546,6 +565,18 @@ Deno.serve(async (req: Request) => {
 
     const companyId = String(membership.company_id);
     const role = String(membership.role || "");
+
+    // Explicit read-only handshake avoids workspace's legacy onboarding materialization.
+    if (action === "arrival_capabilities") {
+      const arrival_review = await arrivalCapabilities({queryOne, companyId, userId, role,
+        writesFlag: Deno.env.get("PARCEL_ARRIVAL_WRITES_ENABLED")});
+      return json(req, {state: "ACTIVE", capabilities: {arrival_review}});
+    }
+
+    // Private/read-only callers must never enter the legacy setup materialization path.
+    if (action === "workspace_readonly") {
+      return json(req, await workspaceSnapshot(companyId, userId, role, membership));
+    }
 
     if (action === "workspace" && ["OWNER","MANAGER"].includes(role)) {
       let profile = await queryOne(
@@ -877,6 +908,9 @@ Deno.serve(async (req: Request) => {
 
     if (action === "receive_package" || action === "destination_arrival") {
       if (!canWrite(role)) return json(req, { error: "You do not have permission to save package arrivals." }, 403);
+      const capability = await arrivalCapabilities({queryOne, companyId, userId, role,
+        writesFlag: Deno.env.get("PARCEL_ARRIVAL_WRITES_ENABLED")});
+      assertArrivalRequest(body, capability, action === "receive_package" ? "origin" : "destination");
       // Rollout starts paused. This is an ordinary non-secret safety flag, not a credential.
       if (body.reconcile_notification !== true && Deno.env.get("PARCEL_ARRIVAL_WRITES_ENABLED") !== "true") {
         return json(req, { error: "Package arrivals are temporarily paused for verification.", photo_saved: false }, 503);
@@ -885,18 +919,7 @@ Deno.serve(async (req: Request) => {
       return json(req, result);
     }
 
-    const data = await workspace(companyId, userId, role);
-    const companyProfile = await queryOne(
-      "select * from parcel_snap.company_profiles where company_id=$1::uuid limit 1",
-      [companyId]
-    );
-    return json(req, {
-      state: "ACTIVE",
-      company: { id: companyId, name: membership.company_name, role },
-      subscription: { status: membership.subscription_status, current_period_end: membership.current_period_end },
-      profile: companyProfile,
-      ...data
-    });
+    return json(req, await workspaceSnapshot(companyId, userId, role, membership));
   } catch (err) {
     console.error(err);
     return json(req, { error: err instanceof Error ? err.message : "Portal request failed." }, Number((err as any)?.status) || 500);

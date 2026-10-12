@@ -49,8 +49,7 @@ function bindPhotoSources(cameraId,galleryId,isSaving){
       input.value="";
     };
   }
-  // Resolve the current handler at selection time: vision-client may replace
-  // the intake camera handler after app.js has installed the local fallback.
+  // Camera and gallery use the same local-only photo selection handler.
   gallery.onchange=event=>camera.onchange?.(event);
 }
 
@@ -197,6 +196,139 @@ async function fastOcrRecognizeDetailed(image){
 }
 
 const $=id=>document.getElementById(id);
+// Local reading is explicit and separate from authenticated package operations.
+let localIntakeReader=null,localIntakeReaderPromise=null,localObservation=null,localBlockId=null,localFrameUrl=null;
+let localPhotoReady=false,localReadBusy=false,workspaceActorId=null,arrivalCapability=null,arrivalCapabilityGeneration=0;
+const intakeReview=globalThis.ParcelSnapIntakeReview;
+function arrivalIdentity(){return {companyId:workspace?.company?.id||null,actorId:workspaceActorId};}
+function arrivalGate(){return intakeReview?intakeReview.arrivalGate(arrivalCapability,arrivalIdentity()):{ready:false,reason:"Arrival safety module is unavailable. Saving and sending are blocked."};}
+function requireArrivalCapability(action){
+  if(!["receive_package","destination_arrival"].includes(action))return;
+  const gate=arrivalGate();if(!gate.ready)throw new Error(gate.reason);
+}
+function capabilityRequest(body){
+  requireArrivalCapability(body.action);
+  return {...body,arrival_contract:arrivalCapability.contract,arrival_deployment_id:arrivalCapability.deployment_id};
+}
+function renderArrivalGate(){
+  const gate=arrivalGate();
+  if($("arrivalCapabilityStatus"))$("arrivalCapabilityStatus").textContent=gate.reason||"Reviewed arrival contract verified.";
+  for(const id of ["receivePackageButton","saveTransfer","receiveCheckEmailStatus","transferCheckEmailStatus"]){if($(id))$(id).disabled=!gate.ready;}
+  if(intakeReview?.BUILD.writesEnabled!==true){
+    for(const id of ["saveReceiveCustomer","addCustomerButton","addAliasButton","addFacilityButton","createStaffInviteButton","saveBusinessSetup","saveOnboarding","signUpMode","joinStaffMode","transferPhoto","transferPhotoGallery","transferLabelConfirmed"]){if($(id))$(id).disabled=true;}
+  }
+}
+async function checkArrivalCapabilities(){
+  const id=++arrivalCapabilityGeneration,identity=arrivalIdentity();arrivalCapability=null;renderArrivalGate();
+  if(!identity.actorId||!identity.companyId)return;
+  try{
+    const result=await api({action:"arrival_capabilities"},identity.actorId);
+    if(id!==arrivalCapabilityGeneration||identity.actorId!==workspaceActorId||identity.companyId!==workspace?.company?.id)return;
+    arrivalCapability=result.capabilities?.arrival_review||null;
+  }catch(error){if(id===arrivalCapabilityGeneration&&$("arrivalCapabilityStatus"))$("arrivalCapabilityStatus").textContent="Backend readiness could not be verified. Saving and sending remain blocked.";}
+  finally{if(id===arrivalCapabilityGeneration)renderArrivalGate();}
+}
+function syncLocalReaderControls(){
+  if($("readLocalLabel"))$("readLocalLabel").disabled=!localPhotoReady||intakePhotoPending||localReadBusy||Boolean(localIntakeReader?.busy);
+  if($("cancelLocalLabel"))$("cancelLocalLabel").disabled=!intakePhotoPending&&!localReadBusy&&!localIntakeReader?.busy;
+}
+function clearLocalEvidence(){
+  localObservation=null;localBlockId=null;
+  if(localFrameUrl){URL.revokeObjectURL(localFrameUrl);localFrameUrl=null;}
+  if($("localReaderFrame")){$("localReaderFrame").removeAttribute?.("src");$("localReaderFrame").hidden=true;}
+  if($("localLabelBlocks"))$("localLabelBlocks").innerHTML="";
+  if($("localDirectoryCandidates"))$("localDirectoryCandidates").innerHTML="";
+}
+function clearLocalIntakeScope(){
+  intakeReadToken++;localIntakeReader?.clear();localPhotoReady=false;clearLocalEvidence();
+  intakePhotoDataUrl=null;intakePhotoPending=false;intakeOcrText="";intakeOcrName="";intakeOcrAddress="";
+  intakeRecipientDisplay=null;intakeTrackingReview=null;intakeVisionWarnings=[];displayedArrivalContacts.receive=null;resetLabelConfirmation();
+  for(const id of ["receiveCustomer","receiveTracking","receiveAddress","receiveLabelName","receiveCarrier","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]){if($(id))$(id).value="";}
+  if($("packagePhotoPreview"))$("packagePhotoPreview").innerHTML="";
+  if($("labelFields"))$("labelFields").textContent="";
+  if($("labelRawText"))$("labelRawText").textContent="";
+  arrivalCapability=null;arrivalCapabilityGeneration++;syncLocalReaderControls();renderArrivalGate();
+}
+async function getLocalIntakeReader(){
+  if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs').then(({FreeIntakeReader})=>{
+    localIntakeReader=new FreeIntakeReader({onState:state=>{
+      if(localReadBusy&&state.message&&$("localPhotoStatus"))$("localPhotoStatus").textContent=state.message;
+      syncLocalReaderControls();
+    }});return localIntakeReader;
+  });
+  return localIntakeReaderPromise;
+}
+function currentLocalBlock(){return localObservation?.proposals?.blocks?.find(block=>block.id===localBlockId)||null;}
+function renderLocalDirectoryCandidates(){
+  const root=$("localDirectoryCandidates");if(!root)return;
+  const block=currentLocalBlock();
+  if(!block){root.textContent="Review a printed name block, then choose a registered customer below.";return;}
+  const suggestions=intakeReview.directoryProposals(workspace,block,globalThis.ParcelSnapKnownMatcher?.matchDirectory);
+  root.innerHTML='<strong>Registered directory suggestions</strong><p>These names come from your directory. The printed text remains “'+esc(block.name?.value||'')+'”. Nothing is selected automatically.</p>'+
+    (suggestions.length?suggestions.map(item=>'<div class="directoryProposal"><strong>'+esc(item.registered.name)+'</strong><br><small>'+
+      (item.registered.emailVisible?(item.registered.email?esc(item.registered.email):'Email not listed'):'Email hidden for your role')+'</small><br><button type="button" data-directory-customer="'+esc(item.customerId)+'">Choose this registered customer</button></div>').join(''):'<p>No directory suggestion. Use the registered-customer selector after checking the photo.</p>');
+}
+function renderLocalObservation(){
+  const root=$("localLabelBlocks");if(!root||!localObservation)return;
+  const proposal=localObservation.proposals;
+  if(!intakeReview.validateProposalBinding(proposal,localObservation))throw new Error("Label proposals do not belong to this photo and reading.");
+  root.innerHTML='<strong>Printed label blocks</strong><p>Literal OCR proposals. Names may be partial or wrong. Review them against the photo.</p>'+
+    (proposal.blocks||[]).map(block=>'<article class="labelProposal"><small>'+esc(block.role)+' · '+esc(block.roleKind||'')+'</small><pre>'+esc(block.name?.value||'No name proposed')+'</pre><pre>'+esc(block.address?.value||'No address proposed')+'</pre><small>'+esc([...(block.reasons||[]),...(block.warnings||[])].join(' · '))+'</small>'+
+      (['DESTINATION','UNASSIGNED'].includes(block.role)?'<button type="button" data-label-block="'+esc(block.id)+'">Review this printed block</button>':'<p>This block is not offered as the recipient.</p>')+'</article>').join('');
+  const tracking=localObservation.trackingProposal;
+  if(tracking){
+    root.innerHTML+='<article class="labelProposal"><strong>Printed tracking proposal</strong><pre>'+esc(tracking.value||'No single printed tracking proposal')+'</pre><small>'+esc(tracking.status||'REVIEW_REQUIRED')+'</small>'+
+      (tracking.value&&tracking.status==='REVIEW_REQUIRED'?'<button type="button" data-use-tracking="true">Use this printed tracking after review</button>':'<p>Use the raw text and photo to enter tracking manually. Conflicting or unbound codes are not selected.</p>')+'</article>';
+  }
+  renderLocalDirectoryCandidates();
+}
+function chooseLocalTracking(){
+  const tracking=localObservation?.trackingProposal;
+  if(!tracking?.value||tracking.status!=='REVIEW_REQUIRED'||!localPhotoReady||!intakePhotoDataUrl)return;
+  markIntakeEdit();$("receiveTracking").value=tracking.value;
+  intakeTrackingReview={status:'REVIEW_REQUIRED',message:'Literal printed tracking proposal selected by you; verify every character.'};renderLabelReadout();
+}
+function chooseLocalBlock(blockId){
+  const block=localObservation?.proposals?.blocks?.find(b=>b.id===blockId);
+  if(!block||!['DESTINATION','UNASSIGNED'].includes(block.role)||!intakePhotoDataUrl)return;
+  markIntakeEdit();localBlockId=block.id;$("receiveCustomer").value="";displayedArrivalContacts.receive=null;
+  // Literal source text and registered identity remain different values.
+  intakeOcrName=block.name?.value||"";intakeOcrAddress=block.address?.value||"";
+  $("receiveAddress").value=intakeOcrAddress;$("receiveLabelName").value=intakeOcrName;hideInlineCustomer();renderLocalDirectoryCandidates();renderLabelReadout();
+}
+function chooseLocalDirectoryCustomer(customerId){
+  if(!localPhotoReady||intakePhotoPending||!intakePhotoDataUrl)return;
+  const customer=intakeReview.scopedCustomers(workspace).find(c=>c.id===customerId);if(!customer)return;
+  $("receiveCustomer").value=customer.id;$("receiveCustomer").onchange();
+}
+async function readLocalLabel(){
+  if(!localPhotoReady||intakePhotoPending||localReadBusy)return;
+  const token=intakeReadToken,edits=intakeFieldEditGeneration,companyId=workspace?.company?.id,actorId=workspaceActorId;
+  localReadBusy=true;resetLabelConfirmation();syncLocalReaderControls();
+  try{
+    const reader=await getLocalIntakeReader();
+    if(token!==intakeReadToken||companyId!==workspace?.company?.id||actorId!==workspaceActorId)return;
+    const result=await reader.read();
+    if(token!==intakeReadToken||companyId!==workspace?.company?.id||actorId!==workspaceActorId)return;
+    if(!intakeReview.validateProposalBinding(result.observation?.proposals,result.observation))throw new Error("Label proposals do not belong to this photo and reading.");
+    const editedDuringRead=edits!==intakeFieldEditGeneration;markIntakeEdit();
+    clearLocalEvidence();localObservation=result.observation;localFrameUrl=URL.createObjectURL(result.frameBlob);
+    $("localReaderFrame").src=localFrameUrl;$("localReaderFrame").hidden=false;
+    intakeOcrText=localObservation.raw.text;
+    renderLocalObservation();
+    intakeVisionWarnings=[editedDuringRead?"Reading finished after your edits. Your choices were preserved; review the new literal blocks separately.":"A new reading replaced the source evidence. Review any existing field and customer choices again."];
+    renderLabelReadout();
+    $("localPhotoStatus").textContent="Local reading finished. Choose a printed block and registered customer, then review every field. This private build cannot upload or send.";
+  }catch(error){if(token===intakeReadToken){resetLabelConfirmation();$("localPhotoStatus").textContent=error.message||String(error);}}
+  finally{localReadBusy=false;syncLocalReaderControls();}
+}
+function cancelLocalLabel(){
+  const wasPreparing=intakePhotoPending;intakeReadToken++;localIntakeReader?.cancel();resetLabelConfirmation();
+  if(wasPreparing){localPhotoReady=false;intakePhotoPending=false;intakePhotoDataUrl=null;$("packagePhotoPreview").innerHTML="";clearLocalEvidence();}
+  $("localPhotoStatus").textContent=wasPreparing?"Photo preparation canceled. Choose the photo again.":"Reading canceled. The previous completed result, if any, is kept for review.";
+  syncLocalReaderControls();
+}
+
 function resetLabelConfirmation(){
   confirmedArrivalReviews.receive=null;
   const checkbox=$("receiveLabelConfirmed");
@@ -211,6 +343,7 @@ function resetTransferConfirmation(){
   if($("transferLabelConfirmed"))$("transferLabelConfirmed").checked=false;
 }
 function contactReviewSnapshot(customer){
+  if(customer&&workspace?.company?.role&&!["OWNER","MANAGER"].includes(workspace.company.role))customer={...customer,email:null,contact_email_visible:false};
   return customer?{customer_id:customer.id,name:String(customer.name||""),
     email:customer.contact_email_visible===true?String(customer.email||""):"",
     contact_email_visible:typeof customer.contact_email_visible==="boolean"?customer.contact_email_visible:null,
@@ -240,10 +373,13 @@ function arrivalEmailDescription(contact){
 }
 function arrivalReviewSignature(kind){
   const ids=kind==="receive"
-    ?["receiveCustomer","receiveOrigin","receiveDestination","receiveTracking","receiveAddress","receiveCarrier","receiveSize","receiveWeight","receivePayment","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]
+    ?["receiveCustomer","receiveOrigin","receiveDestination","receiveTracking","receiveAddress","receiveLabelName","receiveCarrier","receiveSize","receiveWeight","receivePayment","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]
     :["transferPackage","transferFacility","transferNote"];
   return JSON.stringify({company:workspace?.company?.id||null,generation:arrivalEmailRecoveryGeneration,
     values:ids.map(id=>$(id)?.value||""),contact:displayedArrivalContacts[kind],
+    localSource:kind==="receive"?{readToken:intakeReadToken,blockId:localBlockId,
+      observationId:localObservation?.id||null,photoId:localObservation?.photoId||null,
+      photoSha256:localObservation?.photoSha256||null,rawResultSha256:localObservation?.rawResultSha256||null}:null,
     package:kind==="transfer"?displayedTransferPackage:null});
 }
 function selectedArrivalCustomerId(kind){
@@ -255,6 +391,7 @@ function captureArrivalConfirmation(kind){
   const contact=displayedArrivalContacts[kind];
   confirmedArrivalReviews[kind]=null;
   if(!checkbox?.checked)return;
+  if(kind==="receive"&&(!intakePhotoDataUrl||intakePhotoPending||localReadBusy||localIntakeReader?.busy)){checkbox.checked=false;$("receiveResult").textContent="Finish or cancel the current photo reading before confirming the reviewed details.";return;}
   if(!contact?.contact_version||contact.customer_id!==selectedArrivalCustomerId(kind)){
     checkbox.checked=false;
     $(kind==="receive"?"receiveResult":"transferResult").textContent=kind==="receive"&&!selectedArrivalCustomerId(kind)
@@ -272,6 +409,7 @@ function captureArrivalConfirmation(kind){
     photo:kind==="receive"?intakePhotoDataUrl:transferPhotoDataUrl};
 }
 function reviewedArrivalConfirmation(kind){
+  if(kind==="receive"&&(intakePhotoPending||localReadBusy||localIntakeReader?.busy)){resetLabelConfirmation();return null;}
   const checkbox=$(kind==="receive"?"receiveLabelConfirmed":"transferLabelConfirmed");
   const review=confirmedArrivalReviews[kind];
   if(checkbox?.checked&&review&&review.signature===arrivalReviewSignature(kind)
@@ -343,6 +481,7 @@ function rememberArrivalEmailRecovery(kind,identity,result,reference,scope){
 }
 
 async function checkArrivalEmailStatus(kind){
+  try{requireArrivalCapability(kind==="receive"?"receive_package":"destination_arrival");}catch(error){const target=$(kind+"EmailStatus");if(target)target.textContent=error.message;return;}
   const state=arrivalEmailRecovery[kind];
   if(!state||state.inFlight||!["UNKNOWN","SENDING"].includes(state.status))return;
   if(!isCurrentArrivalEmailScope(state)){clearArrivalEmailRecovery();return;}
@@ -382,7 +521,8 @@ async function refreshSavedArrivalLists(scope){
   const currentWorkspace=workspace;
   const generation=++arrivalListRefreshGeneration;
   try{
-    const latest=await api({action:"workspace"});
+    if(!intakeReview?.readCapabilityStatus(arrivalCapability,arrivalIdentity()).ready)return false;
+    const latest=await api({action:"workspace_readonly",arrival_contract:arrivalCapability.contract,arrival_deployment_id:arrivalCapability.deployment_id});
     if(workspace!==currentWorkspace||generation!==arrivalListRefreshGeneration||!isCurrentArrivalEmailScope(scope))return null;
     if(latest.state!=="ACTIVE"||latest.company?.id!==scope.companyId||!Array.isArray(latest.packages)||!Array.isArray(latest.attention))return false;
     const selectedId=$("transferPackage").value;
@@ -409,11 +549,12 @@ async function refreshSavedArrivalLists(scope){
 }
 
 function intakeReviewFormSignature(){
-  return JSON.stringify(["receiveCustomer","receiveOrigin","receiveDestination","receiveTracking","receiveAddress","receiveCarrier","receiveSize","receiveWeight","receivePayment","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]
+  return JSON.stringify(["receiveCustomer","receiveOrigin","receiveDestination","receiveTracking","receiveAddress","receiveLabelName","receiveCarrier","receiveSize","receiveWeight","receivePayment","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]
     .map(id=>$(id)?.value||"").concat($("receiveLabelConfirmed")?.checked===true));
 }
 
 async function resumeSavedIntake(packageId){
+  if(intakeReview?.BUILD.writesEnabled!==true){$("receiveResult").textContent="Saved-photo reopening is unavailable in this private review build. Your package list remains available; choose a local photo to start a new review.";return;}
   const saved=(workspace?.packages||[]).find(p=>p.id===packageId);
   if(saved?.origin_review_pending!==true||!saved.origin_facility_id){$("receiveResult").textContent="This package has no editable saved origin review.";return;}
   if(receiveInFlight||intakePhotoPending){$("receiveResult").textContent="Finish the current photo or save before opening a saved review.";return;}
@@ -1651,14 +1792,16 @@ function renderLabelReadout(){
   if(raw)raw.textContent=intakeOcrText||"No readable text found";
   const fields=$("labelFields");
   if(!fields)return;
-  const customer=(workspace?.customers||[]).find(c=>c.id===$("receiveCustomer").value);
+  const customer=(intakeReview?intakeReview.scopedCustomers(workspace):[]).find(c=>c.id===$("receiveCustomer").value);
   const contact=displayArrivalContact("receive",customer);
   const tentative=intakeRecipientDisplay;
   const displayName=customer?.name||(tentative?.read_token===intakeReadToken
     && !$("receiveCustomer").value
     && $("receiveNewCustomerName").value.trim()===tentative.name
       ?tentative.name:intakeOcrName);
-  fields.textContent=["Name: "+(displayName||"Name not clear"),
+  fields.textContent=["Printed name proposal: "+(currentLocalBlock()?.name?.value||"No printed name block selected"),
+    "Reviewed label name: "+(intakeOcrName||"Not entered"),
+    "Registered customer: "+(customer?.name||"Not selected"),
     "Address: "+(intakeOcrAddress||"Not read"),
     "Tracking: "+($("receiveTracking").value||"Not read")+
       (intakeTrackingReview&&intakeTrackingReview.status!=="FORMAT_VALID"?" — "+intakeTrackingReview.message:""),
@@ -1692,8 +1835,17 @@ $("signUpMode").onclick=()=>setMode("signup");
 $("joinStaffMode").onclick=()=>setMode("join");
 
 async function api(body,expectedUserId=null){
+  // Guard before authentication or network, including direct calls and status reconciliation.
+  requireArrivalCapability(body.action);
+  if(!intakeReview)throw new Error("Private review safety module is unavailable.");
+  intakeReview.assertPrivateAction(body.action);
+  intakeReview.assertPortalTransport();
   const {data:{session}}=await sb.auth.getSession();
   if(!session||expectedUserId!==null&&session.user?.id!==expectedUserId)throw new Error("Please sign in again.");
+  if(["receive_package","destination_arrival"].includes(body.action)){
+    if(session.user?.id!==workspaceActorId)throw new Error("Your account changed. Refresh the workspace before reviewing an arrival.");
+    body=capabilityRequest(body);
+  }
   const r=await fetch(PORTAL_API,{
     method:"POST",
     headers:{
@@ -1717,6 +1869,7 @@ $("authButton").onclick=async()=>{
     $("authMessage").textContent="Finish signing out, or choose Sign in to use your existing account.";
     return;
   }
+  if(authMode!=="signin"&&intakeReview?.BUILD.writesEnabled!==true){$("authMessage").textContent="Private review build: use an existing account. Account creation and staff membership changes are disabled.";return;}
   if(authActionInFlight)return;
   authActionInFlight=true;
   $("authButton").disabled=true;
@@ -1769,7 +1922,7 @@ $("signOut").onclick=async()=>{
   }
   signOutState="PENDING";
   workspaceLoadGeneration++;
-  workspace=null;
+  workspace=null;workspaceActorId=null;clearLocalIntakeScope();
   showOnly("loadingState");
   $("signOut").disabled=true;
   $("authButton").disabled=true;
@@ -1833,13 +1986,20 @@ async function loadWorkspace(){
     if(generation!==workspaceLoadGeneration)return;
     if(!startedSession?.user?.id)throw new Error("Please sign in again.");
     const previousCompany=workspace?.company?.id||null;
-    const nextWorkspace=await api({action:"workspace"},startedSession.user.id);
+    const capabilityResult=await api({action:"arrival_capabilities"},startedSession.user.id);
+    if(generation!==workspaceLoadGeneration)return;
+    const candidateCapability=capabilityResult.capabilities?.arrival_review;
+    if(!intakeReview?.readCapabilityStatus(candidateCapability,{actorId:startedSession.user.id}).ready)throw new Error("A compatible read-only backend is required. No workspace request was made.");
+    const nextWorkspace=await api({action:"workspace_readonly",arrival_contract:candidateCapability.contract,arrival_deployment_id:candidateCapability.deployment_id},startedSession.user.id);
+    if(nextWorkspace.state==="ACTIVE"&&nextWorkspace.company?.id!==candidateCapability.company_id)throw new Error("The read-only workspace capability belongs to another company.");
     if(generation!==workspaceLoadGeneration)return;
     const {data:{session:currentSession}}=await sb.auth.getSession();
     if(generation!==workspaceLoadGeneration)return;
     if(!currentSession||currentSession.user?.id!==startedSession.user.id)throw new Error("Please sign in again.");
     workspace=nextWorkspace;
-    if(previousCompany!==(workspace?.company?.id||null))clearArrivalEmailRecovery();
+    if(previousCompany!==(workspace?.company?.id||null)||workspaceActorId!==startedSession.user.id){clearArrivalEmailRecovery();clearLocalIntakeScope();}
+    workspaceActorId=startedSession.user.id;
+    arrivalCapability=candidateCapability;arrivalCapabilityGeneration++;
     if(workspace.state==="NO_COMPANY"){
       showOnly("onboardingState");
       if(workspace.onboarding?.company_name)$("onboardingCompany").value=workspace.onboarding.company_name;
@@ -2118,7 +2278,8 @@ function renderWorkspace(){
   renderReceiveControls();
   renderTransferControls();
   renderStaffControls();
-  setTimeout(warmParcelSnapOcr,0);
+  renderArrivalGate();
+  renderLocalDirectoryCandidates();
   $("testBusinessSetup").classList.toggle("hidden",workspace.company.role!=="OWNER");
   $("subscriptionCard").innerHTML="<div class='billingBox'><strong>ParcelSnap Business Subscription</strong><span>"+esc(workspace.subscription.status)+"</span><small>"+(workspace.subscription.current_period_end?"Current period ends "+new Date(workspace.subscription.current_period_end).toLocaleDateString():"Active access")+"</small></div>";
 }
@@ -2132,7 +2293,7 @@ function renderAttention(){
 function renderPackages(q){
   q=String(q||"").toLowerCase();
   const rows=workspace.packages.filter(p=>[p.customer_name,p.tracking_number,p.location_code,p.stage].filter(Boolean).join(" ").toLowerCase().includes(q));
-  $("packageList").innerHTML=rows.length?rows.map(p=>"<div class='item'><div class='itemTop'><div><strong>"+esc(p.customer_name||"Unmatched customer")+"</strong><br><small>"+esc(p.tracking_number||"No tracking number")+"</small></div><span class='status'>"+esc(p.stage)+"</span></div><div class='meta'><div><small>Payment</small><strong>"+esc(p.payment_status)+"</strong></div><div><small>Location</small><strong>"+esc(p.location_code||"-")+"</strong></div><div><small>Updated</small><strong>"+new Date(p.updated_at).toLocaleDateString()+"</strong></div></div>"+(p.origin_review_pending===true?"<button type='button' data-review-intake='"+esc(p.id)+"'>Resume saved review</button><small>Saved notice has not been sent. Fresh confirmation is required.</small>":"")+"</div>").join(""):"<div class='empty'>No packages found.</div>";
+  $("packageList").innerHTML=rows.length?rows.map(p=>"<div class='item'><div class='itemTop'><div><strong>"+esc(p.customer_name||"Unmatched customer")+"</strong><br><small>"+esc(p.tracking_number||"No tracking number")+"</small></div><span class='status'>"+esc(p.stage)+"</span></div><div class='meta'><div><small>Payment</small><strong>"+esc(p.payment_status)+"</strong></div><div><small>Location</small><strong>"+esc(p.location_code||"-")+"</strong></div><div><small>Updated</small><strong>"+new Date(p.updated_at).toLocaleDateString()+"</strong></div></div>"+(p.origin_review_pending===true?"<button type='button' disabled aria-disabled='true' data-review-intake='"+esc(p.id)+"'>Saved review unavailable in private preview</button><small>Package remains listed. Reopening saved photos requires a separately reviewed integration.</small>":"")+"</div>").join(""):"<div class='empty'>No packages found.</div>";
 }
 $("packageList").onclick=e=>{
   const button=e.target.closest?.("button[data-review-intake]");
@@ -2230,7 +2391,7 @@ function facilitySort(items){
 }
 
 function renderReceiveControls(){
-  const customers=workspace?.customers||[];
+  const customers=intakeReview?intakeReview.scopedCustomers(workspace):[];
   const assignedFacilities=facilitySort((workspace?.facilities||[]).filter(f=>f.active!==false));
   const routeDestinations=facilitySort(
     (workspace?.route_destinations||assignedFacilities)
@@ -2241,8 +2402,8 @@ function renderReceiveControls(){
   const currentOrigin=$("receiveOrigin").value;
   const currentDestination=$("receiveDestination").value;
 
-  $("receiveCustomer").innerHTML='<option value="">New / unmatched customer</option>'+
-    customers.map(c=>'<option value="'+c.id+'">'+esc(c.name)+(c.email?" — "+esc(c.email):"")+'</option>').join("");
+  $("receiveCustomer").innerHTML='<option value="">Choose a registered customer</option>'+
+    customers.map(c=>{const contact=intakeReview.safeContact(c,workspace.company.role);return '<option value="'+esc(c.id)+'">'+esc(c.name)+(contact.email?" — "+esc(contact.email):"")+'</option>';}).join("");
   if(customers.some(c=>c.id===currentCustomer))$("receiveCustomer").value=currentCustomer;
 
   let origins=assignedFacilities.filter(f=>["ORIGIN","TRANSIT"].includes(f.facility_type));
@@ -2287,8 +2448,7 @@ function renderReceiveControls(){
     $("receiveRouteSummary").textContent="";
   }
 
-  if(!$("receiveCustomer").value)showInlineCustomer(intakeOcrName);
-  else hideInlineCustomer();
+  hideInlineCustomer();
   // A directory rerender changes the email shown in the selector; require new review.
   if(intakePhotoDataUrl)renderLabelReadout();else displayArrivalContact("receive",customers.find(c=>c.id===$("receiveCustomer").value));
 }
@@ -2302,8 +2462,8 @@ $("receiveCustomer").onchange=()=>{
     $("processingText").textContent=customer.name;
     $("processingDetail").textContent="Customer selected — verify against the photo";
   }else{
-    showInlineCustomer(intakeOcrName);
-    const name=$("receiveNewCustomerName").value.trim();
+    hideInlineCustomer();
+    const name="";
     intakeRecipientDisplay={name,read_token:intakeReadToken,source:"manual"};
     $("processingText").textContent=name||"Name not clear";
     $("processingDetail").textContent="Review customer before saving";
@@ -2318,6 +2478,10 @@ $("receiveNewCustomerName").oninput=()=>{
   $("processingText").textContent=name||"Name not clear";
   $("processingDetail").textContent="Manually entered recipient — verify against the photo";
   renderLabelReadout();
+};
+
+$("receiveLabelName").oninput=()=>{
+  markIntakeEdit();intakeOcrName=$("receiveLabelName").value;renderLabelReadout();
 };
 
 $("receiveTracking").oninput=()=>{
@@ -2342,50 +2506,34 @@ $("receiveLabelConfirmed").onchange=()=>{intakeFieldEditGeneration++;captureArri
 
 $("packagePhoto").onchange=async e=>{
   const file=e.target.files?.[0];
-  if(!file||receiveInFlight)return;
+  if(!file||receiveInFlight)return; // Native picker cancellation preserves the current review.
   clearInactivePhotoSource("packagePhoto","packagePhotoGallery",e.target);
-  const token=++intakeReadToken;
-  const editGeneration=intakeFieldEditGeneration;
-  intakePackageId=crypto.randomUUID();
-  intakePhotoDataUrl=null;
-  $("packagePhotoPreview").innerHTML="";
-  intakePhotoPending=true;
-  intakeOcrText="";intakeOcrName="";intakeOcrAddress="";
-  intakeRecipientDisplay=null;intakeTrackingReview=null;intakeVisionWarnings=[];
-  for(const id of ["receiveCustomer","receiveTracking","receiveCarrier","receiveAddress","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]){$(id).value="";}
-  resetLabelConfirmation();
-  $("receiveResult").textContent="";
-  $("receiveNewCustomerEmail").value="";
-  $("receiveNewCustomerPhone").value="";
+  clearLocalIntakeScope();const token=intakeReadToken;
+  intakeFieldEditGeneration++;intakePackageId=crypto.randomUUID();intakePhotoPending=true;
+  $("receiveResult").textContent="";$("localPhotoStatus").textContent="Opening your photo…";
+  hideInlineCustomer();syncLocalReaderControls();
   try{
-    const [uploadImage,ocrImage,barcodeImage]=await Promise.all([
-      compressImage(file),
-      prepareOcrImage(file),
-      prepareBarcodeImage(file)
-    ]);
-    if(token!==intakeReadToken)return;
-    intakePhotoDataUrl=uploadImage;
-    $("packagePhotoPreview").innerHTML='<img src="'+intakePhotoDataUrl+'" alt="Package photo">';
-    const result=await readPackagePhoto(ocrImage,{barcode:barcodeImage,readToken:token,editGeneration});
-    if(token!==intakeReadToken||result?.superseded)return;
-    intakeOcrAddress=result.address||"";
-  }catch(err){
-    if(token!==intakeReadToken)return;
-    console.error(err);
-    $("processingBox").classList.remove("hidden");
-    if(editGeneration===intakeFieldEditGeneration){
-      $("processingText").textContent="New / unmatched customer";
-      showInlineCustomer(intakeOcrName);
-    }
-    $("processingDetail").textContent="Enter customer name and email";
-    if(!intakePhotoDataUrl)$("processingDetail").textContent="Could not open this image. Choose a JPG, PNG or WebP photo, or take another photo.";
-  }finally{
-    if(token===intakeReadToken)intakePhotoPending=false;
-  }
+    const reader=await getLocalIntakeReader();if(token!==intakeReadToken)return;
+    const photo=await reader.open(file,{photoId:"intake-"+intakePackageId});if(token!==intakeReadToken)return;
+    const preview=await compressImage(file);if(token!==intakeReadToken)return;
+    intakePhotoDataUrl=preview;localPhotoReady=true;
+    $("packagePhotoPreview").innerHTML='<img src="'+preview+'" alt="Package photo retained for review; nothing uploaded">';
+    $("localPhotoStatus").textContent="Photo ready. Tap Read label locally. No customer was selected and nothing was uploaded.";
+    $("processingBox").classList.add("hidden");renderLabelReadout();
+  }catch(error){if(token===intakeReadToken){localPhotoReady=false;$("localPhotoStatus").textContent="Could not open this photo: "+(error.message||String(error));}}
+  finally{if(token===intakeReadToken)intakePhotoPending=false;syncLocalReaderControls();}
 };
 bindPhotoSources("packagePhoto","packagePhotoGallery",()=>receiveInFlight);
 
+if($("readLocalLabel"))$("readLocalLabel").onclick=readLocalLabel;
+if($("cancelLocalLabel"))$("cancelLocalLabel").onclick=cancelLocalLabel;
+if($("checkArrivalCapability"))$("checkArrivalCapability").onclick=checkArrivalCapabilities;
+if($("localLabelBlocks"))$("localLabelBlocks").onclick=e=>{const target=e.target.closest?.('[data-label-block]');if(target)chooseLocalBlock(target.dataset.labelBlock);else if(e.target.closest?.('[data-use-tracking]'))chooseLocalTracking();};
+if($("localDirectoryCandidates"))$("localDirectoryCandidates").onclick=e=>{const target=e.target.closest?.('[data-directory-customer]');if(target)chooseLocalDirectoryCustomer(target.dataset.directoryCustomer);};
+if(typeof addEventListener==="function")addEventListener('pagehide',()=>{clearLocalIntakeScope();workspaceActorId=null;});
+
 async function createReceiveCustomer(){
+  if(intakeReview?.BUILD.writesEnabled!==true)throw new Error("Customer creation from a photo is disabled in this private review build. Use only a verified registered customer for review.");
   const token=intakeReadToken,editGeneration=intakeFieldEditGeneration;
   const name=$("receiveNewCustomerName").value.trim();
   const email=$("receiveNewCustomerEmail").value.trim();
@@ -2484,6 +2632,7 @@ $("addFacilityButton").onclick=async()=>{
 };
 
 async function receivePackage(){
+  try{requireArrivalCapability("receive_package");}catch(error){$("receiveResult").textContent=error.message;return;}
   if(receiveInFlight)return;
   const recoveryScope=arrivalEmailRecoveryScope();
   if(intakePhotoPending){alert("Wait for this photo to finish reading before receiving it.");return;}
@@ -2687,77 +2836,11 @@ async function analyzeTransferImage(dataUrl){
 }
 
 $("transferPhoto").onchange=async e=>{
-  const file=e.target.files?.[0];
-  if(!file||transferInFlight)return;
-  clearInactivePhotoSource("transferPhoto","transferPhotoGallery",e.target);
-  const generation=++transferPhotoGeneration;
-  const editGeneration=transferFieldEditGeneration;
-  transferPhotoPending=true;
-  transferPhotoDataUrl=null;
+  if(!e.target.files?.[0])return;
+  transferPhotoGeneration++;transferPhotoDataUrl=null;transferPhotoPending=false;resetTransferConfirmation();
   $("transferPhotoPreview").innerHTML="";
-  resetTransferConfirmation();
-  $("transferPackage").value="";
-  renderTransferRecipient();
-
-  $("transferResult").textContent="";
-  $("transferProcessing").classList.remove("hidden");
-  $("transferProcessingText").textContent="Reading package…";
-  $("transferProcessingDetail").textContent="";
-
-  try{
-    const original=await readFileDataUrl(file);
-    const [uploadImage,ocrImage]=await Promise.all([
-      resizeDataUrl(original,1600,.82),
-      resizeDataUrl(original,2800,.96)
-    ]);
-    if(generation!==transferPhotoGeneration)return;
-
-    transferPhotoDataUrl=uploadImage;
-    $("transferPhotoPreview").innerHTML='<img src="'+uploadImage+'" alt="Arrival package photo">';
-
-    const result=await analyzeTransferImage(ocrImage);
-    if(generation!==transferPhotoGeneration)return;
-    if(editGeneration!==transferFieldEditGeneration){
-      $("transferProcessingDetail").textContent="Reading finished after your edits. Your package selection was preserved; verify the photo before sending.";
-      return;
-    }
-    const candidates=chooseTransferCandidates(result.tracking,result.customer?.id);
-
-    $("transferPackage").innerHTML='<option value="">Select package</option>'+candidates.map(p=>{
-      const ref=p.tracking_number||"No tracking";
-      const who=p.customer_name||"Unknown customer";
-      return '<option value="'+p.id+'">'+esc(who)+' — '+esc(ref)+' — '+esc(p.stage)+'</option>';
-    }).join("");
-
-    const strongEvidence=result.tracking_status==="FORMAT_VALID"||Boolean(result.customer);
-    if(candidates.length===1&&strongEvidence)$("transferPackage").value=candidates[0].id;
-    renderTransferRecipient();
-
-    if(candidates.length===1){
-      $("transferProcessingText").textContent=candidates[0].customer_name||"Package matched";
-      $("transferProcessingDetail").textContent=strongEvidence
-        ?"Possible package found — verify photo, tracking and customer before sending"
-        :"Unverified tracking candidate — select and verify the package manually";
-    }else if(candidates.length>1){
-      $("transferProcessingText").textContent=result.customer?.name||"Multiple possible packages";
-      $("transferProcessingDetail").textContent="Choose the correct package";
-    }else{
-      $("transferProcessingText").textContent="Existing package not found";
-      $("transferProcessingDetail").textContent=result.tracking
-        ?"Tracking read, but no active package matched"
-        :"Choose an existing package manually";
-      renderTransferControls();
-    }
-  }catch(err){
-    if(generation!==transferPhotoGeneration)return;
-    console.error(err);
-    $("transferProcessingText").textContent="Could not identify package";
-    $("transferProcessingDetail").textContent="Choose the package manually";
-    renderTransferControls();
-    if(!transferPhotoDataUrl)$("transferProcessingDetail").textContent="Could not open this image. Choose a JPG, PNG or WebP photo, or take another photo.";
-  }finally{
-    if(generation===transferPhotoGeneration)transferPhotoPending=false;
-  }
+  $("transferProcessing").classList.add("hidden");
+  $("transferResult").textContent="Transfer photo reading is unavailable in this private review build. No reader, upload or send was started. The existing package list is still available.";
 };
 bindPhotoSources("transferPhoto","transferPhotoGallery",()=>transferInFlight);
 
@@ -2774,6 +2857,7 @@ $("transferNote").oninput=()=>{transferFieldEditGeneration++;resetTransferConfir
 $("transferLabelConfirmed").onchange=()=>{transferFieldEditGeneration++;captureArrivalConfirmation("transfer");};
 
 $("saveTransfer").onclick=async()=>{
+  try{requireArrivalCapability("destination_arrival");}catch(error){$("transferResult").textContent=error.message;return;}
   if(transferInFlight)return;
   const recoveryScope=arrivalEmailRecoveryScope();
   if(transferPhotoPending){alert("Wait for this arrival photo to finish reading before saving it.");return;}
@@ -2848,13 +2932,15 @@ document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
   $("tab-"+btn.dataset.tab).classList.remove("hidden");
 });
 
-if("requestIdleCallback" in window){
-  requestIdleCallback(warmParcelSnapOcr,{timeout:800});
-}else{
-  setTimeout(warmParcelSnapOcr,100);
-}
+// No implicit reader initialization or hosted inference at page load.
 
-sb.auth.onAuthStateChange((_event,session)=>{if(!session){
+sb.auth.onAuthStateChange((_event,session)=>{
+  if(session?.user?.id&&workspaceActorId&&session.user.id!==workspaceActorId){
+    workspaceLoadGeneration++;workspaceActorId=null;workspace=null;clearArrivalEmailRecovery();clearLocalIntakeScope();
+    showOnly("loadingState");$("loadingState").innerHTML="<h2>Account changed</h2><p>Reload to open the current account's workspace. The previous photo review was cleared.</p>";return;
+  }
+  if(!session){
+  workspaceActorId=null;workspace=null;clearLocalIntakeScope();
   clearArrivalEmailRecovery();
   $("authView").classList.remove("hidden");
   $("appView").classList.add("hidden");
@@ -2863,4 +2949,5 @@ sb.auth.onAuthStateChange((_event,session)=>{if(!session){
     $("authButton").disabled=true;
   }
 }});
+renderArrivalGate();
 boot();

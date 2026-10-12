@@ -21,10 +21,21 @@ function harness(){
  const ctx=vm.createContext({console,setTimeout,clearTimeout,performance,crypto:{randomUUID:()=> 'fictional-id'},window:{},location:{origin:"https://preview.example.invalid",reload(){reloads++;}},document:{getElementById:id=>id==='retryWorkspace'?(nodes.get(id)||null):node(id)},supabase:{createClient:()=>({auth})},ParcelSnapAcceptance:{createClient:()=>({auth})},async fetch(url,init){
   requests.push({url,body:JSON.parse(init.body),authorization:init.headers.Authorization});const response=responses.shift();if(typeof response==='function')return response();if(!response)throw Error('No mock response');return response;
  }});
+ vm.runInContext(readFileSync(new URL('../intake-review.js',import.meta.url),'utf8'),ctx);
+ // Isolated transport substitute only: the actual private transport gate is covered separately.
+ ctx.ParcelSnapIntakeReview=Object.freeze({...ctx.window.ParcelSnapIntakeReview,assertPortalTransport(){}});
  vm.runInContext(app.slice(0,app.indexOf('function setMode(')),ctx);
  const apiStart=app.indexOf('async function api(body,');vm.runInContext(app.slice(apiStart,app.indexOf('$("authButton").onclick=',apiStart)),ctx);
  const loaderStart=app.indexOf('function showOnly(id){');vm.runInContext(app.slice(loaderStart,app.indexOf('$("saveOnboarding").onclick=',loaderStart)),ctx);
  const signoutStart=app.indexOf('$("signOut").onclick=');vm.runInContext(app.slice(signoutStart,app.indexOf('async function boot()',signoutStart)),ctx);
+ const realApi=ctx.api;
+ ctx.api=async(body,expectedUser)=>{
+  if(body.action==='arrival_capabilities'){
+   const queued=responses[0];const value=queued&&typeof queued!=='function'?await queued.json():null;
+   return {state:'ACTIVE',capabilities:{arrival_review:{...ctx.ParcelSnapIntakeReview.CONTRACT,company_id:value?.company?.id||'fictional-company',actor_id:expectedUser,mode:'PAUSED',schema_ready:false,deployment_id:'fixture-release'}}};
+  }
+  return realApi(body,expectedUser);
+ };
  ctx.renderWorkspace=()=>{rendered++;};ctx.clearArrivalEmailRecovery=()=>{};
  return {ctx,node,requests,responses,sessions,run:code=>vm.runInContext(code,ctx),retry:()=>nodes.get('retryWorkspace'),setSession:value=>{session=value;},stats:()=>({reloads,signouts,signins,sessionReads,rendered})};
 }
@@ -37,7 +48,7 @@ test('workspace failure renders a visible ordinary retry control without making 
 });
 test('retry reuses the existing authenticated session and sends only workspace without reload/signin/signout',async()=>{
  const h=harness();h.responses.push(rejected('Paused'),accepted(active));await h.run('loadWorkspace()');assert(h.retry());await h.retry().onclick();
- assert.equal(h.requests.length,2);assert.deepEqual(h.requests.map(r=>r.body),[{action:'workspace'},{action:'workspace'}]);assert.equal(h.requests[1].authorization,h.requests[0].authorization);assert.deepEqual(h.stats(),{reloads:0,signouts:0,signins:0,sessionReads:5,rendered:1});assert.equal(h.node('activeWorkspace').classList.contains('hidden'),false);
+ assert.equal(h.requests.length,2);assert.deepEqual(h.requests.map(r=>r.body),[{action:'workspace_readonly',arrival_contract:'parcel-snap-arrival-review-v1',arrival_deployment_id:'fixture-release'},{action:'workspace_readonly',arrival_contract:'parcel-snap-arrival-review-v1',arrival_deployment_id:'fixture-release'}]);assert.equal(h.requests[1].authorization,h.requests[0].authorization);assert.deepEqual(h.stats(),{reloads:0,signouts:0,signins:0,sessionReads:5,rendered:1});assert.equal(h.node('activeWorkspace').classList.contains('hidden'),false);
 });
 test('overlapping clicks on the same retry control issue one request and remain pending',async()=>{
  const h=harness(),pending=deferred();h.responses.push(rejected('Paused'),()=>pending.promise);await h.run('loadWorkspace()');const button=h.retry();assert(button);
