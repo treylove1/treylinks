@@ -68,8 +68,8 @@ test('current read cannot fall back to legacy OCR, hosted vision, uploads, or au
   const suggestions=sourceBlock('function suggestLocalFields(', 'async function readLocalLabel()');
   assert(!/Tesseract|fastOcrRecognize|readPackagePhoto\(|analyzePackageWithVision|\bfetch\(|\bapi\(|\.upload\(/.test(explicitRead+suggestions));
   assert(!/\$\("receive(?:Customer|NewCustomerEmail)"\)\.value\s*=|chooseLocalDirectoryCustomer\(/.test(suggestions));
-  assert.match(app, /import\('\.\/free-intake-reader\.mjs\?v=ps-readonly-review-20261012-03'\)/);
-  assert(html.includes('src="app.js?v=ps-readonly-review-20261012-04"'));
+  assert.match(app, /import\('\.\/free-intake-reader\.mjs\?v=ps-private-reader-timing-01'\)/);
+  assert(html.includes('src="app.js?v=ps-private-reader-timing-01"'));
   assert(html.includes('src="intake-review.js?v=ps-readonly-review-20261012-04"'));
   assert.match(intake, /loadRuntime=\(\)=>import\('\.\/local-reader\/paddle-runtime\/paddle-runtime\.mjs'\)/);
   assert.match(intake, /loadProjector=\(\)=>import\('\.\/paddle-label-blocks\.js\?v=ps-readonly-review-20261012-03'\)/);

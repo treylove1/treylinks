@@ -281,6 +281,7 @@
             <p id="packagePhotoHelp" class="photoHelp">Choose one label photo. Browse your photos or use your phone’s search if available. Review the photo and customer before receiving or sending.</p>
             <p id="localPhotoStatus" role="status" aria-live="polite">Choose a photo. No reading starts until you tap Read label locally.</p>
             <div class="localReaderActions"><button id="readLocalLabel" type="button" class="primary" disabled>Read label locally</button><button id="cancelLocalLabel" type="button" class="ghost" disabled>Cancel reading</button></div>
+            <p id="localReaderTiming" role="status" aria-live="polite" style="white-space:pre-line" hidden></p>
             <small>Free Paddle reader, one full-frame reading. Maximum 20 MiB and 40 megapixels; full frames over 10 megapixels are reduced. First use loads about 53 MB of verified reader assets. Phone speed and camera behavior need separate testing.</small>
             <div id="packagePhotoPreview" class="photoPreview"></div>
             <details><summary>Exact frame supplied to the reader</summary><img id="localReaderFrame" class="localReaderFrame" alt="Exact full-frame canvas captured before Paddle OCR" hidden><p>Native OCR proposals come only from this single frame. Model scores do not measure field accuracy.</p></details>
@@ -602,6 +603,6 @@
   <script src="known-customer-matcher.js"></script>
   <script src="barcode-reader.js?v=20261010-datamatrix"></script>
   <script src="intake-review.js?v=ps-readonly-review-20261012-04"></script>
-  <script src="app.js?v=ps-readonly-review-20261012-04"></script>
+  <script src="app.js?v=ps-private-reader-timing-01"></script>
 </body>
 </html>

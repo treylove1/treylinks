@@ -243,6 +243,7 @@ let localIntakeReader=null,localIntakeReaderPromise=null,localObservation=null,l
 let localPhotoReady=false,localReadBusy=false,workspaceActorId=null,arrivalCapability=null,arrivalCapabilityGeneration=0,arrivalCapabilityMessage="";
 // Presentation state is separate from retained, source-bound completed evidence.
 let localReadState="idle",localFieldSources={},localSuggestionNote="";
+let localReadTiming=null,localPhotoTiming=null;
 const intakeReview=globalThis.ParcelSnapIntakeReview;
 function arrivalIdentity(){return {companyId:workspace?.company?.id||null,actorId:workspaceActorId};}
 function arrivalGate(){
@@ -288,6 +289,43 @@ async function checkArrivalCapabilities(){
       invalidateArrivalCapability("Backend readiness could not be verified. Saving and sending remain blocked.");
   }
 }
+// Numeric, local-only diagnostics. No OCR text, account data or telemetry enters this view.
+function localDuration(start,end){return Number.isFinite(start)&&Number.isFinite(end)&&end>=start?end-start:null;}
+function localTimingValue(value){return typeof value==="number"&&Number.isFinite(value)&&value>=0?value:null;}
+function formatLocalTiming(value){const n=localTimingValue(value);return n===null?"Unavailable":(n/1000).toFixed(2)+" s";}
+function renderLocalReadTiming(){
+  const node=$("localReaderTiming");if(!node)return;
+  node.hidden=!localReadTiming;
+  if(!localReadTiming){node.textContent="";return;}
+  if(localReadTiming.status!=="completed"){
+    const label={reading:"Reading is in progress.",failed:"This reading failed.",canceled:"This reading was canceled."}[localReadTiming.status]||"No completed reading.";
+    node.textContent=label+" No completed timing sample for this attempt.";return;
+  }
+  const t=localReadTiming.reader,n=t?.nativeMetrics||{};
+  node.textContent=[
+    (localReadTiming.hasText?"Read tap → field review ready: ":"Read tap → empty result ready: ")+formatLocalTiming(localReadTiming.tapToFieldsMs),
+    "Photo opening/preview (before Read): "+formatLocalTiming(localReadTiming.photoOpeningMs),
+    "Photo selection → this result: "+formatLocalTiming(localReadTiming.selectionToFieldsMs)+" (includes time waiting to tap Read and any earlier activity)",
+    "Photo preparation after Read: "+formatLocalTiming(t?.preparationMs),
+    "Worker initialization: "+formatLocalTiming(t?.workerInitializeMs),
+    "Prediction round trip: "+formatLocalTiming(t?.predictionRoundTripMs),
+    "Parsing/source checks: "+formatLocalTiming(t?.parserMs),
+    "UI field binding/render code: "+formatLocalTiming(localReadTiming.uiBindingMs),
+    "Nested reader subtotal: "+formatLocalTiming(t?.readerTotalMs),
+    "Nested engine subtotal: "+formatLocalTiming(t?.engineTotalMs)+"; module import: "+formatLocalTiming(t?.runtimeModuleMs),
+    "Nested model detection: "+formatLocalTiming(n.nativeDetectionMs)+"; recognition: "+formatLocalTiming(n.nativeRecognitionMs)+"; model total: "+formatLocalTiming(n.nativeTotalMs),
+    "These timings include nested work; do not add them together. Reader subtotal excludes final evidence size/freeze and UI work. Field timing ends after DOM updates, not measured screen paint. Asset cache cold/warm status: not observed. Timing does not verify field accuracy."
+  ].join("\n");
+}
+function finishLocalReadTiming(started,uiStarted,ended,observation,token){
+  const known=observation?.timing?.schema==="parcel-snap-local-timing-v1"&&observation.timing.units==="ms"?observation.timing:null;
+  const keys=["preparationMs","runtimeModuleMs","workerInitializeMs","predictionRoundTripMs","engineTotalMs","envelopeCheckMs","hardCleanupMs","parserMs","readerTotalMs"];
+  const reader=Object.fromEntries(keys.map(key=>[key,localTimingValue(known?.[key])]));
+  reader.nativeMetrics=Object.freeze(Object.fromEntries(["nativeDetectionMs","nativeRecognitionMs","nativeTotalMs"].map(key=>[key,localTimingValue(known?.nativeMetrics?.[key])])));
+  const photo=localPhotoTiming?.token===token?localPhotoTiming:null;
+  localReadTiming=Object.freeze({status:"completed",hasText:Boolean(observation?.raw?.text?.trim()),tapToFieldsMs:localDuration(started,ended),uiBindingMs:localDuration(uiStarted,ended),photoOpeningMs:photo?localDuration(photo.selectedAt,photo.readyAt):null,selectionToFieldsMs:photo?localDuration(photo.selectedAt,ended):null,reader:Object.freeze(reader)});
+  renderLocalReadTiming();
+}
 function syncLocalReaderControls(){
   if($("readLocalLabel"))$("readLocalLabel").disabled=!localPhotoReady||intakePhotoPending||localReadBusy||Boolean(localIntakeReader?.busy);
   if($("cancelLocalLabel"))$("cancelLocalLabel").disabled=!intakePhotoPending&&!localReadBusy&&!localIntakeReader?.busy;
@@ -300,7 +338,7 @@ function clearLocalEvidence(){
   if($("localDirectoryCandidates"))$("localDirectoryCandidates").innerHTML="";
 }
 function clearLocalPhotoEvidence(){
-  intakeReadToken++;localIntakeReader?.clear();localPhotoReady=false;localReadState="idle";localFieldSources={};localSuggestionNote="";clearLocalEvidence();
+  intakeReadToken++;localIntakeReader?.clear();localPhotoReady=false;localReadState="idle";localReadTiming=null;localPhotoTiming=null;renderLocalReadTiming();localFieldSources={};localSuggestionNote="";clearLocalEvidence();
   intakePhotoDataUrl=null;intakePhotoPending=false;intakeOcrText="";intakeOcrName="";intakeOcrAddress="";
   intakeRecipientDisplay=null;intakeTrackingReview=null;intakeVisionWarnings=[];displayedArrivalContacts.receive=null;resetLabelConfirmation();
   for(const id of ["receiveCustomer","receiveTracking","receiveAddress","receiveLabelName","receiveCarrier","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]){if($(id))$(id).value="";}
@@ -314,7 +352,7 @@ function clearLocalIntakeScope(){
   clearLocalPhotoEvidence();invalidateArrivalCapability();
 }
 async function getLocalIntakeReader(){
-  if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs?v=ps-readonly-review-20261012-03').then(({FreeIntakeReader})=>{
+  if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs?v=ps-private-reader-timing-01').then(({FreeIntakeReader})=>{
     localIntakeReader=new FreeIntakeReader({onState:state=>{
       if(localReadBusy&&localReadState==="reading"&&state.message&&$("localPhotoStatus"))$("localPhotoStatus").textContent=state.message;
       syncLocalReaderControls();
@@ -409,7 +447,8 @@ function suggestLocalFields(editedDuringRead){
 }
 async function readLocalLabel(){
   if(!localPhotoReady||intakePhotoPending||localReadBusy)return;
-  const token=intakeReadToken,edits=intakeFieldEditGeneration,companyId=workspace?.company?.id,actorId=workspaceActorId;
+  const started=performance.now(),token=intakeReadToken,edits=intakeFieldEditGeneration,companyId=workspace?.company?.id,actorId=workspaceActorId;
+  localReadTiming=Object.freeze({status:"reading"});renderLocalReadTiming();
   localReadBusy=true;localReadState="reading";resetLabelConfirmation();syncLocalReaderControls();
   $("localPhotoStatus").textContent="Reading label locally… No completed result from this attempt yet.";
   try{
@@ -419,7 +458,7 @@ async function readLocalLabel(){
     const result=await reader.read();
     if(token!==intakeReadToken||companyId!==workspace?.company?.id||actorId!==workspaceActorId)return;
     if(!intakeReview.validateProposalBinding(result.observation?.proposals,result.observation))throw new Error("Label proposals do not belong to this photo and reading.");
-    const editedDuringRead=edits!==intakeFieldEditGeneration;markIntakeEdit();
+    const uiStarted=performance.now(),editedDuringRead=edits!==intakeFieldEditGeneration;markIntakeEdit();
     clearLocalEvidence();localObservation=result.observation;localFrameUrl=URL.createObjectURL(result.frameBlob);
     $("localReaderFrame").src=localFrameUrl;$("localReaderFrame").hidden=false;
     intakeOcrText=localObservation.raw.text;localReadState="completed";
@@ -427,15 +466,16 @@ async function readLocalLabel(){
     intakeVisionWarnings=[editedDuringRead?"Reading finished after your edits. Your choices were preserved; review the new literal blocks separately.":"A new reading replaced the source evidence. Review any existing field and customer choices again."];
     renderLabelReadout();
     $("localPhotoStatus").textContent=localReadSummary()+" Uploads and sends remain paused.";
+    finishLocalReadTiming(started,uiStarted,performance.now(),localObservation,token);
   }catch(error){if(token===intakeReadToken&&companyId===workspace?.company?.id&&actorId===workspaceActorId){
-    localReadState=error.name==="PaddleCanceled"?"canceled":"failed";resetLabelConfirmation();
+    localReadState=error.name==="PaddleCanceled"?"canceled":"failed";localReadTiming=Object.freeze({status:localReadState});renderLocalReadTiming();resetLabelConfirmation();
     $("localPhotoStatus").textContent=localReadSummary()+" "+(error.message||String(error));
     renderLocalObservation();renderLabelReadout();
   }}
   finally{localReadBusy=false;syncLocalReaderControls();}
 }
 function cancelLocalLabel(){
-  const wasPreparing=intakePhotoPending;localReadState=wasPreparing?"photo-canceled":"canceled";intakeReadToken++;localIntakeReader?.cancel();resetLabelConfirmation();
+  const wasPreparing=intakePhotoPending;localReadTiming=Object.freeze({status:"canceled"});renderLocalReadTiming();localReadState=wasPreparing?"photo-canceled":"canceled";intakeReadToken++;localIntakeReader?.cancel();resetLabelConfirmation();
   if(wasPreparing){localPhotoReady=false;intakePhotoPending=false;intakePhotoDataUrl=null;$("packagePhotoPreview").innerHTML="";clearLocalEvidence();}
   $("localPhotoStatus").textContent=localReadSummary();
   renderLocalObservation();renderLabelReadout();syncLocalReaderControls();
@@ -2709,6 +2749,7 @@ $("packagePhoto").onchange=async e=>{
   if(!file||receiveInFlight)return; // Native picker cancellation preserves the current review.
   clearInactivePhotoSource("packagePhoto","packagePhotoGallery",e.target);
   clearLocalPhotoEvidence();const token=intakeReadToken;
+  localPhotoTiming={token,selectedAt:performance.now(),readyAt:null};
   intakeFieldEditGeneration++;intakePackageId=crypto.randomUUID();intakePhotoPending=true;localReadState="opening";
   $("receiveResult").textContent="";$("localPhotoStatus").textContent="Opening your photo…";
   hideInlineCustomer();syncLocalReaderControls();renderLabelReadout();
@@ -2717,6 +2758,7 @@ $("packagePhoto").onchange=async e=>{
     const photo=await reader.open(file,{photoId:"intake-"+intakePackageId});if(token!==intakeReadToken)return;
     const preview=await compressImage(file);if(token!==intakeReadToken)return;
     intakePhotoDataUrl=preview;localPhotoReady=true;localReadState="ready";
+    if(localPhotoTiming?.token===token)localPhotoTiming.readyAt=performance.now();
     $("packagePhotoPreview").innerHTML='<img src="'+preview+'" alt="Package photo retained for review; nothing uploaded">';
     $("localPhotoStatus").textContent="Photo ready. Tap Read label locally. No customer was selected and nothing was uploaded.";
     $("processingBox").classList.add("hidden");renderLabelReadout();
