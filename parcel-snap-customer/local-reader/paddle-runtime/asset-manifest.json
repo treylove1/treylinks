@@ -1,0 +1,276 @@
+{
+  "formatVersion": 1,
+  "wrapperSourcePins": {
+    "src/paddle-runtime.mjs": {
+      "bytes": 4449,
+      "sha256": "25ab331484292d59cc845c71e816f97d02a0f3e301bde4b9a75a7c5a5d9702c1"
+    },
+    "src/paddle-worker.mjs": {
+      "bytes": 5509,
+      "sha256": "d7a94f1e695aed21e10ec06979cb2a827a04f87407d4a4bbff9a9c110d8cf3cf"
+    },
+    "src/runtime-guards.mjs": {
+      "bytes": 7478,
+      "sha256": "3681f715585dce14be20a583cf31d597b1db28056fcb0405152c46faa42a89f2"
+    },
+    "src/generated-assets.mjs": {
+      "bytes": 2387,
+      "sha256": "f03552876f32eafdc6ef09a700d608bf8f0fd1d27cf6f6e2fb29194cfc83b287"
+    },
+    "vite.config.mjs": {
+      "bytes": 869,
+      "sha256": "7dc8f6f0fa4e916560b07b2835c1b7cb2a670c5944eec3aaaa1c37005e99ca85"
+    },
+    "scripts/build.mjs": {
+      "bytes": 6518,
+      "sha256": "2731ae808e6a80b08984ac674a29175e42d3d2a407c1a95261704f8ff656c36b"
+    },
+    "scripts/prepare-notices.mjs": {
+      "bytes": 2681,
+      "sha256": "506b8946710103a9d0128aac05facdf9c9ab9509228d16f2c36256198252f41a"
+    },
+    "package.json": {
+      "bytes": 655,
+      "sha256": "c607b4b23e55835edb16867049af320f84bdfe37bdf5a4a8c1ad014213c3dcc2"
+    },
+    "package-lock.json": {
+      "bytes": 43320,
+      "sha256": "414c8e3d05ce633cde0ea83699629c97facb4dc3e1af3a88dd676e3ed50651c4"
+    }
+  },
+  "privateLocalOnly": true,
+  "sdk": {
+    "package": "@paddleocr/paddleocr-js",
+    "version": "0.4.2",
+    "sourceAssets": {
+      "sdkIndex": {
+        "bytes": 81588,
+        "sha256": "8610d82fdc539e48fa0147763be4b676c699d646a8db75fbceb627d9d37deb94"
+      },
+      "openCv": {
+        "bytes": 10378215,
+        "sha256": "19b46167b59efbef9cc3836264b0b657110833e4b1df84282004b8b3141c048d"
+      },
+      "ortMain": {
+        "bytes": 48259,
+        "sha256": "6ef726f355b791129f7ddf3f62e7877a16b9b777abe87004b8ab306e6b9cf265"
+      }
+    }
+  },
+  "dependencies": {
+    "opencv": "4.10.0-release.1",
+    "ort": "1.22.0",
+    "vite": "6.4.1"
+  },
+  "buildResolution": {
+    "originalImport": "onnxruntime-web",
+    "officialExport": "onnxruntime-web/wasm",
+    "condition": "onnxruntime-web-use-extern-wasm",
+    "sdkSourceChanged": false
+  },
+  "entry": "paddle-runtime.mjs",
+  "worker": "paddle-worker.mjs",
+  "architecture": "Own real browser module Worker; untouched SDK worker:false; real cv.Mat RGBA input",
+  "recognitionShards": {
+    "version": 1,
+    "virtualPath": "models/PP-OCRv6_small_rec.tar",
+    "bytes": 21319680,
+    "sha256": "d267ab077a44a0eedb1ea8f8c542d263f211de8e9d7a029bf9fcfff7e5a88fb1",
+    "parts": [
+      {
+        "index": 0,
+        "path": "models/PP-OCRv6_small_rec.tar.part-000",
+        "offset": 0,
+        "bytes": 10485760,
+        "sha256": "a160f83856cd0dfccae784debb227d53aa19306f47a663a04b16ee76c75b8295"
+      },
+      {
+        "index": 1,
+        "path": "models/PP-OCRv6_small_rec.tar.part-001",
+        "offset": 10485760,
+        "bytes": 10485760,
+        "sha256": "e0d559a33d50fa4f4162c9e3cabb7e1fc0373a405f54993707399d98d2be8436"
+      },
+      {
+        "index": 2,
+        "path": "models/PP-OCRv6_small_rec.tar.part-002",
+        "offset": 20971520,
+        "bytes": 348160,
+        "sha256": "bd7c9fc6dffb474eb72a3c9783c008b0d210c513f9d7b5f5fd972bbeb7790d43"
+      }
+    ]
+  },
+  "virtualAssets": [
+    "models/PP-OCRv6_small_rec.tar"
+  ],
+  "modelArchiveBytes": 31211520,
+  "runtimePayloadBytes": 52983157,
+  "redistributionNoticeBytes": 512727,
+  "notices": "licenses/NOTICE-INDEX.md",
+  "noticeManifest": "licenses/LICENSE-NOTICE-MANIFEST.json",
+  "dependencyPins": "licenses/DEPENDENCY-PINS.json",
+  "files": {
+    "chunks/ort.wasm.min-CLmHixNU.mjs": {
+      "bytes": 47254,
+      "sha256": "af3c02a60a26abbbf42a88ddbda3c0e86b7ffc0367798a18510e47029ba64e80"
+    },
+    "licenses/Boost-LICENSE_1_0.txt": {
+      "bytes": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    "licenses/Clipper-JSBN-source-notices.txt": {
+      "bytes": 5328,
+      "sha256": "d1326a49e9b54eb36cacde5c57c018a6f06bd785496bc4ddb8bf2d7965142d8a"
+    },
+    "licenses/DEPENDENCY-PINS.json": {
+      "bytes": 4479,
+      "sha256": "c93b66d85b175a19f4ee2b653477961e2a2f68ca08d179835d22c4c8aebe8d10"
+    },
+    "licenses/JSBN-TomWu-LICENSE-http.txt": {
+      "bytes": 1544,
+      "sha256": "e0e396530fd1624126e9a7e0df94811e4062e03baeccb07bc33c934b0fd93a85"
+    },
+    "licenses/LICENSE-NOTICE-MANIFEST.json": {
+      "bytes": 4462,
+      "sha256": "dbdc931ff8fb39d387151149ffd493e08376b341f6efd23e91c823c8d3ca2cb5"
+    },
+    "licenses/MODEL-LICENSE-PROVENANCE.json": {
+      "bytes": 6235,
+      "sha256": "3bf3f09ad5aa2d3a4ed788c3578e9943fc0d98868defc4c6a123c594555f3101"
+    },
+    "licenses/NOTICE-INDEX.md": {
+      "bytes": 3699,
+      "sha256": "2b047fa276c832ff6608af32e8719802ca82799da34684519f3bfd8004746ba1"
+    },
+    "licenses/ORT-source-banner.txt": {
+      "bytes": 132,
+      "sha256": "85d829adcdee0fe0a5caa95c238f9e4d49758f2b222944171f5d2e8f926e01b4"
+    },
+    "licenses/ORT-v1.22.0-LICENSE.txt": {
+      "bytes": 1073,
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    },
+    "licenses/ORT-v1.22.0-ThirdPartyNotices.txt": {
+      "bytes": 326866,
+      "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc"
+    },
+    "licenses/ORT-v1.22.0-revision.json": {
+      "bytes": 309,
+      "sha256": "68e308b455e4ed2250728ac1fdf488d1439bd55ca8eab0f23d3f7de451c44a6f"
+    },
+    "licenses/OpenCV-4.10.0-LICENSE.txt": {
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "licenses/OpenCV-4.10.0-revision.json": {
+      "bytes": 283,
+      "sha256": "382978e56df3862b3a0a86961759ff02eaceca02b1b7498420be828264b48b8c"
+    },
+    "licenses/OpenCV-Apache-2.0.txt": {
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "licenses/PP-OCRv6_small_det-official-model-metadata.json": {
+      "bytes": 1526,
+      "sha256": "cceb50c98e1304c2f948fb65998c5823e3c554145b88924c633586c12d798bdc"
+    },
+    "licenses/PP-OCRv6_small_rec-official-model-metadata.json": {
+      "bytes": 1506,
+      "sha256": "83f46f5a4bebbfca7a6b6658fbca8d40a3a1652779f7bb0b9faf7b915e96e6f8"
+    },
+    "licenses/PaddleOCR-LICENSE.txt": {
+      "bytes": 11376,
+      "sha256": "3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e"
+    },
+    "licenses/PaddleOCR-main-revision.json": {
+      "bytes": 306,
+      "sha256": "9cec43c90c965d0058c96118aedff1c4ad4b9387cce34c55e46e70c2be153353"
+    },
+    "licenses/Vite-6.4.1-LICENSE.md": {
+      "bytes": 115630,
+      "sha256": "c6bfec08b0e78a198c5ec0c579e699d2843fd1bf81243f648620731d03f43593"
+    },
+    "licenses/js-yaml-MIT.txt": {
+      "bytes": 1084,
+      "sha256": "a07bc24468b9654ce76a547d47a2db282d07733b715db4c73a98bd63961f9550"
+    },
+    "licenses/jsbn-retrieval.json": {
+      "bytes": 690,
+      "sha256": "2fdf68f37991256b6bee2f587184b82f65dafc24d8fb8c8501852a2d9ce8a96d"
+    },
+    "licenses/upstream-retrieval.json": {
+      "bytes": 2146,
+      "sha256": "e3b87bb8997f3c8663386004bc5fa768473d62565358c7d125df72c15622b1dd"
+    },
+    "models/PP-OCRv6_small_det.tar": {
+      "bytes": 9891840,
+      "sha256": "d218f6fbf0f1c23d2161bd6ac7f5eaa6104fa89955c09290497e31008e2618e4"
+    },
+    "models/PP-OCRv6_small_rec.tar.part-000": {
+      "bytes": 10485760,
+      "sha256": "a160f83856cd0dfccae784debb227d53aa19306f47a663a04b16ee76c75b8295"
+    },
+    "models/PP-OCRv6_small_rec.tar.part-001": {
+      "bytes": 10485760,
+      "sha256": "e0d559a33d50fa4f4162c9e3cabb7e1fc0373a405f54993707399d98d2be8436"
+    },
+    "models/PP-OCRv6_small_rec.tar.part-002": {
+      "bytes": 348160,
+      "sha256": "bd7c9fc6dffb474eb72a3c9783c008b0d210c513f9d7b5f5fd972bbeb7790d43"
+    },
+    "paddle-runtime.mjs": {
+      "bytes": 4449,
+      "sha256": "25ab331484292d59cc845c71e816f97d02a0f3e301bde4b9a75a7c5a5d9702c1"
+    },
+    "paddle-worker.mjs": {
+      "bytes": 10488824,
+      "sha256": "b950f37c82e6dba2cd3f691973db803d3c3a71ccf57c27b52748c5b69b7d73ca"
+    },
+    "vendor/ort/ort-wasm-simd-threaded.mjs": {
+      "bytes": 20856,
+      "sha256": "30dd851d9c00622940500f71ddd2ff8820c5cb65270816080175b958705385a8"
+    },
+    "vendor/ort/ort-wasm-simd-threaded.wasm": {
+      "bytes": 11210254,
+      "sha256": "71aef04959c5c1b6de461b6538e2058e306610034a85aad2742d0c7fd4533fe4"
+    }
+  },
+  "runtimeAssets": {
+    "models/PP-OCRv6_small_det.tar": {
+      "bytes": 9891840,
+      "sha256": "d218f6fbf0f1c23d2161bd6ac7f5eaa6104fa89955c09290497e31008e2618e4",
+      "origin": "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_small_det_onnx_infer.tar"
+    },
+    "models/PP-OCRv6_small_rec.tar": {
+      "bytes": 21319680,
+      "sha256": "d267ab077a44a0eedb1ea8f8c542d263f211de8e9d7a029bf9fcfff7e5a88fb1",
+      "origin": "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_small_rec_onnx_infer.tar"
+    },
+    "vendor/ort/ort-wasm-simd-threaded.mjs": {
+      "bytes": 20856,
+      "sha256": "30dd851d9c00622940500f71ddd2ff8820c5cb65270816080175b958705385a8",
+      "origin": "npm:onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.mjs"
+    },
+    "vendor/ort/ort-wasm-simd-threaded.wasm": {
+      "bytes": 11210254,
+      "sha256": "71aef04959c5c1b6de461b6538e2058e306610034a85aad2742d0c7fd4533fe4",
+      "origin": "npm:onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.wasm"
+    }
+  },
+  "omittedAssets": [
+    {
+      "path": "vendor/worker-entry-C9UNuyOJ-EhIzhVdm.js",
+      "bytes": 11341486,
+      "sha256": "477db3f009c118823a5f9ebe15f1e96c1c464165715ba28a9884290f61addf52",
+      "reason": "Unused official nested-worker asset: this runtime fixes worker:false inside its own dedicated browser Worker."
+    }
+  ],
+  "verification": {
+    "buildOnly": true,
+    "imagesRead": false,
+    "ocrRun": false,
+    "browserTested": false,
+    "phoneTested": false,
+    "published": false
+  }
+}
