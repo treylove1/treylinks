@@ -1,6 +1,6 @@
 /** Pure review-only projection of one native Paddle observation. Never a matcher. */
 export const LABEL_BLOCK_POLICY = Object.freeze({
-  id: 'paddle-local-label-blocks-v3', maxAngleDegrees: 15,
+  id: 'paddle-local-label-blocks-v4', maxAngleDegrees: 15,
   maxGapHeights: 2.5, maxLeftDriftHeights: 2, minHorizontalOverlap: 0.25,
   maxHeightRatio: 2.5, maxNameLines: 3, maxUnitLines: 2,
   roleInference: false, textRepair: false, automaticSelection: false,
@@ -65,17 +65,36 @@ function pair(a,b) {
 function obstructed(a,b,all) {
   const p=pair(a,b); if (!p) return true;
   const left=Math.max(p.ax[0],p.bx[0]),right=Math.min(p.ax[1],p.bx[1]);
+  // The inner boundary joins the rows. Keep its overlap band when endpoints
+  // overlap, and its shared boundary when they touch. Outer-envelope fringes
+  // are exempt only with the same ordered-neighbor proof used for association;
+  // contained, competing or malformed endpoint occupants must still obstruct.
+  const top=Math.min(p.ay[1],p.by[0]),bottom=Math.max(p.ay[1],p.by[0]);
   return all.some(c => {
     if (c.index===a.index || c.index===b.index || c.row.frameId!==a.row.frameId) return false;
     // Unknown coordinates cannot prove a safe association in this frame.
     if (!finitePoly(c.row.poly)) return true;
     const x=project(c.row.poly,a.g.u),y=project(c.row.poly,a.g.v);
-    return Math.min(right,x[1])>Math.max(left,x[0])
-      && Math.min(p.by[1],y[1])>Math.max(p.ay[0],y[0]);
+    // Degenerate finite polygons cannot establish ordered neighbors either.
+    // Include zero-area contacts in the conservative envelope check.
+    if(!c.g) return Math.min(right,x[1])>=Math.max(left,x[0])
+      && Math.min(p.by[1],y[1])>=Math.max(p.ay[0],y[0]);
+    if(Math.min(right,x[1])<=Math.max(left,x[0])) return false;
+    if(Math.min(bottom,y[1])>=Math.max(top,y[0])) return true;
+    if(Math.min(p.by[1],y[1])<=Math.max(p.ay[0],y[0])) return false;
+    return !((y[1]<top && pair(c,a)) || (y[0]>bottom && pair(b,c)));
   });
 }
 function predecessors(b, all, predicate) { return all.filter(a=>a.index!==b.index && predicate(a) && pair(a,b) && !obstructed(a,b,all)); }
 function successors(a, all, predicate) { return all.filter(b=>b.index!==a.index && predicate(b) && pair(a,b) && !obstructed(a,b,all)); }
+function blockedPredecessorAlternatives(b,all,predicate) {
+  const candidates=all.filter(a=>a.index!==b.index && predicate(a) && pair(a,b));
+  // Mutually obstructing, unordered endpoints are alternatives, not absence of
+  // evidence. Preserve that uncertainty instead of producing a clean UNASSIGNED
+  // block that a review UI could mistake for an uncontested literal suggestion.
+  return candidates.filter(a=>candidates.some(c=>c.index!==a.index && !pair(a,c) && !pair(c,a)
+    && obstructed(a,b,[a,b,c]) && obstructed(c,b,[a,b,c])));
+}
 function span(entry) {
   const {row,index,start,end}=entry;
   const out={rowId:row.id,rowIndex:index,nativeSourceIndex:row.nativeSourceIndex,frameId:row.frameId,
@@ -110,27 +129,34 @@ export function projectPaddleLabelBlocks(input) {
   for(const key of ['photoId','photoSha256','rawResultSha256']) if (!observation[key]) issues.push({code:'MISSING_OBSERVATION_BINDING',field:key});
   const blocks=[];
   for(const anchor of all.filter(a=>a.postal)) {
-    const paths=[];
+    const paths=[],blockedAddressAlternatives=[];
     const walk=(tail,units=[])=>{
-      for(const prev of predecessors(tail,all,a=>a.street || a.unit)) {
+      const predicate=a=>a.street || a.unit,near=predecessors(tail,all,predicate);
+      const alternatives=blockedPredecessorAlternatives(tail,all,predicate);
+      if(alternatives.length) blockedAddressAlternatives.push(...alternatives,tail);
+      for(const prev of near) {
         if(prev.street) paths.push([prev,...units,anchor]);
         else if(units.length<LABEL_BLOCK_POLICY.maxUnitLines) walk(prev,[prev,...units]);
       }
     };
     if(anchor.g) walk(anchor);
     const warnings=[], uniquePaths=[...new Map(paths.map(p=>[p.map(e=>e.row.id).join('\0'),p])).values()];
+    const unambiguousAddress=uniquePaths.length===1 && !blockedAddressAlternatives.length;
     let addressEntries;
-    if(uniquePaths.length===1) addressEntries=uniquePaths[0];
+    if(unambiguousAddress) addressEntries=uniquePaths[0];
     else {
       addressEntries=[anchor];
-      warnings.push(uniquePaths.length?'COMPETING_ADDRESS_PREDECESSORS':'MISSING_BOUNDED_STREET');
-      if(uniquePaths.length) issues.push({code:'COMPETING_ADDRESS_PREDECESSORS',rowIds:[...new Set(uniquePaths.flat().map(e=>e.row.id))]});
+      const competing=uniquePaths.length || blockedAddressAlternatives.length;
+      warnings.push(competing?'COMPETING_ADDRESS_PREDECESSORS':'MISSING_BOUNDED_STREET');
+      if(competing) issues.push({code:'COMPETING_ADDRESS_PREDECESSORS',rowIds:[...new Set([...uniquePaths.flat(),...blockedAddressAlternatives].map(e=>e.row.id))]});
     }
     let names=[], headings=[], role='UNASSIGNED', roleKind=null;
-    if(uniquePaths.length===1) {
+    if(unambiguousAddress) {
       let top=addressEntries[0];
       while(names.length<LABEL_BLOCK_POLICY.maxNameLines) {
-        const near=predecessors(top,all,a=>a.name || !!a.heading);
+        const predicate=a=>a.name || !!a.heading;
+        const bounded=predecessors(top,all,predicate);
+        const near=[...new Map([...bounded,...blockedPredecessorAlternatives(top,all,predicate)].map(e=>[e.index,e])).values()];
         if(near.length>1) {
           warnings.push('COMPETING_NAME_OR_ROLE_ROWS');
           issues.push({code:'COMPETING_NAME_OR_ROLE_ROWS',rowIds:near.map(e=>e.row.id)});
@@ -143,9 +169,19 @@ export function projectPaddleLabelBlocks(input) {
         names.unshift(near[0]); top=near[0];
       }
       if(names.length===LABEL_BLOCK_POLICY.maxNameLines && !headings.length) {
-        const near=predecessors(names[0],all,a=>a.name || !!a.heading);
+        const predicate=a=>a.name || !!a.heading;
+        const bounded=predecessors(names[0],all,predicate);
+        const near=[...new Map([...bounded,...blockedPredecessorAlternatives(names[0],all,predicate)].map(e=>[e.index,e])).values()];
         if(near.length===1 && near[0].heading) { headings=near; [role,roleKind]=near[0].heading; }
-        else if(near.length) warnings.push('NAME_PREFIX_BOUND_REACHED');
+        else if(near.length) {
+          warnings.push('NAME_PREFIX_BOUND_REACHED');
+          if(near.length>1) {
+            warnings.push('COMPETING_NAME_OR_ROLE_ROWS');
+            issues.push({code:'COMPETING_NAME_OR_ROLE_ROWS',rowIds:near.map(e=>e.row.id)});
+            const roleRows=near.filter(a=>a.heading);
+            if(roleRows.length>1) { headings=roleRows; role='CONFLICT'; }
+          }
+        }
       }
       const countries=successors(anchor,all,a=>a.country);
       if(countries.length===1) addressEntries.push(countries[0]);
@@ -155,7 +191,7 @@ export function projectPaddleLabelBlocks(input) {
     if(!names.length) warnings.push('NO_BOUNDED_LITERAL_NAME');
     const address=field(addressEntries);
     address.parts=addressEntries.map(e=>({kind:e===anchor?'LOCALITY_POSTAL':e.country?'COUNTRY':e.unit?'UNIT':'STREET_OR_PO_BOX',value:e.text,sources:[span(e)]}));
-    address.completeness=uniquePaths.length===1?'UNKNOWN':'PARTIAL';
+    address.completeness=unambiguousAddress?'UNKNOWN':'PARTIAL';
     const entries=[...names,...addressEntries], id=blockId(input.observationId,entries);
     blocks.push({id,role,roleKind,roleEvidence:headings.map(span),name,address,
       reasons:['LITERAL_SOURCE_SPANS_ONLY','NATIVE_POLYGON_LOCAL_ASSOCIATION','POSTAL_ANCHOR_ENDS_ROLE_SCOPE'],warnings,

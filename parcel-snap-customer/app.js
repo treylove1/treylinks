@@ -241,6 +241,8 @@ const $=id=>document.getElementById(id);
 // Local reading is explicit and separate from authenticated package operations.
 let localIntakeReader=null,localIntakeReaderPromise=null,localObservation=null,localBlockId=null,localFrameUrl=null;
 let localPhotoReady=false,localReadBusy=false,workspaceActorId=null,arrivalCapability=null,arrivalCapabilityGeneration=0;
+// Presentation state is separate from retained, source-bound completed evidence.
+let localReadState="idle",localFieldSources={},localSuggestionNote="";
 const intakeReview=globalThis.ParcelSnapIntakeReview;
 function arrivalIdentity(){return {companyId:workspace?.company?.id||null,actorId:workspaceActorId};}
 function arrivalGate(){return intakeReview?intakeReview.arrivalGate(arrivalCapability,arrivalIdentity()):{ready:false,reason:"Arrival safety module is unavailable. Saving and sending are blocked."};}
@@ -282,19 +284,20 @@ function clearLocalEvidence(){
   if($("localDirectoryCandidates"))$("localDirectoryCandidates").innerHTML="";
 }
 function clearLocalIntakeScope(){
-  intakeReadToken++;localIntakeReader?.clear();localPhotoReady=false;clearLocalEvidence();
+  intakeReadToken++;localIntakeReader?.clear();localPhotoReady=false;localReadState="idle";localFieldSources={};localSuggestionNote="";clearLocalEvidence();
   intakePhotoDataUrl=null;intakePhotoPending=false;intakeOcrText="";intakeOcrName="";intakeOcrAddress="";
   intakeRecipientDisplay=null;intakeTrackingReview=null;intakeVisionWarnings=[];displayedArrivalContacts.receive=null;resetLabelConfirmation();
   for(const id of ["receiveCustomer","receiveTracking","receiveAddress","receiveLabelName","receiveCarrier","receiveNewCustomerName","receiveNewCustomerEmail","receiveNewCustomerPhone","receiveNewCustomerAlias"]){if($(id))$(id).value="";}
   if($("packagePhotoPreview"))$("packagePhotoPreview").innerHTML="";
   if($("labelFields"))$("labelFields").textContent="";
   if($("labelRawText"))$("labelRawText").textContent="";
+  if($("localPhotoStatus"))$("localPhotoStatus").textContent="Choose a photo. No reading starts until you tap Read label locally.";
   arrivalCapability=null;arrivalCapabilityGeneration++;syncLocalReaderControls();renderArrivalGate();
 }
 async function getLocalIntakeReader(){
-  if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs?v=ps-readonly-repair-20261012-02').then(({FreeIntakeReader})=>{
+  if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs?v=ps-readonly-review-20261012-03').then(({FreeIntakeReader})=>{
     localIntakeReader=new FreeIntakeReader({onState:state=>{
-      if(localReadBusy&&state.message&&$("localPhotoStatus"))$("localPhotoStatus").textContent=state.message;
+      if(localReadBusy&&localReadState==="reading"&&state.message&&$("localPhotoStatus"))$("localPhotoStatus").textContent=state.message;
       syncLocalReaderControls();
     }});return localIntakeReader;
   });
@@ -314,7 +317,9 @@ function renderLocalObservation(){
   const root=$("localLabelBlocks");if(!root||!localObservation)return;
   const proposal=localObservation.proposals;
   if(!intakeReview.validateProposalBinding(proposal,localObservation))throw new Error("Label proposals do not belong to this photo and reading.");
-  root.innerHTML='<strong>Printed label blocks</strong><p>Literal OCR proposals. Names may be partial or wrong. Review them against the photo.</p>'+
+  const previous=localReadState!=="completed";
+  $("localReaderFrame").alt=previous?"Exact frame from the previous completed read, not the current attempt":"Exact full-frame canvas captured before this completed Paddle read";
+  root.innerHTML='<strong>Printed label blocks'+(previous?' from previous completed read':'')+'</strong><p>Literal OCR proposals. Names may be partial or wrong. Review them against the photo.</p>'+
     (proposal.blocks||[]).map(block=>'<article class="labelProposal"><small>'+esc(block.role)+' · '+esc(block.roleKind||'')+'</small><pre>'+esc(block.name?.value||'No name proposed')+'</pre><pre>'+esc(block.address?.value||'No address proposed')+'</pre><small>'+esc([...(block.reasons||[]),...(block.warnings||[])].join(' · '))+'</small>'+
       (['DESTINATION','UNASSIGNED'].includes(block.role)?'<button type="button" data-label-block="'+esc(block.id)+'">Review this printed block</button>':'<p>This block is not offered as the recipient.</p>')+'</article>').join('');
   const tracking=localObservation.trackingProposal;
@@ -327,7 +332,7 @@ function renderLocalObservation(){
 function chooseLocalTracking(){
   const tracking=localObservation?.trackingProposal;
   if(!tracking?.value||tracking.status!=='REVIEW_REQUIRED'||!localPhotoReady||!intakePhotoDataUrl)return;
-  markIntakeEdit();$("receiveTracking").value=tracking.value;
+  markIntakeEdit();$("receiveTracking").value=tracking.value;rememberLocalFieldSource("tracking",tracking.value,null,"selected");
   intakeTrackingReview={status:'REVIEW_REQUIRED',message:'Literal printed tracking proposal selected by you; verify every character.'};renderLabelReadout();
 }
 function chooseLocalBlock(blockId){
@@ -336,6 +341,7 @@ function chooseLocalBlock(blockId){
   markIntakeEdit();localBlockId=block.id;$("receiveCustomer").value="";displayedArrivalContacts.receive=null;
   // Literal source text and registered identity remain different values.
   intakeOcrName=block.name?.value||"";intakeOcrAddress=block.address?.value||"";
+  rememberLocalFieldSource("name",intakeOcrName,block.id,"selected");rememberLocalFieldSource("address",intakeOcrAddress,block.id,"selected");
   $("receiveAddress").value=intakeOcrAddress;$("receiveLabelName").value=intakeOcrName;hideInlineCustomer();renderLocalDirectoryCandidates();renderLabelReadout();
 }
 function chooseLocalDirectoryCustomer(customerId){
@@ -343,11 +349,52 @@ function chooseLocalDirectoryCustomer(customerId){
   const customer=intakeReview.scopedCustomers(workspace).find(c=>c.id===customerId);if(!customer)return;
   $("receiveCustomer").value=customer.id;$("receiveCustomer").onchange();
 }
+function rememberLocalFieldSource(field,value,blockId,origin="suggested"){
+  localFieldSources[field]=Object.freeze({value,blockId,origin,role:localObservation.proposals.blocks?.find(block=>block.id===blockId)?.role||null,observationId:localObservation.id,
+    photoId:localObservation.photoId,photoSha256:localObservation.photoSha256,rawResultSha256:localObservation.rawResultSha256});
+}
+function boundLocalSpan(span){
+  const row=localObservation?.rows?.[span?.rowIndex];
+  return row?.source==="paddleocr-native-line"&&row.id===span.rowId&&row.frameId===localObservation.id&&span.frameId===row.frameId&&
+    Number.isInteger(span.start)&&Number.isInteger(span.end)&&span.start>=0&&span.end>span.start&&span.end<=row.text.length&&row.text.slice(span.start,span.end)===span.text;
+}
+function boundLocalField(field){
+  return typeof field?.value==="string"&&field.value.length>0&&Array.isArray(field.sources)&&field.sources.length>0&&
+    field.sources.every(boundLocalSpan)&&field.sources.map(source=>source.text).join("\n")===field.value;
+}
+function suggestLocalFields(editedDuringRead){
+  localSuggestionNote="";
+  if(editedDuringRead){localSuggestionNote="Edits made during this read were preserved; review proposals manually.";return;}
+  const blocks=localObservation.proposals.blocks||[],candidates=blocks.filter(block=>block.role!=="RETURN");
+  const block=candidates.length===1&&["DESTINATION","UNASSIGNED"].includes(candidates[0].role)?candidates[0]:null;
+  const sourceBound=block&&(block.role==="UNASSIGNED"||(block.roleEvidence?.length&&block.roleEvidence.every(boundLocalSpan)))&&!(block.warnings||[]).some(warning=>/COMPETING|CONFLICT/.test(warning));
+  localSuggestionNote=(!candidates.length||(candidates.length===1&&candidates[0].role==="OTHER"))?"No recipient block was proposed. Enter name/address from the photo.":
+    !block?"Multiple non-return label blocks or a conflicting role. Review the visible blocks before choosing.":
+    !sourceBound?"Label source needs review; fields were not suggested.":
+    (intakeOcrName||intakeOcrAddress||$("receiveLabelName").value||$("receiveAddress").value)?"Existing fields were preserved; compare the new printed block.":"Name/address source spans need review; enter any missing fields from the photo.";
+  if(sourceBound){
+    if(!intakeOcrName&&!$("receiveLabelName").value&&boundLocalField(block.name)){
+      intakeOcrName=block.name.value;$("receiveLabelName").value=intakeOcrName;rememberLocalFieldSource("name",intakeOcrName,block.id);
+    }
+    if(!intakeOcrAddress&&!$("receiveAddress").value&&boundLocalField(block.address)){
+      intakeOcrAddress=block.address.value;$("receiveAddress").value=intakeOcrAddress;rememberLocalFieldSource("address",intakeOcrAddress,block.id);
+    }
+  }
+  const tracking=localObservation.trackingProposal,candidate=tracking?.alternatives?.length===1?tracking.alternatives[0]:null;
+  if(!$("receiveTracking").value&&tracking?.status==="REVIEW_REQUIRED"&&candidate?.value===tracking.value&&
+    candidate.sources?.length&&candidate.sources.every(source=>boundLocalSpan(source)&&source.text===tracking.value)&&
+    candidate.headingSources?.length&&candidate.headingSources.every(boundLocalSpan)){
+    $("receiveTracking").value=tracking.value;rememberLocalFieldSource("tracking",tracking.value,null);
+    intakeTrackingReview={status:"REVIEW_REQUIRED",message:"Literal printed tracking suggestion; unverified. Check every character against the photo."};
+  }
+}
 async function readLocalLabel(){
   if(!localPhotoReady||intakePhotoPending||localReadBusy)return;
   const token=intakeReadToken,edits=intakeFieldEditGeneration,companyId=workspace?.company?.id,actorId=workspaceActorId;
-  localReadBusy=true;resetLabelConfirmation();syncLocalReaderControls();
+  localReadBusy=true;localReadState="reading";resetLabelConfirmation();syncLocalReaderControls();
+  $("localPhotoStatus").textContent="Reading label locally… No completed result from this attempt yet.";
   try{
+    renderLocalObservation();renderLabelReadout();
     const reader=await getLocalIntakeReader();
     if(token!==intakeReadToken||companyId!==workspace?.company?.id||actorId!==workspaceActorId)return;
     const result=await reader.read();
@@ -356,19 +403,23 @@ async function readLocalLabel(){
     const editedDuringRead=edits!==intakeFieldEditGeneration;markIntakeEdit();
     clearLocalEvidence();localObservation=result.observation;localFrameUrl=URL.createObjectURL(result.frameBlob);
     $("localReaderFrame").src=localFrameUrl;$("localReaderFrame").hidden=false;
-    intakeOcrText=localObservation.raw.text;
-    renderLocalObservation();
+    intakeOcrText=localObservation.raw.text;localReadState="completed";
+    suggestLocalFields(editedDuringRead);renderLocalObservation();
     intakeVisionWarnings=[editedDuringRead?"Reading finished after your edits. Your choices were preserved; review the new literal blocks separately.":"A new reading replaced the source evidence. Review any existing field and customer choices again."];
     renderLabelReadout();
-    $("localPhotoStatus").textContent="Local reading finished. Choose a printed block and registered customer, then review every field. Uploads and sends are paused until billing and photo verification pass.";
-  }catch(error){if(token===intakeReadToken){resetLabelConfirmation();$("localPhotoStatus").textContent=error.message||String(error);}}
+    $("localPhotoStatus").textContent=localReadSummary()+" Uploads and sends remain paused.";
+  }catch(error){if(token===intakeReadToken&&companyId===workspace?.company?.id&&actorId===workspaceActorId){
+    localReadState=error.name==="PaddleCanceled"?"canceled":"failed";resetLabelConfirmation();
+    $("localPhotoStatus").textContent=localReadSummary()+" "+(error.message||String(error));
+    renderLocalObservation();renderLabelReadout();
+  }}
   finally{localReadBusy=false;syncLocalReaderControls();}
 }
 function cancelLocalLabel(){
-  const wasPreparing=intakePhotoPending;intakeReadToken++;localIntakeReader?.cancel();resetLabelConfirmation();
+  const wasPreparing=intakePhotoPending;localReadState=wasPreparing?"photo-canceled":"canceled";intakeReadToken++;localIntakeReader?.cancel();resetLabelConfirmation();
   if(wasPreparing){localPhotoReady=false;intakePhotoPending=false;intakePhotoDataUrl=null;$("packagePhotoPreview").innerHTML="";clearLocalEvidence();}
-  $("localPhotoStatus").textContent=wasPreparing?"Photo preparation canceled. Choose the photo again.":"Reading canceled. The previous completed result, if any, is kept for review.";
-  syncLocalReaderControls();
+  $("localPhotoStatus").textContent=localReadSummary();
+  renderLocalObservation();renderLabelReadout();syncLocalReaderControls();
 }
 
 function resetLabelConfirmation(){
@@ -420,7 +471,7 @@ function arrivalReviewSignature(kind){
   return JSON.stringify({company:workspace?.company?.id||null,generation:arrivalEmailRecoveryGeneration,
     values:ids.map(id=>$(id)?.value||""),contact:displayedArrivalContacts[kind],
     localSource:kind==="receive"?{readToken:intakeReadToken,blockId:localBlockId,
-      observationId:localObservation?.id||null,photoId:localObservation?.photoId||null,
+      fieldSources:localFieldSources,observationId:localObservation?.id||null,photoId:localObservation?.photoId||null,
       photoSha256:localObservation?.photoSha256||null,rawResultSha256:localObservation?.rawResultSha256||null}:null,
     package:kind==="transfer"?displayedTransferPackage:null});
 }
@@ -1829,9 +1880,49 @@ async function readPackagePhoto(source,options={}){
 }
 
 
+function localReadSummary(){
+  const messages={
+    idle:"Choose a photo. Label reading has not started.",
+    opening:"Opening your photo. Label reading has not started.",
+    ready:"Photo selected. Label reading has not started. Tap Read label locally.",
+    reading:"Reading label locally… No completed result from this attempt yet.",
+    failed:"Local reading failed. No completed result from this attempt.",
+    canceled:"Reading canceled. No completed result from this attempt.",
+    "photo-failed":"Photo could not be opened. Label reading has not started.",
+    "photo-canceled":"Photo preparation canceled. Choose the photo again. Label reading has not started."
+  };
+  if(localReadState!=="completed")return messages[localReadState]||messages.idle;
+  return intakeOcrText.trim()?"Local reading completed with text.":"Local reading completed. No readable text found.";
+}
+function localReadDiagnostics(){
+  const observation=localObservation;
+  if(!observation)return "No completed model result is available for this photo.";
+  const count=items=>Array.isArray(items)?items.length:"unavailable";
+  const blocks=observation.proposals?.blocks||[],eligible=blocks.filter(block=>["DESTINATION","UNASSIGNED"].includes(block.role));
+  const tracking=observation.trackingProposal;
+  const lines=[(localReadState==="completed"?"Completed read":"Previous completed read, not this attempt")+": native items "+count(observation.raw?.sdkResult?.items)+
+    " · raw characters "+Array.from(observation.raw?.text||"").length+" · projected rows "+count(observation.rows)+
+    " · printed blocks "+blocks.length+" · recipient-review blocks "+eligible.length+" · tracking proposal "+(tracking?.status||"none")+"."];
+  const sources=new Map();
+  for(const field of ["name","address","tracking"])if(localFieldSources[field]){
+    const status=localFieldSourceStatus(field);sources.set(status,[...(sources.get(status)||[]),field]);
+  }
+  if(sources.size)lines.push([...sources].map(([status,fields])=>fields.join("/")+": "+status).join("; ")+".");
+  if(currentLocalBlock())lines.push("A printed block was selected for review; this does not confirm the fields.");
+  else if(!localFieldSources.name&&!localFieldSources.address)lines.push(localSuggestionNote||"Review the visible blocks or enter fields from the photo.");
+  if(!localFieldSources.tracking)lines.push(tracking?.value&&tracking.status==="REVIEW_REQUIRED"?"Review the printed tracking proposal or enter tracking manually.":"No single usable tracking proposal; enter tracking from the photo.");
+  lines.push("Verify every field and choose the registered customer separately.");
+  return lines.join("\n");
+}
+function localFieldSourceStatus(field){
+  const source=localFieldSources[field];if(!source)return "manually entered";
+  const current=localReadState==="completed"&&source.observationId===localObservation?.id&&source.rawResultSha256===localObservation?.rawResultSha256;
+  return (source.origin==="suggested"?"unverified suggestion":"operator-selected literal")+(current?" from this completed read":" retained from a previous completed read; review again")+(source.role==="UNASSIGNED"?"; Role not confirmed":"");
+}
 function renderLabelReadout(){
   const raw=$("labelRawText");
-  if(raw)raw.textContent=intakeOcrText||"No readable text found";
+  if(raw)raw.textContent=localReadState==="completed"?(intakeOcrText||localReadSummary()):localReadSummary()+
+    (localObservation?"\n\nPrevious completed read, not this attempt:\n"+(intakeOcrText||"The previous read returned no readable text."):"");
   const fields=$("labelFields");
   if(!fields)return;
   const customer=(intakeReview?intakeReview.scopedCustomers(workspace):[]).find(c=>c.id===$("receiveCustomer").value);
@@ -1841,8 +1932,8 @@ function renderLabelReadout(){
     && !$("receiveCustomer").value
     && $("receiveNewCustomerName").value.trim()===tentative.name
       ?tentative.name:intakeOcrName);
-  fields.textContent=["Printed name proposal: "+(currentLocalBlock()?.name?.value||"No printed name block selected"),
-    "Reviewed label name: "+(intakeOcrName||"Not entered"),
+  fields.textContent=[localReadSummary(),localReadDiagnostics(),"Printed name proposal: "+(currentLocalBlock()?.name?.value||"No printed name block selected"),
+    (localFieldSources.name?.origin==="suggested"?"Suggested label name (unverified; may be partial): ":"Reviewed label name: ")+(intakeOcrName||"Not entered"),
     "Registered customer: "+(customer?.name||"Not selected"),
     "Address: "+(intakeOcrAddress||"Not read"),
     "Tracking: "+($("receiveTracking").value||"Not read")+
@@ -1851,7 +1942,7 @@ function renderLabelReadout(){
     ...intakeVisionWarnings.map(warning=>"Review: "+warning)].join("\n");
   $("labelReadout").classList.remove("hidden");
   const addressInput=$("receiveAddress");
-  if(addressInput)addressInput.value=(intakeOcrAddress||"").replace(/\s*[\r\n]+\s*/g,", ");
+  if(addressInput)addressInput.value=intakeOcrAddress||"";
   if(confirmedArrivalReviews.receive)reviewedArrivalConfirmation("receive");
 }
 
@@ -2561,17 +2652,17 @@ $("receiveNewCustomerName").oninput=()=>{
 };
 
 $("receiveLabelName").oninput=()=>{
-  markIntakeEdit();intakeOcrName=$("receiveLabelName").value;renderLabelReadout();
+  markIntakeEdit();delete localFieldSources.name;intakeOcrName=$("receiveLabelName").value;renderLabelReadout();
 };
 
 $("receiveTracking").oninput=()=>{
   markIntakeEdit();
-  intakeTrackingReview={status:"MANUAL",message:"Manually entered — verify against the photo"};
+  delete localFieldSources.tracking;intakeTrackingReview={status:"MANUAL",message:"Manually entered — verify against the photo"};
   renderLabelReadout();
 };
 $("receiveAddress").oninput=()=>{
   markIntakeEdit();
-  intakeOcrAddress=$("receiveAddress").value;
+  delete localFieldSources.address;intakeOcrAddress=$("receiveAddress").value;
   renderLabelReadout();
 };
 $("receiveCarrier").oninput=markIntakeEdit;
@@ -2589,18 +2680,18 @@ $("packagePhoto").onchange=async e=>{
   if(!file||receiveInFlight)return; // Native picker cancellation preserves the current review.
   clearInactivePhotoSource("packagePhoto","packagePhotoGallery",e.target);
   clearLocalIntakeScope();const token=intakeReadToken;
-  intakeFieldEditGeneration++;intakePackageId=crypto.randomUUID();intakePhotoPending=true;
+  intakeFieldEditGeneration++;intakePackageId=crypto.randomUUID();intakePhotoPending=true;localReadState="opening";
   $("receiveResult").textContent="";$("localPhotoStatus").textContent="Opening your photo…";
-  hideInlineCustomer();syncLocalReaderControls();
+  hideInlineCustomer();syncLocalReaderControls();renderLabelReadout();
   try{
     const reader=await getLocalIntakeReader();if(token!==intakeReadToken)return;
     const photo=await reader.open(file,{photoId:"intake-"+intakePackageId});if(token!==intakeReadToken)return;
     const preview=await compressImage(file);if(token!==intakeReadToken)return;
-    intakePhotoDataUrl=preview;localPhotoReady=true;
+    intakePhotoDataUrl=preview;localPhotoReady=true;localReadState="ready";
     $("packagePhotoPreview").innerHTML='<img src="'+preview+'" alt="Package photo retained for review; nothing uploaded">';
     $("localPhotoStatus").textContent="Photo ready. Tap Read label locally. No customer was selected and nothing was uploaded.";
     $("processingBox").classList.add("hidden");renderLabelReadout();
-  }catch(error){if(token===intakeReadToken){localPhotoReady=false;$("localPhotoStatus").textContent="Could not open this photo: "+(error.message||String(error));}}
+  }catch(error){if(token===intakeReadToken){localPhotoReady=false;localReadState="photo-failed";$("localPhotoStatus").textContent="Could not open this photo: "+(error.message||String(error));renderLabelReadout();}}
   finally{if(token===intakeReadToken)intakePhotoPending=false;syncLocalReaderControls();}
 };
 bindPhotoSources("packagePhoto","packagePhotoGallery",()=>receiveInFlight);

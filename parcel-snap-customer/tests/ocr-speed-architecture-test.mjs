@@ -65,11 +65,14 @@ test('reading and canceling require their explicit UI actions', () => {
   assert(!/(?:setTimeout|requestIdleCallback)\(warmParcelSnapOcr/.test(app));
 });
 test('current read cannot fall back to legacy OCR, hosted vision, uploads, or automatic customer assignment', () => {
-  assert(!/Tesseract|fastOcrRecognize|readPackagePhoto\(|analyzePackageWithVision|\bfetch\(|\bapi\(|\.upload\(|\.value\s*=/.test(explicitRead));
-  assert.match(app, /import\('\.\/free-intake-reader\.mjs\?v=ps-readonly-repair-20261012-02'\)/);
-  assert(html.includes('src="app.js?v=ps-readonly-repair-20261012-02"'));
-  assert(html.includes('src="intake-review.js?v=ps-readonly-repair-20261012-02"'));
+  const suggestions=sourceBlock('function suggestLocalFields(', 'async function readLocalLabel()');
+  assert(!/Tesseract|fastOcrRecognize|readPackagePhoto\(|analyzePackageWithVision|\bfetch\(|\bapi\(|\.upload\(/.test(explicitRead+suggestions));
+  assert(!/\$\("receive(?:Customer|NewCustomerEmail)"\)\.value\s*=|chooseLocalDirectoryCustomer\(/.test(suggestions));
+  assert.match(app, /import\('\.\/free-intake-reader\.mjs\?v=ps-readonly-review-20261012-03'\)/);
+  assert(html.includes('src="app.js?v=ps-readonly-review-20261012-03"'));
+  assert(html.includes('src="intake-review.js?v=ps-readonly-review-20261012-03"'));
   assert.match(intake, /loadRuntime=\(\)=>import\('\.\/local-reader\/paddle-runtime\/paddle-runtime\.mjs'\)/);
+  assert.match(intake, /loadProjector=\(\)=>import\('\.\/paddle-label-blocks\.js\?v=ps-readonly-review-20261012-03'\)/);
 });
 test('photo, actor, tenant and edit generations guard local results', () => {
   assert.equal((explicitRead.match(/token!==intakeReadToken\|\|companyId!==workspace\?\.company\?\.id\|\|actorId!==workspaceActorId/g) || []).length, 2);

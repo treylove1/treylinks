@@ -284,19 +284,12 @@
             <small>Free Paddle reader, one full-frame reading. Maximum 20 MiB and 40 megapixels; full frames over 10 megapixels are reduced. First use loads about 53 MB of verified reader assets. Phone speed and camera behavior need separate testing.</small>
             <div id="packagePhotoPreview" class="photoPreview"></div>
             <details><summary>Exact frame supplied to the reader</summary><img id="localReaderFrame" class="localReaderFrame" alt="Exact full-frame canvas captured before Paddle OCR" hidden><p>Native OCR proposals come only from this single frame. Model scores do not measure field accuracy.</p></details>
-            <section id="localLabelBlocks" class="localLabelBlocks" aria-live="polite"></section>
-            <section id="localDirectoryCandidates" class="localDirectoryCandidates" aria-live="polite"></section>
 
             <div id="processingBox" class="processing hidden">
               <strong id="processingText">Processing package…</strong>
               <small id="processingDetail"></small>
             </div>
 
-            <section id="labelReadout" class="notice hidden" aria-live="polite">
-              <strong>Photo reading and reviewed fields</strong>
-              <pre id="labelFields" style="white-space:pre-wrap"></pre>
-              <details open><summary>All extracted text</summary><pre id="labelRawText" style="white-space:pre-wrap"></pre></details>
-            </section>
 
             <label>Registered customer, chosen after checking this photo
               <select id="receiveCustomer"></select>
@@ -349,12 +342,21 @@
               </label>
             </div>
 
-            <label>Name as printed, reviewed from this photo
-              <input id="receiveLabelName" placeholder="Enter the printed name if the reader missed it">
-              <small>Manual entries remain separate from the original OCR evidence and registered customer name.</small>
+            <section id="localLabelBlocks" class="localLabelBlocks" aria-live="polite"></section>
+            <section id="localDirectoryCandidates" class="localDirectoryCandidates" aria-live="polite"></section>
+
+            <section id="labelReadout" class="notice hidden" aria-live="polite">
+              <strong>Photo reading and reviewed fields</strong>
+              <pre id="labelFields" style="white-space:pre-wrap"></pre>
+              <details open><summary>All extracted text</summary><pre id="labelRawText" style="white-space:pre-wrap"></pre></details>
+            </section>
+
+            <label>Name as printed, verify against this photo
+              <textarea id="receiveLabelName" rows="2" placeholder="Enter the printed name if the reader missed it"></textarea>
+              <small>Suggestions may be partial or wrong. Your edits remain separate from the original OCR evidence and registered customer name.</small>
             </label>
             <label>Recipient address read from photo
-              <input id="receiveAddress" placeholder="Not read — enter from the label">
+              <textarea id="receiveAddress" rows="3" placeholder="Not read — enter from the label"></textarea>
             </label>
             <label>Tracking number
               <input id="receiveTracking" placeholder="Not read — enter from the label">
@@ -599,7 +601,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="known-customer-matcher.js"></script>
   <script src="barcode-reader.js?v=20261010-datamatrix"></script>
-  <script src="intake-review.js?v=ps-readonly-repair-20261012-02"></script>
-  <script src="app.js?v=ps-readonly-repair-20261012-02"></script>
+  <script src="intake-review.js?v=ps-readonly-review-20261012-03"></script>
+  <script src="app.js?v=ps-readonly-review-20261012-03"></script>
 </body>
 </html>
