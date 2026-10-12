@@ -28,7 +28,7 @@ function readSessionForWorkspace(deadline){
   const timeoutMs=remainingReadOnlyWait(deadline);
   // A timed-out waiter must not start a second SDK refresh while one is unresolved.
   if(!pendingSessionRead){
-    const pending=Promise.resolve().then(()=>sb.auth.getSession());
+    const pending=Promise.resolve().then(()=>sb.auth.getSession()).then(result=>{if(result?.error)throw result.error;return result;});
     pendingSessionRead=pending;
     pending.then(()=>{if(pendingSessionRead===pending)pendingSessionRead=null;},()=>{if(pendingSessionRead===pending)pendingSessionRead=null;});
   }
@@ -240,12 +240,19 @@ async function fastOcrRecognizeDetailed(image){
 const $=id=>document.getElementById(id);
 // Local reading is explicit and separate from authenticated package operations.
 let localIntakeReader=null,localIntakeReaderPromise=null,localObservation=null,localBlockId=null,localFrameUrl=null;
-let localPhotoReady=false,localReadBusy=false,workspaceActorId=null,arrivalCapability=null,arrivalCapabilityGeneration=0;
+let localPhotoReady=false,localReadBusy=false,workspaceActorId=null,arrivalCapability=null,arrivalCapabilityGeneration=0,arrivalCapabilityMessage="";
 // Presentation state is separate from retained, source-bound completed evidence.
 let localReadState="idle",localFieldSources={},localSuggestionNote="";
 const intakeReview=globalThis.ParcelSnapIntakeReview;
 function arrivalIdentity(){return {companyId:workspace?.company?.id||null,actorId:workspaceActorId};}
-function arrivalGate(){return intakeReview?intakeReview.arrivalGate(arrivalCapability,arrivalIdentity()):{ready:false,reason:"Arrival safety module is unavailable. Saving and sending are blocked."};}
+function arrivalGate(){
+  const identity=arrivalIdentity();
+  if(!arrivalCapability&&arrivalCapabilityMessage&&identity.companyId&&identity.actorId)return {ready:false,reason:arrivalCapabilityMessage};
+  return intakeReview?intakeReview.arrivalGate(arrivalCapability,identity):{ready:false,reason:"Arrival safety module is unavailable. Saving and sending are blocked."};
+}
+function invalidateArrivalCapability(message=""){
+  arrivalCapability=null;arrivalCapabilityGeneration++;arrivalCapabilityMessage=message;renderArrivalGate();
+}
 function requireArrivalCapability(action){
   if(!["receive_package","destination_arrival"].includes(action))return;
   const gate=arrivalGate();if(!gate.ready)throw new Error(gate.reason);
@@ -263,14 +270,23 @@ function renderArrivalGate(){
   }
 }
 async function checkArrivalCapabilities(){
-  const id=++arrivalCapabilityGeneration,identity=arrivalIdentity();arrivalCapability=null;renderArrivalGate();
+  const identity=arrivalIdentity();
+  invalidateArrivalCapability("Checking backend readiness. Saving and sending remain blocked.");
+  const id=arrivalCapabilityGeneration;
   if(!identity.actorId||!identity.companyId)return;
   try{
     const result=await api({action:"arrival_capabilities"},identity.actorId);
     if(id!==arrivalCapabilityGeneration||identity.actorId!==workspaceActorId||identity.companyId!==workspace?.company?.id)return;
-    arrivalCapability=result.capabilities?.arrival_review||null;
-  }catch(error){if(id===arrivalCapabilityGeneration&&$("arrivalCapabilityStatus"))$("arrivalCapabilityStatus").textContent="Backend readiness could not be verified. Saving and sending remain blocked.";}
-  finally{if(id===arrivalCapabilityGeneration)renderArrivalGate();}
+    const candidate=result.capabilities?.arrival_review||null;
+    if(!intakeReview?.readCapabilityStatus(candidate,identity).ready){
+      const reason=intakeReview?.capabilityStatus(candidate,identity).reason;
+      invalidateArrivalCapability(reason||"Backend readiness could not be verified. Saving and sending remain blocked.");return;
+    }
+    arrivalCapability=candidate;arrivalCapabilityMessage="";renderArrivalGate();
+  }catch(error){
+    if(id===arrivalCapabilityGeneration&&identity.actorId===workspaceActorId&&identity.companyId===workspace?.company?.id)
+      invalidateArrivalCapability("Backend readiness could not be verified. Saving and sending remain blocked.");
+  }
 }
 function syncLocalReaderControls(){
   if($("readLocalLabel"))$("readLocalLabel").disabled=!localPhotoReady||intakePhotoPending||localReadBusy||Boolean(localIntakeReader?.busy);
@@ -283,7 +299,7 @@ function clearLocalEvidence(){
   if($("localLabelBlocks"))$("localLabelBlocks").innerHTML="";
   if($("localDirectoryCandidates"))$("localDirectoryCandidates").innerHTML="";
 }
-function clearLocalIntakeScope(){
+function clearLocalPhotoEvidence(){
   intakeReadToken++;localIntakeReader?.clear();localPhotoReady=false;localReadState="idle";localFieldSources={};localSuggestionNote="";clearLocalEvidence();
   intakePhotoDataUrl=null;intakePhotoPending=false;intakeOcrText="";intakeOcrName="";intakeOcrAddress="";
   intakeRecipientDisplay=null;intakeTrackingReview=null;intakeVisionWarnings=[];displayedArrivalContacts.receive=null;resetLabelConfirmation();
@@ -292,7 +308,10 @@ function clearLocalIntakeScope(){
   if($("labelFields"))$("labelFields").textContent="";
   if($("labelRawText"))$("labelRawText").textContent="";
   if($("localPhotoStatus"))$("localPhotoStatus").textContent="Choose a photo. No reading starts until you tap Read label locally.";
-  arrivalCapability=null;arrivalCapabilityGeneration++;syncLocalReaderControls();renderArrivalGate();
+  syncLocalReaderControls();
+}
+function clearLocalIntakeScope(){
+  clearLocalPhotoEvidence();invalidateArrivalCapability();
 }
 async function getLocalIntakeReader(){
   if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs?v=ps-readonly-review-20261012-03').then(({FreeIntakeReader})=>{
@@ -1977,10 +1996,11 @@ async function api(body,expectedUserId=null,readOptions={}){
   const readKeys=body.action==="arrival_capabilities"?["action"]:["action","arrival_contract","arrival_deployment_id"];
   if(Object.keys(body).some(key=>!readKeys.includes(key)))throw new Error("Read-only requests cannot include changes or photos.");
   if(body.action==="workspace_readonly"&&(body.arrival_contract!==intakeReview.CONTRACT.contract||body.arrival_deployment_id!==intakeReview.BUILD.arrivalDeploymentId))throw new Error("The read-only server release could not be verified.");
-  const generation=workspaceLoadGeneration;
+  const generation=workspaceLoadGeneration,capabilityGeneration=arrivalCapabilityGeneration,identity=arrivalIdentity();
+  try{
   if(signOutState!=="IDLE")throw new Error("Please finish signing out before opening a workspace.");
   const {data:{session}}=await readSessionForWorkspace(readOptions.deadline);
-  if(generation!==workspaceLoadGeneration||signOutState!=="IDLE"||!session?.user?.id||typeof session.access_token!=="string"||!session.access_token||expectedUserId!==null&&session.user.id!==expectedUserId||workspaceActorId&&session.user.id!==workspaceActorId)throw new Error("Please sign in again.");
+  if(generation!==workspaceLoadGeneration||signOutState!=="IDLE"||!session?.user?.id||typeof session.access_token!=="string"||!session.access_token||(typeof session.expires_at==="number"&&session.expires_at*1000<=Date.now())||expectedUserId!==null&&session.user.id!==expectedUserId||workspaceActorId&&session.user.id!==workspaceActorId)throw new Error("Please sign in again.");
   if(["receive_package","destination_arrival"].includes(body.action)){
     if(session.user?.id!==workspaceActorId)throw new Error("Your account changed. Refresh the workspace before reviewing an arrival.");
     body=capabilityRequest(body);
@@ -1999,9 +2019,15 @@ async function api(body,expectedUserId=null,readOptions={}){
     body:JSON.stringify(body)
   });
   const data=await r.json().catch(()=>({}));
+  if(generation!==workspaceLoadGeneration||signOutState!=="IDLE"||workspaceActorId&&session.user.id!==workspaceActorId||(typeof session.expires_at==="number"&&session.expires_at*1000<=Date.now()))throw new Error("Please sign in again.");
   if(!r.ok)throw new Error(data.error||"Portal request failed.");
   return data;
   })(),timeoutMs,"The read-only server check timed out. You can retry; no changes were sent.",()=>controller.abort());
+  }catch(error){
+    if(generation===workspaceLoadGeneration&&capabilityGeneration===arrivalCapabilityGeneration&&identity.actorId===workspaceActorId&&identity.companyId===(workspace?.company?.id||null))
+      invalidateArrivalCapability("Backend readiness could not be verified. Saving and sending remain blocked.");
+    throw error;
+  }
 }
 
 $("authButton").onclick=async()=>{
@@ -2093,20 +2119,22 @@ $("signOut").onclick=async()=>{
 };
 
 async function boot(){
-  const generation=workspaceLoadGeneration;
+  const generation=workspaceLoadGeneration,capabilityGeneration=arrivalCapabilityGeneration;
   let session;
   try{
     ({data:{session}}=await readSessionForWorkspace());
   }catch(error){
-    if(generation!==workspaceLoadGeneration||signOutState!=="IDLE")return;
+    if(generation!==workspaceLoadGeneration||capabilityGeneration!==arrivalCapabilityGeneration||signOutState!=="IDLE")return;
+    workspace=null;workspaceActorId=null;clearLocalIntakeScope();
     $("authView").classList.remove("hidden");$("appView").classList.add("hidden");
     $("authMessage").innerHTML=esc(error.message||String(error))+"<button id=\"retryStartup\" type=\"button\" class=\"ghost wide\">Retry existing session</button>";
     $("retryStartup").onclick=async()=>{const button=$("retryStartup");if(button.disabled)return;button.disabled=true;await boot();};
     return;
   }
-  if(generation!==workspaceLoadGeneration||signOutState!=="IDLE")return;
+  if(generation!==workspaceLoadGeneration||capabilityGeneration!==arrivalCapabilityGeneration||signOutState!=="IDLE")return;
   $("authMessage").textContent="";
-  if(!session){
+  if(!session?.user?.id||typeof session.access_token!=="string"||!session.access_token||(typeof session.expires_at==="number"&&session.expires_at*1000<=Date.now())){
+    workspace=null;workspaceActorId=null;clearLocalIntakeScope();
     $("authView").classList.remove("hidden");
     $("appView").classList.add("hidden");
     return;
@@ -2135,6 +2163,7 @@ function showOnly(id){
 async function loadWorkspace(){
   if(signOutState!=="IDLE")return;
   const generation=++workspaceLoadGeneration;
+  invalidateArrivalCapability("Checking backend readiness. Saving and sending remain blocked.");
   showOnly("loadingState");
   const timing={generation,started:performance.now(),stageStarted:performance.now(),current:null,stages:[]};
   const readOptions={deadline:timing.started+READONLY_WAIT_MS};
@@ -2164,11 +2193,11 @@ async function loadWorkspace(){
     workspaceStage(timing,"Confirming current account");
     const {data:{session:currentSession}}=await readSessionForWorkspace(readOptions.deadline);
     if(generation!==workspaceLoadGeneration)return;
-    if(!currentSession||currentSession.user?.id!==startedSession.user.id)throw new Error("Please sign in again.");
+    if(!currentSession||currentSession.user?.id!==startedSession.user.id||typeof currentSession.access_token!=="string"||!currentSession.access_token||(typeof currentSession.expires_at==="number"&&currentSession.expires_at*1000<=Date.now()))throw new Error("Please sign in again.");
     workspace=nextWorkspace;
     if(previousCompany!==(workspace?.company?.id||null)||workspaceActorId!==startedSession.user.id){clearArrivalEmailRecovery();clearLocalIntakeScope();}
     workspaceActorId=startedSession.user.id;
-    arrivalCapability=candidateCapability;arrivalCapabilityGeneration++;
+    arrivalCapability=candidateCapability;arrivalCapabilityGeneration++;arrivalCapabilityMessage="";
     if(workspace.state==="NO_COMPANY"){
       showOnly("onboardingState");
       if(workspace.onboarding?.company_name)$("onboardingCompany").value=workspace.onboarding.company_name;
@@ -2206,7 +2235,7 @@ async function loadWorkspace(){
     throw new Error("Unknown workspace state.");
   }catch(e){
     if(generation!==workspaceLoadGeneration)return;
-    workspace=null;
+    workspace=null;workspaceActorId=null;invalidateArrivalCapability();
     finishWorkspaceTiming(timing,"unavailable");
     $("loadingState").innerHTML="<h2>Workspace unavailable</h2><p>"+esc(e.message||String(e))+"</p><button id=\"retryWorkspace\" type=\"button\" class=\"ghost wide\">Retry workspace</button>";
     const retry=$("retryWorkspace");
@@ -2679,7 +2708,7 @@ $("packagePhoto").onchange=async e=>{
   const file=e.target.files?.[0];
   if(!file||receiveInFlight)return; // Native picker cancellation preserves the current review.
   clearInactivePhotoSource("packagePhoto","packagePhotoGallery",e.target);
-  clearLocalIntakeScope();const token=intakeReadToken;
+  clearLocalPhotoEvidence();const token=intakeReadToken;
   intakeFieldEditGeneration++;intakePackageId=crypto.randomUUID();intakePhotoPending=true;localReadState="opening";
   $("receiveResult").textContent="";$("localPhotoStatus").textContent="Opening your photo…";
   hideInlineCustomer();syncLocalReaderControls();renderLabelReadout();
@@ -2701,7 +2730,7 @@ if($("cancelLocalLabel"))$("cancelLocalLabel").onclick=cancelLocalLabel;
 if($("checkArrivalCapability"))$("checkArrivalCapability").onclick=checkArrivalCapabilities;
 if($("localLabelBlocks"))$("localLabelBlocks").onclick=e=>{const target=e.target.closest?.('[data-label-block]');if(target)chooseLocalBlock(target.dataset.labelBlock);else if(e.target.closest?.('[data-use-tracking]'))chooseLocalTracking();};
 if($("localDirectoryCandidates"))$("localDirectoryCandidates").onclick=e=>{const target=e.target.closest?.('[data-directory-customer]');if(target)chooseLocalDirectoryCustomer(target.dataset.directoryCustomer);};
-if(typeof addEventListener==="function")addEventListener('pagehide',()=>{clearLocalIntakeScope();workspaceActorId=null;});
+if(typeof addEventListener==="function")addEventListener('pagehide',()=>{workspaceLoadGeneration++;workspaceActorId=null;workspace=null;clearLocalIntakeScope();});
 
 async function createReceiveCustomer(){
   if(intakeReview?.BUILD.writesEnabled!==true)throw new Error("Customer creation from a photo is disabled in this read-only installation. Use only a verified registered customer for review.");
@@ -3106,6 +3135,7 @@ document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
 // No implicit reader initialization or hosted inference at page load.
 
 sb.auth.onAuthStateChange((_event,session)=>{
+  if(session&&typeof session.expires_at==="number"&&session.expires_at*1000<=Date.now())session=null;
   const nextActorId=session?.user?.id||null;
   const identityChanged=observedAuthActorId!==undefined&&nextActorId!==observedAuthActorId;
   observedAuthActorId=nextActorId;
@@ -3114,6 +3144,7 @@ sb.auth.onAuthStateChange((_event,session)=>{
     workspaceLoadGeneration++;workspaceActorId=null;workspace=null;clearArrivalEmailRecovery();clearLocalIntakeScope();
     showOnly("loadingState");$("loadingState").innerHTML="<h2>Account changed</h2><p>Reload to open the current account's workspace. The previous photo review was cleared.</p>";return;
   }
+  if(session&&(!session.user?.id||typeof session.access_token!=="string"||!session.access_token)){session=null;observedAuthActorId=null;}
   if(!session){
   workspaceLoadGeneration++;
   workspaceActorId=null;workspace=null;clearLocalIntakeScope();

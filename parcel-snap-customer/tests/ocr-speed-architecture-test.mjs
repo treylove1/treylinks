@@ -30,7 +30,7 @@ const sourceBlock = (start, end) => {
 const photo = sourceBlock('$("packagePhoto").onchange=', 'bindPhotoSources("packagePhoto"');
 const explicitRead = sourceBlock('async function readLocalLabel()', 'function cancelLocalLabel()');
 const cancel = sourceBlock('function cancelLocalLabel()', 'function resetLabelConfirmation()');
-const clear = sourceBlock('function clearLocalIntakeScope()', 'async function getLocalIntakeReader()');
+const clear = sourceBlock('function clearLocalPhotoEvidence()', 'async function getLocalIntakeReader()');
 const scripts = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi)].map(m => m[1]);
 const externalScripts = scripts.filter(ref => /^(?:https?:)?\/\//i.test(ref));
 const localScripts = scripts.filter(ref => !externalScripts.includes(ref));
@@ -69,8 +69,8 @@ test('current read cannot fall back to legacy OCR, hosted vision, uploads, or au
   assert(!/Tesseract|fastOcrRecognize|readPackagePhoto\(|analyzePackageWithVision|\bfetch\(|\bapi\(|\.upload\(/.test(explicitRead+suggestions));
   assert(!/\$\("receive(?:Customer|NewCustomerEmail)"\)\.value\s*=|chooseLocalDirectoryCustomer\(/.test(suggestions));
   assert.match(app, /import\('\.\/free-intake-reader\.mjs\?v=ps-readonly-review-20261012-03'\)/);
-  assert(html.includes('src="app.js?v=ps-readonly-review-20261012-03"'));
-  assert(html.includes('src="intake-review.js?v=ps-readonly-review-20261012-03"'));
+  assert(html.includes('src="app.js?v=ps-readonly-review-20261012-04"'));
+  assert(html.includes('src="intake-review.js?v=ps-readonly-review-20261012-04"'));
   assert.match(intake, /loadRuntime=\(\)=>import\('\.\/local-reader\/paddle-runtime\/paddle-runtime\.mjs'\)/);
   assert.match(intake, /loadProjector=\(\)=>import\('\.\/paddle-label-blocks\.js\?v=ps-readonly-review-20261012-03'\)/);
 });
@@ -84,7 +84,7 @@ test('photo, actor, tenant and edit generations guard local results', () => {
 test('review uses local object URLs with explicit cleanup', () => {
   assert.match(explicitRead, /URL\.createObjectURL\(result\.frameBlob\)/);
   assert.match(app, /URL\.revokeObjectURL\(localFrameUrl\)/);
-  assert.match(app, /addEventListener\('pagehide',\(\)=>\{clearLocalIntakeScope\(\)/);
+  assert.match(app, /addEventListener\('pagehide',\(\)=>\{workspaceLoadGeneration\+\+;workspaceActorId=null;workspace=null;clearLocalIntakeScope\(\)/);
   assert(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket|\.upload\(|https?:\/\//.test(intake));
 });
 test('input, evidence, row and wall-clock limits are explicit', () => {

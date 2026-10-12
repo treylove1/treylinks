@@ -1,7 +1,7 @@
 (function (scope) {
   'use strict';
   // Authenticated read-only installation. Writes require a separate reviewed release.
-  const BUILD = Object.freeze({id:'ps-readonly-review-20261012-03',writesEnabled:false,portalTransportEnabled:true,arrivalDeploymentId:'parcel-snap-arrival-review-20261012-v1'});
+  const BUILD = Object.freeze({id:'ps-readonly-review-20261012-04',writesEnabled:false,portalTransportEnabled:true,arrivalDeploymentId:'parcel-snap-arrival-review-20261012-v1'});
   const CONTRACT = Object.freeze({contract:'parcel-snap-arrival-review-v1',workspace:'read-only-snapshot-v1',
     confirmation:'customer-contact-revision-v1',idempotency:'durable-arrival-ledger-v1',
     photo:'private-sha256-attachment-v1',reconcile:'provider-get-no-resend-v1'});
@@ -23,7 +23,8 @@
   }
   function capabilityStatus(capability, {companyId,actorId} = {}) {
     if(!companyId||!actorId)return {ready:false,reason:'Sign in and open your company workspace first.'};
-    if(!capability||Object.entries(CONTRACT).some(([key,value])=>capability[key]!==value))
+    if(!capability)return {ready:false,reason:'Backend readiness has not been verified. Saving and sending remain blocked.'};
+    if(typeof capability!=='object'||Array.isArray(capability)||Object.entries(CONTRACT).some(([key,value])=>capability[key]!==value))
       return {ready:false,reason:'The server does not support the reviewed arrival contract. Saving and sending are blocked.'};
     if(capability.company_id!==companyId||capability.actor_id!==actorId)
       return {ready:false,reason:'The arrival capability belongs to another workspace or account.'};

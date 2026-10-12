@@ -56,7 +56,7 @@ test('pre-SDK watchdog only shows a manual recovery control and never auto reloa
  assert(!script.includes('fetch('));assert(!script.includes('localStorage'));assert(!script.includes('password'));
 });
 function addApi(h,fetch){
- Object.assign(h.ctx,{fetch,PORTAL_API:'https://fictional.example.invalid/portal',SUPABASE_KEY:'fictional-public',workspaceLoadGeneration:0,signOutState:'IDLE',workspaceActorId:null,
+ Object.assign(h.ctx,{fetch,PORTAL_API:'https://fictional.example.invalid/portal',SUPABASE_KEY:'fictional-public',workspaceLoadGeneration:0,arrivalCapabilityGeneration:0,arrivalIdentity:()=>({actorId:null,companyId:null}),invalidateArrivalCapability:()=>{},workspace:null,signOutState:'IDLE',workspaceActorId:null,
  requireArrivalCapability:()=>{},intakeReview:{assertPrivateAction:()=>{},assertPortalTransport:()=>{},BUILD:{arrivalDeploymentId:'fixture-deploy'},CONTRACT:{contract:'fixture-contract'}}});
  vm.runInContext(app.slice(app.indexOf('async function api('),app.indexOf('$("authButton").onclick=')),h.ctx);
  h.sessions.push({data:{session:{user:{id:'fixture-actor'},access_token:'fictional-token'}}});
