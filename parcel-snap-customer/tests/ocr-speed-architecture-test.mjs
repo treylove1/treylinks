@@ -66,7 +66,9 @@ test('reading and canceling require their explicit UI actions', () => {
 });
 test('current read cannot fall back to legacy OCR, hosted vision, uploads, or automatic customer assignment', () => {
   assert(!/Tesseract|fastOcrRecognize|readPackagePhoto\(|analyzePackageWithVision|\bfetch\(|\bapi\(|\.upload\(|\.value\s*=/.test(explicitRead));
-  assert.match(app, /import\('\.\/free-intake-reader\.mjs'\)/);
+  assert.match(app, /import\('\.\/free-intake-reader\.mjs\?v=ps-readonly-repair-20261012-02'\)/);
+  assert(html.includes('src="app.js?v=ps-readonly-repair-20261012-02"'));
+  assert(html.includes('src="intake-review.js?v=ps-readonly-repair-20261012-02"'));
   assert.match(intake, /loadRuntime=\(\)=>import\('\.\/local-reader\/paddle-runtime\/paddle-runtime\.mjs'\)/);
 });
 test('photo, actor, tenant and edit generations guard local results', () => {

@@ -16,7 +16,7 @@ function previewBlob(canvas){return new Promise((resolve,reject)=>{
 });}
 export class FreeIntakeReader {
   constructor({onState=()=>{},loadRuntime=()=>import('./local-reader/paddle-runtime/paddle-runtime.mjs'),
-    loadProjector=()=>import('./paddle-label-blocks.js'),decode=createImageBitmap,
+    loadProjector=()=>import('./paddle-label-blocks.js'),decode=file=>globalThis.createImageBitmap(file),
     makeCanvas=()=>document.createElement('canvas'),capturePreview=previewBlob,hash=digest}={}){
     this.onState=onState;this.decode=decode;this.makeCanvas=makeCanvas;this.capturePreview=capturePreview;this.hash=hash;
     this.loadProjector=loadProjector;this.generation=0;this.photo=null;this.active=null;this.passCount=0;this.storedBytes=0;

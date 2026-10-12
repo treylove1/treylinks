@@ -59,6 +59,7 @@
     </header>
 
     <main>
+      <small id="workspaceTiming" aria-live="polite"></small>
       <section id="loadingState" class="card">
         <h2>Loading workspace…</h2>
       </section>
@@ -586,10 +587,19 @@
     </main>
   </div>
 
+  <script>
+    // Runs before the blocking CDN dependency. No credentials, network or auto-retry.
+    globalThis.parcelStartupWatchdog=setTimeout(()=>{
+      const message=document.getElementById("authMessage");
+      message.textContent="The page scripts are taking longer than expected to load. No photo reading or package changes have started. ";
+      const retry=document.createElement("button");retry.type="button";retry.className="ghost wide";retry.textContent="Reload page";
+      retry.onclick=()=>location.reload();message.appendChild(retry);
+    },15000);
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="known-customer-matcher.js"></script>
   <script src="barcode-reader.js?v=20261010-datamatrix"></script>
-  <script src="intake-review.js?v=ps-readonly-install-20261012-01"></script>
-  <script src="app.js?v=ps-readonly-install-20261012-01"></script>
+  <script src="intake-review.js?v=ps-readonly-repair-20261012-02"></script>
+  <script src="app.js?v=ps-readonly-repair-20261012-02"></script>
 </body>
 </html>

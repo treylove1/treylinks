@@ -1,7 +1,7 @@
 (function (scope) {
   'use strict';
   // Authenticated read-only installation. Writes require a separate reviewed release.
-  const BUILD = Object.freeze({id:'ps-readonly-install-20261012-01',writesEnabled:false,portalTransportEnabled:true,arrivalDeploymentId:'parcel-snap-arrival-review-20261012-v1'});
+  const BUILD = Object.freeze({id:'ps-readonly-repair-20261012-02',writesEnabled:false,portalTransportEnabled:true,arrivalDeploymentId:'parcel-snap-arrival-review-20261012-v1'});
   const CONTRACT = Object.freeze({contract:'parcel-snap-arrival-review-v1',workspace:'read-only-snapshot-v1',
     confirmation:'customer-contact-revision-v1',idempotency:'durable-arrival-ledger-v1',
     photo:'private-sha256-attachment-v1',reconcile:'provider-get-no-resend-v1'});

@@ -18,7 +18,7 @@ function harness(){
  }
  const node=id=>{if(!nodes.has(id))nodes.set(id,createNode(id));return nodes.get(id);};
  const auth={getSession:async()=>{sessionReads++;return {data:{session:sessions.length?sessions.shift():session}};},signInWithPassword:async()=>{signins++;},signOut:async()=>{signouts++;session=null;return {error:null};}};
- const ctx=vm.createContext({console,setTimeout,clearTimeout,performance,crypto:{randomUUID:()=> 'fictional-id'},window:{},location:{origin:"https://preview.example.invalid",reload(){reloads++;}},document:{getElementById:id=>id==='retryWorkspace'?(nodes.get(id)||null):node(id)},supabase:{createClient:()=>({auth})},ParcelSnapAcceptance:{createClient:()=>({auth})},async fetch(url,init){
+ const ctx=vm.createContext({AbortController,console,setTimeout,clearTimeout,performance,crypto:{randomUUID:()=> 'fictional-id'},window:{},location:{origin:"https://preview.example.invalid",reload(){reloads++;}},document:{getElementById:id=>id==='retryWorkspace'?(nodes.get(id)||null):node(id)},supabase:{createClient:()=>({auth})},ParcelSnapAcceptance:{createClient:()=>({auth})},async fetch(url,init){
   requests.push({url,body:JSON.parse(init.body),authorization:init.headers.Authorization});const response=responses.shift();if(typeof response==='function')return response();if(!response)throw Error('No mock response');return response;
  }});
  vm.runInContext(readFileSync(new URL('../intake-review.js',import.meta.url),'utf8'),ctx);

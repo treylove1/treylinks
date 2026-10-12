@@ -3,12 +3,53 @@ const SUPABASE_KEY="sb_publishable_wv2cDeErfEorwoGCLl9rMA_yo01I01X";
 const PORTAL_API=SUPABASE_URL+"/functions/v1/parcel-snap-portal";
 
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+if(globalThis.parcelStartupWatchdog){clearTimeout(globalThis.parcelStartupWatchdog);globalThis.parcelStartupWatchdog=null;}
 let authMode="signin";
 let workspace=null;
 let workspaceLoadGeneration=0;
 let observedAuthActorId;
 let signOutState="IDLE";
 let authActionInFlight=false;
+const READONLY_WAIT_MS=15000;
+let pendingSessionRead=null;
+// Timing contains stage names and milliseconds only; no identity, tokens or records.
+let workspaceTiming=null;
+function remainingReadOnlyWait(deadline){
+  const left=deadline===undefined?READONLY_WAIT_MS:deadline-performance.now();
+  if(left<=0)throw new Error("Opening the workspace took too long. Retry when your connection is ready; no changes were sent.");
+  return left;
+}
+function boundedReadOnly(promise,timeoutMs,message,onTimeout=()=>{}){
+  let timer;
+  const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{reject(new Error(message));onTimeout();},timeoutMs);});
+  return Promise.race([promise,timeout]).finally(()=>clearTimeout(timer));
+}
+function readSessionForWorkspace(deadline){
+  const timeoutMs=remainingReadOnlyWait(deadline);
+  // A timed-out waiter must not start a second SDK refresh while one is unresolved.
+  if(!pendingSessionRead){
+    const pending=Promise.resolve().then(()=>sb.auth.getSession());
+    pendingSessionRead=pending;
+    pending.then(()=>{if(pendingSessionRead===pending)pendingSessionRead=null;},()=>{if(pendingSessionRead===pending)pendingSessionRead=null;});
+  }
+  return boundedReadOnly(pendingSessionRead,timeoutMs,"Checking your existing sign-in took too long. You can retry; no second sign-in was started.");
+}
+function workspaceStage(timing,label){
+  if(timing.generation!==workspaceLoadGeneration)return;
+  const now=performance.now();
+  if(timing.current)timing.stages.push({stage:timing.current,ms:Math.round(now-timing.stageStarted)});
+  timing.current=label;timing.stageStarted=now;
+  $("loadingState").innerHTML="<h2>Loading workspace…</h2><p>"+esc(label)+"</p><small>"+((now-timing.started)/1000).toFixed(1)+" seconds since this workspace check began. Photo reading has not started.</small>";
+}
+function finishWorkspaceTiming(timing,outcome){
+  if(timing.generation!==workspaceLoadGeneration)return;
+  const now=performance.now();
+  if(timing.current)timing.stages.push({stage:timing.current,ms:Math.round(now-timing.stageStarted)});
+  workspaceTiming={outcome,totalMs:Math.round(now-timing.started),stages:timing.stages};
+  const status=$("workspaceTiming");
+  if(status)status.textContent="Workspace check: "+(workspaceTiming.totalMs/1000).toFixed(1)+" s. "+timing.stages.map(s=>s.stage+": "+(s.ms/1000).toFixed(1)+" s").join(" · ")+". This excludes page download and photo reading.";
+}
+
 let intakePhotoDataUrl=null;
 let intakeOcrText="";
 let intakeOcrName="";
@@ -251,7 +292,7 @@ function clearLocalIntakeScope(){
   arrivalCapability=null;arrivalCapabilityGeneration++;syncLocalReaderControls();renderArrivalGate();
 }
 async function getLocalIntakeReader(){
-  if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs').then(({FreeIntakeReader})=>{
+  if(!localIntakeReaderPromise)localIntakeReaderPromise=import('./free-intake-reader.mjs?v=ps-readonly-repair-20261012-02').then(({FreeIntakeReader})=>{
     localIntakeReader=new FreeIntakeReader({onState:state=>{
       if(localReadBusy&&state.message&&$("localPhotoStatus"))$("localPhotoStatus").textContent=state.message;
       syncLocalReaderControls();
@@ -1835,7 +1876,7 @@ $("signInMode").onclick=()=>setMode("signin");
 $("signUpMode").onclick=()=>setMode("signup");
 $("joinStaffMode").onclick=()=>setMode("join");
 
-async function api(body,expectedUserId=null){
+async function api(body,expectedUserId=null,readOptions={}){
   // Guard before authentication or network, including direct calls and status reconciliation.
   requireArrivalCapability(body.action);
   if(!intakeReview)throw new Error("Read-only installation safety module is unavailable.");
@@ -1847,14 +1888,18 @@ async function api(body,expectedUserId=null){
   if(body.action==="workspace_readonly"&&(body.arrival_contract!==intakeReview.CONTRACT.contract||body.arrival_deployment_id!==intakeReview.BUILD.arrivalDeploymentId))throw new Error("The read-only server release could not be verified.");
   const generation=workspaceLoadGeneration;
   if(signOutState!=="IDLE")throw new Error("Please finish signing out before opening a workspace.");
-  const {data:{session}}=await sb.auth.getSession();
+  const {data:{session}}=await readSessionForWorkspace(readOptions.deadline);
   if(generation!==workspaceLoadGeneration||signOutState!=="IDLE"||!session?.user?.id||typeof session.access_token!=="string"||!session.access_token||expectedUserId!==null&&session.user.id!==expectedUserId||workspaceActorId&&session.user.id!==workspaceActorId)throw new Error("Please sign in again.");
   if(["receive_package","destination_arrival"].includes(body.action)){
     if(session.user?.id!==workspaceActorId)throw new Error("Your account changed. Refresh the workspace before reviewing an arrival.");
     body=capabilityRequest(body);
   }
+  const timeoutMs=remainingReadOnlyWait(readOptions.deadline);
+  const controller=new AbortController();
+  return await boundedReadOnly((async()=>{
   const r=await fetch(PORTAL_API,{
     method:"POST",
+    signal:controller.signal,
     headers:{
       "Content-Type":"application/json",
       "Authorization":"Bearer "+session.access_token,
@@ -1865,6 +1910,7 @@ async function api(body,expectedUserId=null){
   const data=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(data.error||"Portal request failed.");
   return data;
+  })(),timeoutMs,"The read-only server check timed out. You can retry; no changes were sent.",()=>controller.abort());
 }
 
 $("authButton").onclick=async()=>{
@@ -1956,7 +2002,19 @@ $("signOut").onclick=async()=>{
 };
 
 async function boot(){
-  const {data:{session}}=await sb.auth.getSession();
+  const generation=workspaceLoadGeneration;
+  let session;
+  try{
+    ({data:{session}}=await readSessionForWorkspace());
+  }catch(error){
+    if(generation!==workspaceLoadGeneration||signOutState!=="IDLE")return;
+    $("authView").classList.remove("hidden");$("appView").classList.add("hidden");
+    $("authMessage").innerHTML=esc(error.message||String(error))+"<button id=\"retryStartup\" type=\"button\" class=\"ghost wide\">Retry existing session</button>";
+    $("retryStartup").onclick=async()=>{const button=$("retryStartup");if(button.disabled)return;button.disabled=true;await boot();};
+    return;
+  }
+  if(generation!==workspaceLoadGeneration||signOutState!=="IDLE")return;
+  $("authMessage").textContent="";
   if(!session){
     $("authView").classList.remove("hidden");
     $("appView").classList.add("hidden");
@@ -1987,15 +2045,18 @@ async function loadWorkspace(){
   if(signOutState!=="IDLE")return;
   const generation=++workspaceLoadGeneration;
   showOnly("loadingState");
-  $("loadingState").innerHTML="<h2>Loading workspace…</h2>";
+  const timing={generation,started:performance.now(),stageStarted:performance.now(),current:null,stages:[]};
+  const readOptions={deadline:timing.started+READONLY_WAIT_MS};
+  workspaceStage(timing,"Checking existing sign-in");
   try{
-    const {data:{session:startedSession}}=await sb.auth.getSession();
+    const {data:{session:startedSession}}=await readSessionForWorkspace(readOptions.deadline);
     if(generation!==workspaceLoadGeneration)return;
     if(!startedSession?.user?.id)throw new Error("Please sign in again.");
     if(observedAuthActorId!==undefined&&observedAuthActorId!==startedSession.user.id)throw new Error("Your account changed. Reload to open the current account's workspace.");
     observedAuthActorId=startedSession.user.id;
     const previousCompany=workspace?.company?.id||null;
-    const capabilityResult=await api({action:"arrival_capabilities"},startedSession.user.id);
+    workspaceStage(timing,"Verifying backend compatibility");
+    const capabilityResult=await api({action:"arrival_capabilities"},startedSession.user.id,readOptions);
     if(generation!==workspaceLoadGeneration)return;
     const blockedStageMessages={
       NO_COMPANY:"This account has no company workspace. This read-only installation is limited to existing active company accounts. Company creation is paused; nothing was created.",
@@ -2005,10 +2066,12 @@ async function loadWorkspace(){
     if(Object.hasOwn(blockedStageMessages,capabilityResult?.state))throw new Error(blockedStageMessages[capabilityResult.state]);
     const candidateCapability=capabilityResult.capabilities?.arrival_review;
     if(!intakeReview?.readCapabilityStatus(candidateCapability,{actorId:startedSession.user.id}).ready)throw new Error("A compatible read-only backend is required. No workspace request was made.");
-    const nextWorkspace=await api({action:"workspace_readonly",arrival_contract:candidateCapability.contract,arrival_deployment_id:candidateCapability.deployment_id},startedSession.user.id);
+    workspaceStage(timing,"Loading read-only workspace");
+    const nextWorkspace=await api({action:"workspace_readonly",arrival_contract:candidateCapability.contract,arrival_deployment_id:candidateCapability.deployment_id},startedSession.user.id,readOptions);
     if((nextWorkspace.state==="ACTIVE"||nextWorkspace.company?.id)&&nextWorkspace.company?.id!==candidateCapability.company_id)throw new Error("The read-only workspace capability belongs to another company.");
     if(generation!==workspaceLoadGeneration)return;
-    const {data:{session:currentSession}}=await sb.auth.getSession();
+    workspaceStage(timing,"Confirming current account");
+    const {data:{session:currentSession}}=await readSessionForWorkspace(readOptions.deadline);
     if(generation!==workspaceLoadGeneration)return;
     if(!currentSession||currentSession.user?.id!==startedSession.user.id)throw new Error("Please sign in again.");
     workspace=nextWorkspace;
@@ -2045,6 +2108,7 @@ async function loadWorkspace(){
     if(workspace.state==="ACTIVE"){
       businessSetupPrepay=false;
       renderWorkspace();
+      finishWorkspaceTiming(timing,"ready");
       showOnly("activeWorkspace");
       return;
     }
@@ -2052,6 +2116,7 @@ async function loadWorkspace(){
   }catch(e){
     if(generation!==workspaceLoadGeneration)return;
     workspace=null;
+    finishWorkspaceTiming(timing,"unavailable");
     $("loadingState").innerHTML="<h2>Workspace unavailable</h2><p>"+esc(e.message||String(e))+"</p><button id=\"retryWorkspace\" type=\"button\" class=\"ghost wide\">Retry workspace</button>";
     const retry=$("retryWorkspace");
     retry.onclick=async()=>{
