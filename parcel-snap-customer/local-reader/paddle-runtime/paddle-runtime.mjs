@@ -21,14 +21,13 @@ export function createPaddleWorker({ baseURL } = {}) {
 export function createRuntime({ baseURL, onWorker, createWorker } = {}) {
   if (!getBrowserCapabilities().supported) throw new Error('Local OCR requires secure-context module workers, WebAssembly, and SHA-256.');
   const worker = createWorker ? createWorker() : createPaddleWorker({ baseURL });
-  let terminated = false, nextRequestId = 1, summary = null, initPromise = null, predictionInFlight = false;
+  let terminated = false, nextRequestId = 1, summary = null, initPromise = null, predicted = false;
   const pending = new Map();
   const nativeTerminate = worker.terminate.bind(worker);
   const observe = (promise) => { promise.catch(() => {}); return promise; };
   function terminate(reason = new Error('Local OCR worker terminated.')) {
     if (terminated) return;
     terminated = true;
-    predictionInFlight = false;
     const error = reason instanceof Error ? reason : new Error(String(reason));
     for (const entry of pending.values()) entry.reject(error);
     pending.clear();
@@ -59,17 +58,13 @@ export function createRuntime({ baseURL, onWorker, createWorker } = {}) {
     return initPromise;
   }
   function predict(input, params = {}) {
-    if (predictionInFlight) return observe(Promise.reject(new Error('A local OCR prediction is already running.')));
-    predictionInFlight = true;
-    return observe(
-      initialize()
-        .then(() => request('predict', {input, params}, [input.buffer]))
-        .finally(() => { predictionInFlight = false; })
-    );
+    if (predicted) return observe(Promise.reject(new Error('This local OCR runtime permits exactly one prediction.')));
+    predicted = true;
+    return observe(initialize().then(() => request('predict', {input, params}, [input.buffer])).then((result) => {terminate(); return result;}));
   }
   function predictRgba({rgba, ...rest}, params = {}) { return predict({...rest, buffer: rgba}, params); }
   function dispose() { return terminated ? Promise.resolve() : observe(request('dispose').finally(() => terminate())); }
-  const runtime = {worker, initialize, predict, predictRgba, dispose, getInitializationSummary: () => summary, terminate, get terminated(){ return terminated; }};
+  const runtime = {worker, initialize, predict, predictRgba, dispose, getInitializationSummary: () => summary, terminate};
   try { onWorker?.(worker); } catch (error) { terminate(error); throw error; }
   return runtime;
 }
