@@ -23,7 +23,7 @@
   }
   function capabilityStatus(capability, {companyId,actorId} = {}) {
     if(!companyId||!actorId)return {ready:false,reason:'Sign in and open your company workspace first.'};
-    if(!capability)return {ready:false,reason:'Backend readiness has not been verified. Saving and sending remain blocked.'};
+    if(!capability)return {ready:false,reason:'System connection is still being checked. Saving and sending remain blocked.'};
     if(typeof capability!=='object'||Array.isArray(capability)||Object.entries(CONTRACT).some(([key,value])=>capability[key]!==value))
       return {ready:false,reason:'The server does not support the reviewed arrival contract. Saving and sending are blocked.'};
     if(capability.company_id!==companyId||capability.actor_id!==actorId)
@@ -73,6 +73,55 @@
       source:structuredClone(block.name.sources||[])
     }));
   }
+
+  // Worker UX: selecting a camera/gallery photo should immediately start the
+  // existing local reader. The normal employee should not need a separate
+  // "Read label" or "Check backend readiness" step. The manual read control is
+  // retained only as a retry fallback, and package save/email gates are unchanged.
+  function installWorkerAutoFlow(){
+    if(typeof document==='undefined')return;
+    const camera=document.getElementById('packagePhoto');
+    const gallery=document.getElementById('packagePhotoGallery');
+    const read=document.getElementById('readLocalLabel');
+    const readiness=document.getElementById('checkArrivalCapability');
+    if(readiness){
+      readiness.hidden=true;
+      readiness.setAttribute('aria-hidden','true');
+      readiness.tabIndex=-1;
+    }
+    if(read){
+      read.textContent='Retry label read';
+      read.title='Automatic reading starts after you take or choose a photo. Use this only to retry.';
+    }
+    if(!read||(!camera&&!gallery))return;
+    let selectionGeneration=0;
+    const scheduleAutoRead=event=>{
+      if(!event?.target?.files?.[0])return;
+      const generation=++selectionGeneration;
+      const started=typeof performance!=='undefined'?performance.now():Date.now();
+      const poll=()=>{
+        if(generation!==selectionGeneration)return;
+        if(!read.disabled){
+          const status=document.getElementById('localPhotoStatus');
+          if(status)status.textContent='Photo ready. Reading label automatically…';
+          read.click();
+          return;
+        }
+        const now=typeof performance!=='undefined'?performance.now():Date.now();
+        if(now-started<30000)setTimeout(poll,40);
+      };
+      setTimeout(poll,0);
+    };
+    camera?.addEventListener('change',scheduleAutoRead);
+    gallery?.addEventListener('change',scheduleAutoRead);
+  }
+
   scope.ParcelSnapIntakeReview=Object.freeze({BUILD,CONTRACT,ARRIVAL_ACTIONS,READ_ONLY_ACTIONS,assertPrivateAction,assertPortalTransport,readCapabilityStatus,capabilityStatus,arrivalGate,assertArrivalAction,
     scopedCustomers,safeContact,validateProposalBinding,directoryProposals});
+
+  if(typeof document!=='undefined'){
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installWorkerAutoFlow,{once:true});
+    else if(typeof queueMicrotask==='function')queueMicrotask(installWorkerAutoFlow);
+    else setTimeout(installWorkerAutoFlow,0);
+  }
 })(typeof window!=='undefined'?window:globalThis);
