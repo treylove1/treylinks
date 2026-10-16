@@ -1,4 +1,4 @@
-import {PaddleReaderEngine,PADDLE_SETTINGS,PADDLE_PARAMS,PaddleCanceled,paddlePreparation,drawPaddleFrame,paddleRows} from './local-reader/paddle-reader.js?v=ps-private-reader-timing-01';
+import {PaddleReaderEngine,PADDLE_SETTINGS,PADDLE_PARAMS,PaddleCanceled,paddlePreparation,drawPaddleFrame,paddleRows} from './local-reader/paddle-reader.js?v=ps-high-volume-warm-01';
 import {proposePaddleFields} from './local-reader/paddle-fields.js';
 
 const MAX_PREVIEW=16*1024*1024,MAX_EVIDENCE=6*1024*1024;
@@ -26,8 +26,10 @@ export class FreeIntakeReader {
     this.engine=new PaddleReaderEngine(loadRuntime,{onState,now});
   }
   get busy(){return Boolean(this.active)||this.engine.busy;}
+  async warm(){return this.engine.warm();}
   cancel(reason='Reading canceled.'){this.generation++;if(this.active)this.active.canceled=true;this.engine.cancel(reason);}
   clear(){this.cancel('Photo or workspace changed.');this.photo=null;this.passCount=0;this.storedBytes=0;}
+  async dispose(){this.cancel('Reader closed.');this.photo=null;this.passCount=0;this.storedBytes=0;await this.engine.dispose();}
   async open(file,{photoId}={}){
     validateFile(file);this.clear();const generation=this.generation;
     const bitmap=await this.decode(file);let width,height;
@@ -75,11 +77,11 @@ export class FreeIntakeReader {
       // Finish at evidence construction, before the existing size/check/freeze boundary.
       const prepared=this.now(),readerTotalMs=duration(started,prepared),engineTiming=output.timings;
       observation.elapsedSeconds=readerTotalMs===null?null:readerTotalMs/1000;
-      observation.timing={schema:'parcel-snap-local-timing-v1',units:'ms',clock:'local-monotonic',
+      observation.timing={schema:'parcel-snap-local-timing-v2',units:'ms',clock:'local-monotonic',
         nesting:'Nonadditive: engine stages are within engineTotalMs; nativeMetrics are within predictionRoundTripMs; preparation, engine and parser are within readerTotalMs.',
-        readerScope:'Read start through evidence construction; excludes final evidence size validation, recursive freeze and UI rendering.',
-        cleanupScope:'Final terminate boundary plus idle notification; the runtime may already have terminated before this boundary.',
-        preparationMs,runtimeModuleMs:metric(engineTiming?.runtimeModuleMs),workerInitializeMs:metric(engineTiming?.workerInitializeMs),
+        readerScope:'Read start through evidence construction; excludes final evidence size validation, recursive freeze and UI rendering. OCR may have been warmed before the photo was selected.',
+        cleanupScope:'Each prediction still uses a one-shot worker; the engine prepares the next worker separately after the read.',
+        preparationMs,runtimeModuleMs:metric(engineTiming?.runtimeModuleMs),workerInitializeMs:metric(engineTiming?.workerInitializeMs),warmWaitMs:metric(engineTiming?.warmWaitMs),
         predictionRoundTripMs:metric(engineTiming?.predictRoundTripMs),engineTotalMs:metric(engineTiming?.engineTotalMs),
         envelopeCheckMs:metric(engineTiming?.envelopeCheckMs),hardCleanupMs:metric(engineTiming?.hardCleanupMs),
         parserMs:duration(parserStarted,prepared),readerTotalMs,
