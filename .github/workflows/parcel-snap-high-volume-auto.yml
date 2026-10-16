@@ -1,0 +1,31 @@
+name: Parcel Snap High Volume Auto
+
+on:
+  push:
+    branches: ["parcel-snap-high-volume-auto-20261016"]
+    paths:
+      - "parcel-snap-customer/**"
+      - ".github/workflows/parcel-snap-high-volume-auto.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Syntax checks
+        run: |
+          node --check parcel-snap-customer/intake-review.js
+          node --check parcel-snap-customer/local-reader/paddle-reader.js
+          node --check parcel-snap-customer/free-intake-reader.mjs
+      - name: High-volume automation regression
+        run: node --test parcel-snap-customer/tests/high-volume-auto-test.mjs
+      - name: Existing customer matcher regression
+        run: node parcel-snap-customer/tests/known-customer-matcher-test.mjs
+      - name: Existing tenant onboarding regression
+        run: node parcel-snap-customer/tests/tenant-onboarding-architecture-test.mjs
