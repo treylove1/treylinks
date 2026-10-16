@@ -14,7 +14,12 @@ export class PaddleReaderEngine{
  }
  get busy(){return !!this.active||!!this.blockedReason;}
  emit(op,phase,message){if(this.active===op)this.onState({phase,message,readId:op.id});}
- async warm(){
+ terminate(op){
+  if(!op)return;
+  try{op.api?.terminate();}
+  catch(error){this.blockedReason='Paddle worker cleanup failed. Reload before another read.';}
+ }
+ async warm(op=null){
   if(this.disposed)throw new Error('Local OCR reader is closed. Reload to start it again.');
   if(this.blockedReason)throw new Error(this.blockedReason);
   if(this.preparedApi)return this.preparedApi.getInitializationSummary?.()??null;
@@ -24,14 +29,17 @@ export class PaddleReaderEngine{
   this.warmPromise=(async()=>{
    if(!this.runtimePromise)this.runtimePromise=Promise.resolve().then(()=>this.loadRuntime());
    const runtime=await this.runtimePromise;
+   if(op){if(op.canceled)throw new PaddleCanceled(op.reason||'Paddle reading canceled.');}
    if(this.disposed||generation!==this.warmGeneration)return null;
    let worker=null;
    const api=runtime.createRuntime({onWorker:w=>{
     worker=w;
     if(this.disposed||generation!==this.warmGeneration){w.terminate();throw new PaddleCanceled('OCR warmup was superseded.');}
+    if(op){if(op.canceled){w.terminate();throw new PaddleCanceled(op.reason||'Paddle reading canceled.');}}
    }});
    try{
     const summary=await api.initialize();
+    if(op){if(op.canceled){api.terminate();throw new PaddleCanceled(op.reason||'Paddle reading canceled.');}}
     if(this.disposed||generation!==this.warmGeneration){api.terminate();return null;}
     if(!worker){api.terminate();throw new Error('Paddle initialization did not provide a controllable dedicated worker.');}
     this.preparedApi=api;this.preparedWorker=worker;
@@ -48,7 +56,7 @@ export class PaddleReaderEngine{
  cancel(reason='Paddle reading canceled.'){
   const op=this.active;if(!op)return;
   op.canceled=true;op.reason=reason;
-  try{op.api?.terminate();}catch(error){this.blockedReason='Paddle worker could not be stopped. Reload before another read.';}
+  this.terminate(op);
   this.emit(op,op.worker?'canceling':'canceling-initialization',reason);
   op.abort?.();
  }
@@ -56,7 +64,7 @@ export class PaddleReaderEngine{
   if(this.disposed)return;
   this.disposed=true;this.warmGeneration++;
   const op=this.active;
-  if(op){op.canceled=true;op.reason='Reader closed.';try{op.api?.terminate();}catch{}op.abort?.();}
+  if(op){op.canceled=true;op.reason='Reader closed.';this.terminate(op);op.abort?.();}
   try{this.preparedApi?.terminate();}catch{}
   this.preparedApi=null;this.preparedWorker=null;this.warmPromise=null;
  }
@@ -73,7 +81,7 @@ export class PaddleReaderEngine{
   const race=async promise=>{const outcome=await Promise.race([Promise.resolve(promise).then(value=>({value}),error=>({error})),aborted]);if(op.canceled||outcome.aborted)throw new PaddleCanceled(op.reason||'Paddle reading canceled.');if(outcome.error)throw outcome.error;return outcome.value;};
   try{
    const warmStarted=this.now();
-   if(!this.preparedApi){this.emit(op,'initializing','Finishing OCR preparation…');await race(this.warm());}
+   if(!this.preparedApi){this.emit(op,'initializing','Finishing OCR preparation…');await race(this.warm(op));}
    timings.warmWaitMs=duration(warmStarted,this.now());
    if(op.canceled)throw new PaddleCanceled(op.reason||'Paddle reading canceled.');
    const api=this.preparedApi,worker=this.preparedWorker;
@@ -90,7 +98,7 @@ export class PaddleReaderEngine{
   }finally{
    clearTimeout(deadline);
    const cleanupStart=this.now();
-   try{op.api?.terminate();}catch(error){this.blockedReason='Paddle worker cleanup failed. Reload before another read.';}
+   this.terminate(op);
    if(this.active===op){this.active=null;this.onState({phase:this.blockedReason?'reload-required':'idle',readId:op.id,error:this.blockedReason});}
    timings.hardCleanupMs=duration(cleanupStart,this.now());timings.engineTotalMs=duration(started,this.now());
    if(!this.blockedReason)this.scheduleNextWarm();
